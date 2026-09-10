@@ -37,6 +37,7 @@ import StatisticsPage from "../pages/StatisticsPage";
 import BusinessUnavailablePage from "../pages/BusinessUnavailablePage";
 import EmployeesPage from "../pages/EmployeesPage";
 import WorksPage from "../pages/WorksPage";
+import TallerPlaceholderPage from "../pages/TallerPlaceholderPage";
 import Button from "../components/ui/Button";
 import BusinessOperationGate from "../components/BusinessOperationGate";
 import { subscribeToAuth } from "../services/authService";
@@ -319,6 +320,70 @@ function AppRoutes({
               currentUserUid={usuario?.uid}
               currencyCode={activeBusiness?.monedaCodigo}
               role={activeBusiness?.role}
+            />
+          }
+        />
+        <Route path="/taller" element={<Navigate to="/taller/ordenes" replace />} />
+        <Route
+          path="/taller/ordenes"
+          element={
+            <TallerPlaceholderPage
+              title="Órdenes de trabajo"
+              description="Gestiona las órdenes de trabajo del taller."
+            />
+          }
+        />
+        <Route
+          path="/taller/ordenes/nueva"
+          element={
+            <TallerPlaceholderPage
+              title="Nueva orden de trabajo"
+              description="Crea una orden de trabajo para un vehículo del negocio."
+            />
+          }
+        />
+        <Route
+          path="/taller/ordenes/:otId"
+          element={
+            <TallerPlaceholderPage
+              title="Orden de trabajo"
+              description="Consulta el detalle operativo de esta orden de trabajo."
+            />
+          }
+        />
+        <Route
+          path="/taller/vehiculos"
+          element={
+            <TallerPlaceholderPage
+              title="Vehículos"
+              description="Consulta los vehículos registrados en el taller."
+            />
+          }
+        />
+        <Route
+          path="/taller/vehiculos/nuevo"
+          element={
+            <TallerPlaceholderPage
+              title="Nuevo vehículo"
+              description="Registra un vehículo asociado a un cliente del negocio."
+            />
+          }
+        />
+        <Route
+          path="/taller/vehiculos/:vehiculoId"
+          element={
+            <TallerPlaceholderPage
+              title="Vehículo"
+              description="Consulta la ficha de este vehículo."
+            />
+          }
+        />
+        <Route
+          path="/taller/plazas"
+          element={
+            <TallerPlaceholderPage
+              title="Plazas"
+              description="Gestiona las plazas operacionales del taller."
             />
           }
         />

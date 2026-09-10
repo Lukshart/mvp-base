@@ -8,7 +8,7 @@ const ASSIGNABLE_BUSINESS_ROLES = Object.freeze([
 ]);
 const BUSINESS_MODULES = Object.freeze([
   "reportes", "trabajos", "inventario", "clientes", "cotizaciones", "ventas",
-  "proveedores", "ordenes_compra", "recepciones", "compras", "empresa", "empleados",
+  "proveedores", "ordenes_compra", "recepciones", "compras", "empresa", "empleados", "taller",
 ]);
 const OWNER_ROLES = Object.freeze(["OWNER"]);
 const BUSINESS_MANAGEMENT_ROLES = Object.freeze(["OWNER", "ADMIN"]);
