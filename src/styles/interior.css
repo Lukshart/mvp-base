@@ -248,7 +248,8 @@
 }
 
 .vehicle-message--error,
-.vehicle-field-error {
+.vehicle-field-error,
+.work-order-field-error {
   color: var(--color-danger-700);
 }
 
@@ -294,6 +295,7 @@
 .vehicle-detail-item {
   background: var(--color-surface-subtle);
   border: 1px solid var(--color-border-subtle);
+  border-top: 3px solid var(--color-brand-500);
   border-radius: var(--radius-md);
   min-width: 0;
   padding: var(--space-3);
@@ -316,6 +318,50 @@
 .vehicle-owner__name {
   color: var(--color-text-strong);
   font-size: var(--font-size-md);
+}
+
+.work-order-header-meta {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.work-order-tabs {
+  border-bottom: 1px solid var(--color-border-default);
+  display: flex;
+  gap: var(--space-2);
+  overflow-x: auto;
+}
+
+.work-order-tabs button {
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  padding: var(--space-3) var(--space-4);
+  white-space: nowrap;
+}
+
+.work-order-tabs button[aria-selected="true"] {
+  border-bottom-color: var(--color-brand-600);
+  color: var(--color-brand-700);
+}
+
+.work-order-reception-grid {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.work-order-reception-textarea {
+  min-height: 86px;
+  resize: vertical;
 }
 
 .erp-card-list,
@@ -614,6 +660,10 @@
   }
 
   .vehicle-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .work-order-reception-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 

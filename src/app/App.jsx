@@ -41,6 +41,9 @@ import TallerPlaceholderPage from "../pages/TallerPlaceholderPage";
 import VehiclesPage from "../pages/VehiclesPage";
 import NewVehiclePage from "../pages/NewVehiclePage";
 import VehicleDetailPage from "../pages/VehicleDetailPage";
+import WorkOrdersPage from "../pages/WorkOrdersPage";
+import NewWorkOrderPage from "../pages/NewWorkOrderPage";
+import WorkOrderDetailPage from "../pages/WorkOrderDetailPage";
 import Button from "../components/ui/Button";
 import BusinessOperationGate from "../components/BusinessOperationGate";
 import { subscribeToAuth } from "../services/authService";
@@ -330,27 +333,30 @@ function AppRoutes({
         <Route
           path="/taller/ordenes"
           element={
-            <TallerPlaceholderPage
-              title="Órdenes de trabajo"
-              description="Gestiona las órdenes de trabajo del taller."
+            <WorkOrdersPage
+              key={businessId}
+              businessId={businessId}
+              role={activeBusiness?.role}
             />
           }
         />
         <Route
           path="/taller/ordenes/nueva"
           element={
-            <TallerPlaceholderPage
-              title="Nueva orden de trabajo"
-              description="Crea una orden de trabajo para un vehículo del negocio."
+            <NewWorkOrderPage
+              key={businessId}
+              businessId={businessId}
+              role={activeBusiness?.role}
             />
           }
         />
         <Route
           path="/taller/ordenes/:otId"
           element={
-            <TallerPlaceholderPage
-              title="Orden de trabajo"
-              description="Consulta el detalle operativo de esta orden de trabajo."
+            <WorkOrderDetailPage
+              key={businessId}
+              businessId={businessId}
+              role={activeBusiness?.role}
             />
           }
         />

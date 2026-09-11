@@ -989,6 +989,20 @@ service cloud.firestore {
         allow read, create, update, delete: if false;
       }
 
+      match /ordenesTrabajo/{otId} {
+        allow read: if hasBusinessModuleAccess(businessId, ["OWNER", "ADMIN", "TECNICO", "MEMBER"], ["taller"])
+          && resource.data.negocioId == businessId;
+        allow create, update, delete: if false;
+      }
+
+      match /otCounters/{counterId} {
+        allow read, create, update, delete: if false;
+      }
+
+      match /otCreateRequests/{requestId} {
+        allow read, create, update, delete: if false;
+      }
+
       match /trabajos/{trabajoId} {
         allow read: if resource.data.negocioId == businessId
           && (

@@ -100,6 +100,17 @@ export const vehicleDocPath = (businessId, vehiculoId) => [
   "vehiculos",
   vehiculoId,
 ];
+export const workOrdersCollectionPath = (businessId) => [
+  "negocios",
+  businessId,
+  "ordenesTrabajo",
+];
+export const workOrderDocPath = (businessId, otId) => [
+  "negocios",
+  businessId,
+  "ordenesTrabajo",
+  otId,
+];
 export const worksCollectionPath = (businessId) => [
   "negocios",
   businessId,

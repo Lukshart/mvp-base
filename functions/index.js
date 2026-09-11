@@ -46,6 +46,10 @@ const {
   crearVehiculoHandler,
 } = require("./vehiclePersistence");
 const {
+  crearOrdenTrabajoHandler,
+  registrarRecepcionOrdenTrabajoHandler,
+} = require("./workOrderPersistence");
+const {
   actualizarProveedorHandler,
   archivarProveedorHandler,
   crearProveedorHandler,
@@ -2332,6 +2336,16 @@ exports.cambiarPropietarioVehiculo = onCall(
   vehicleCallableOptions,
   async (request) =>
     cambiarPropietarioVehiculoHandler(request, vehiclePersistenceDependencies)
+);
+
+exports.crearOrdenTrabajo = onCall(vehicleCallableOptions, async (request) =>
+  crearOrdenTrabajoHandler(request, vehiclePersistenceDependencies)
+);
+
+exports.registrarRecepcionOrdenTrabajo = onCall(
+  vehicleCallableOptions,
+  async (request) =>
+    registrarRecepcionOrdenTrabajoHandler(request, vehiclePersistenceDependencies)
 );
 
 const workPersistenceDependencies = {
