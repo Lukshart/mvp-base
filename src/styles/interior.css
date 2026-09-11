@@ -216,6 +216,108 @@
   text-align: center;
 }
 
+.vehicle-search-control {
+  align-items: center;
+  display: flex;
+  gap: var(--space-2);
+}
+
+.vehicle-search-control .erp-control {
+  flex: 1 1 auto;
+}
+
+.vehicle-search-field {
+  max-width: 520px;
+}
+
+.vehicle-link {
+  color: var(--color-brand-700);
+  font-weight: var(--font-weight-semibold);
+}
+
+.vehicle-message {
+  align-items: center;
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  justify-content: space-between;
+  padding: var(--space-3);
+}
+
+.vehicle-message--error,
+.vehicle-field-error {
+  color: var(--color-danger-700);
+}
+
+.vehicle-message--error {
+  border-color: var(--color-danger-700);
+}
+
+.vehicle-message--warning {
+  border-color: var(--color-border-default);
+}
+
+.vehicle-form {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.vehicle-form-grid {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.vehicle-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+
+.vehicle-owner {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.vehicle-detail-grid,
+.vehicle-owner__meta {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  margin: 0;
+}
+
+.vehicle-detail-item {
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  min-width: 0;
+  padding: var(--space-3);
+}
+
+.vehicle-detail-item dt {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+}
+
+.vehicle-detail-item dd {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  margin: var(--space-1) 0 0;
+  overflow-wrap: anywhere;
+}
+
+.vehicle-owner__name {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-md);
+}
+
 .erp-card-list,
 .erp-mobile-only {
   display: none;
@@ -509,6 +611,18 @@
 
   .erp-filters {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .vehicle-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .vehicle-form-actions {
+    justify-content: stretch;
+  }
+
+  .vehicle-form-actions > .ui-button {
+    flex: 1 1 auto;
   }
 
   .dashboard-chart-grid {

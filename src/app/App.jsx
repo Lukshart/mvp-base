@@ -38,6 +38,9 @@ import BusinessUnavailablePage from "../pages/BusinessUnavailablePage";
 import EmployeesPage from "../pages/EmployeesPage";
 import WorksPage from "../pages/WorksPage";
 import TallerPlaceholderPage from "../pages/TallerPlaceholderPage";
+import VehiclesPage from "../pages/VehiclesPage";
+import NewVehiclePage from "../pages/NewVehiclePage";
+import VehicleDetailPage from "../pages/VehicleDetailPage";
 import Button from "../components/ui/Button";
 import BusinessOperationGate from "../components/BusinessOperationGate";
 import { subscribeToAuth } from "../services/authService";
@@ -354,27 +357,30 @@ function AppRoutes({
         <Route
           path="/taller/vehiculos"
           element={
-            <TallerPlaceholderPage
-              title="Vehículos"
-              description="Consulta los vehículos registrados en el taller."
+            <VehiclesPage
+              key={businessId}
+              businessId={businessId}
+              role={activeBusiness?.role}
             />
           }
         />
         <Route
           path="/taller/vehiculos/nuevo"
           element={
-            <TallerPlaceholderPage
-              title="Nuevo vehículo"
-              description="Registra un vehículo asociado a un cliente del negocio."
+            <NewVehiclePage
+              key={businessId}
+              businessId={businessId}
+              role={activeBusiness?.role}
             />
           }
         />
         <Route
           path="/taller/vehiculos/:vehiculoId"
           element={
-            <TallerPlaceholderPage
-              title="Vehículo"
-              description="Consulta la ficha de este vehículo."
+            <VehicleDetailPage
+              key={businessId}
+              businessId={businessId}
+              role={activeBusiness?.role}
             />
           }
         />

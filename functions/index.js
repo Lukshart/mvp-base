@@ -41,6 +41,11 @@ const {
   reactivarClienteHandler,
 } = require("./clientPersistence");
 const {
+  actualizarVehiculoHandler,
+  cambiarPropietarioVehiculoHandler,
+  crearVehiculoHandler,
+} = require("./vehiclePersistence");
+const {
   actualizarProveedorHandler,
   archivarProveedorHandler,
   crearProveedorHandler,
@@ -2299,6 +2304,34 @@ exports.reactivarCliente = onCall(
   },
   async (request) =>
     reactivarClienteHandler(request, clientPersistenceDependencies)
+);
+
+const vehiclePersistenceDependencies = {
+  db,
+  HttpsError,
+  FieldValue,
+  requireBusinessAccess: requireOperationalBusinessAccess,
+};
+
+const vehicleCallableOptions = {
+  maxInstances: 20,
+  memory: "256MiB",
+  region: DEFAULT_FUNCTION_REGION,
+  timeoutSeconds: 30,
+};
+
+exports.crearVehiculo = onCall(vehicleCallableOptions, async (request) =>
+  crearVehiculoHandler(request, vehiclePersistenceDependencies)
+);
+
+exports.actualizarVehiculo = onCall(vehicleCallableOptions, async (request) =>
+  actualizarVehiculoHandler(request, vehiclePersistenceDependencies)
+);
+
+exports.cambiarPropietarioVehiculo = onCall(
+  vehicleCallableOptions,
+  async (request) =>
+    cambiarPropietarioVehiculoHandler(request, vehiclePersistenceDependencies)
 );
 
 const workPersistenceDependencies = {
