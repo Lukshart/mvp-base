@@ -104,6 +104,7 @@ async function main() {
       }),
       adminDb.doc(`negocios/${businessId}`).set({
         estado: "activo",
+        creadoPorUid: ownerUid,
         verificacionEmpresa: {estado: "VERIFICADA"},
       }),
       adminDb.doc(`membresias/${businessId}__${ownerUid}`).set({
@@ -384,6 +385,7 @@ async function main() {
         monedaCodigo: "CLP",
         regionCodigo: "13",
         estado: "activo",
+        creadoPorUid: ownerUid,
         verificacionEmpresa: {estado: "VERIFICADA"},
       }),
       adminDb.doc(`membresias/${businessId}__${ownerUid}`).set({
