@@ -10,13 +10,28 @@ import {
   getReceptionFieldErrors,
   hasReceptionAnomaly as hasReceptionAnomalyForUi,
 } from "../src/domain/workOrderReceptionModel.mjs";
+import {
+  adaptStoredWorkshopPlaza,
+  canAssignWorkshopPlazas,
+  canManageWorkshopPlazas,
+  deriveWorkshopPlazaOccupancy,
+  getWorkshopPlazaFieldErrors,
+} from "../src/domain/workshopPlazaModel.mjs";
 
 const require = createRequire(import.meta.url);
 const {
+  scopeFingerprint,
+  freezeCoreItem,
+  canApproveWorkOrder,
   formatWorkOrderNumber,
   hasReceptionAnomaly,
+  listarCatalogoTallerHandler,
+  normalizeDiagnosisInput,
   normalizeReceptionInput,
   normalizeWorkOrderInput,
+  normalizeServiceInput,
+  plannedQuantity,
+  profileIdentityName,
   receptionNextStatus,
 } = require("../functions/workOrderPersistence.js");
 
@@ -26,6 +41,30 @@ class TestHttpsError extends Error {
     this.code = code;
   }
 }
+
+const baseScope = [{servicioOtId: "s1", itemId: "core-s1", responsableUid: "u1",
+  productos: [{productoOtId: "p1", itemId: "core-p1", cantidad: 2}]}];
+assert.equal(scopeFingerprint(baseScope), scopeFingerprint([{...baseScope[0], responsableUid: "u2", precioUnitario: 50}]));
+assert.notEqual(scopeFingerprint(baseScope), scopeFingerprint([{...baseScope[0], itemId: "core-s2"}]));
+assert.notEqual(scopeFingerprint(baseScope), scopeFingerprint([{...baseScope[0], productos: [{...baseScope[0].productos[0], cantidad: 3}]}]));
+const reorderedScope = [...baseScope, {servicioOtId: "s2", itemId: "core-s2", productos: []}];
+assert.equal(scopeFingerprint(reorderedScope), scopeFingerprint([...reorderedScope].reverse()));
+for (const role of ["OWNER", "ADMIN"]) assert.equal(canApproveWorkOrder({rol: role}), true);
+for (const role of ["TECNICO", "MEMBER", "VENTAS", "FINANZAS"]) assert.equal(canApproveWorkOrder({rol: role}), false);
+assert.equal(canApproveWorkOrder({rol: "ADMIN", profileId: "perfil-solo-modulos"}), false);
+const coreSnapshot = (overrides = {}) => ({exists: true, id: "core-s1", data: () => ({
+  negocioId: "b1", tipoItem: "servicio", estado: "activo", precioInterno: 25000,
+  nombre: "Cambio de aceite", codigoInterno: "S1", unidad: "servicio", costoUnitario: 5, ...overrides,
+})});
+const frozen = freezeCoreItem(coreSnapshot(), "b1", "core-s1", "servicio", TestHttpsError);
+assert.equal(frozen.precioUnitario, 25000);
+assert.equal(frozen.snapshot.nombre, "Cambio de aceite");
+assert.deepEqual(Object.keys(frozen.snapshot).sort(), ["codigoInterno", "nombre", "unidad", "modeloInventarioVersion"].sort());
+for (const overrides of [{precioInterno: "25000"}, {precioInterno: NaN}, {precioInterno: -1},
+  {tipoItem: "producto"}, {negocioId: "b2"}, {estado: "inactivo"}]) {
+  assert.throws(() => freezeCoreItem(coreSnapshot(overrides), "b1", "core-s1", "servicio", TestHttpsError));
+}
+console.log("OK aprobación OT: huella de alcance, capacidad separada y snapshot Core sin costos");
 
 assert.deepEqual(
   normalizeWorkOrderInput({vehiculoId: "vehicle-1"}, TestHttpsError),
@@ -42,6 +81,35 @@ assert.throws(
 assert.equal(formatWorkOrderNumber(1), "OT-000001");
 assert.equal(formatWorkOrderNumber(42), "OT-000042");
 assert.equal(formatWorkOrderNumber(1000000), "OT-1000000");
+assert.deepEqual(normalizeServiceInput({itemId: "service-1", responsableUid: "member-1"}, TestHttpsError),
+  {itemId: "service-1", responsableUid: "member-1"});
+assert.throws(() => normalizeServiceInput({itemId: "service-1", responsableUid: "member-1", precioUnitario: 1}, TestHttpsError),
+  (error) => error.code === "invalid-argument");
+assert.equal(plannedQuantity(1.25, TestHttpsError), 1.25);
+assert.throws(() => plannedQuantity(0, TestHttpsError), (error) => error.code === "invalid-argument");
+const catalog = await listarCatalogoTallerHandler({data: {businessId: "business-1"}}, {
+  db: {}, HttpsError: TestHttpsError,
+  requireBusinessAccess: async (request, dependencies, options) => {
+    assert.equal(request.data.businessId, "business-1");
+    assert.equal(options.moduleId, "taller");
+    return {businessId: "business-1", businessRef: {collection: () => ({where: () => ({get: async () => ({docs: [
+      {id: "service-1", data: () => ({negocioId: "business-1", tipoItem: "servicio", estado: "activo", nombre: "Servicio", precioInterno: 25000, costoBase: 10000})},
+      {id: "foreign", data: () => ({negocioId: "business-2", tipoItem: "producto", estado: "activo", nombre: "Ajeno"})},
+    ]})})})}};
+  },
+});
+assert.deepEqual(catalog.items, [{
+  itemId: "service-1", tipoItem: "servicio", estado: "activo", nombre: "Servicio",
+  codigoInterno: "", stock: null, precioEfectivo: 25000,
+}]);
+assert.equal(
+  profileIdentityName({nombres: "Matías", apellidos: "Pérez"}, {email: "matias@bagner.cl", displayName: "matias@bagner.cl"}),
+  "Matías Pérez"
+);
+assert.equal(
+  profileIdentityName({nombres: "", apellidos: ""}, {email: "matias@bagner.cl", displayName: "Otro nombre"}),
+  "matias@bagner.cl"
+);
 console.log("OK backend OT: payload acotado y número visible canónico");
 
 const order = adaptStoredWorkOrder({
@@ -71,6 +139,27 @@ assert.equal(
   false
 );
 console.log("OK dominio UI OT: adaptación, etiquetas y búsqueda");
+
+const plaza = adaptStoredWorkshopPlaza({id: "plaza-1", negocioId: "business-1", nombre: " Plaza 1 ", estado: "activa"});
+assert.equal(plaza.plazaId, "plaza-1");
+assert.equal(plaza.nombre, "Plaza 1");
+assert.deepEqual(getWorkshopPlazaFieldErrors({nombre: ""}), {nombre: "El nombre de la Plaza es obligatorio."});
+assert.deepEqual(getWorkshopPlazaFieldErrors({nombre: "Plaza 1"}), {});
+assert.equal(canManageWorkshopPlazas("OWNER"), true);
+assert.equal(canManageWorkshopPlazas("ADMIN"), true);
+assert.equal(canManageWorkshopPlazas("TECNICO"), false);
+assert.equal(canAssignWorkshopPlazas("TECNICO"), true);
+assert.equal(canAssignWorkshopPlazas("VENTAS"), false);
+const derivedOccupancy = deriveWorkshopPlazaOccupancy([plaza], [
+  {otId: "ot-active", plazaId: "plaza-1", estado: "en_diagnostico"},
+  {otId: "ot-closed", plazaId: "plaza-1", estado: "cerrada"},
+]);
+assert.equal(derivedOccupancy.get("plaza-1").order.otId, "ot-active");
+assert.equal(derivedOccupancy.get("plaza-1").conflict, false);
+assert.equal(deriveWorkshopPlazaOccupancy([plaza], [
+  {otId: "ot-closed", plazaId: "plaza-1", estado: "cerrada"},
+]).has("plaza-1"), false);
+console.log("OK dominio Plaza: estado persistido separado de ocupación derivada y permisos UI");
 
 const reception = {
   kilometraje: 125000,
@@ -125,5 +214,10 @@ assert.throws(
   (error) => error.code === "invalid-argument" && /nivel de combustible válido/i.test(error.message)
 );
 assert.equal(Object.keys(getReceptionFieldErrors({...reception, kilometraje: "125000", accesoriosTexto: "Llave de rueda"})).length, 0);
+assert.deepEqual(normalizeDiagnosisInput({responsableUid: "member-1", descripcion: "  Falla en arranque  ", observaciones: ""}, TestHttpsError), {
+  responsableUid: "member-1", descripcion: "Falla en arranque", observaciones: "",
+});
+assert.throws(() => normalizeDiagnosisInput({responsableUid: "member-1", descripcion: "", observaciones: "", estado: "completado"}, TestHttpsError),
+  (error) => error.code === "invalid-argument" && /estado.*no está admitido/i.test(error.message));
 console.log("OK recepción OT: enums, anomalías, NO_REVISADO/NO_PROBADO y transición autoritativa");
 console.log("WORK_ORDER_MODEL_SMOKE_OK");

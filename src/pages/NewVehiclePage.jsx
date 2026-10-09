@@ -5,10 +5,10 @@ import Button from "../components/ui/Button";
 import ClientSelector from "../features/clients/ClientSelector";
 import VehicleFormFields from "../features/vehicles/VehicleFormFields";
 import {buildVehicleMutationPayload, getVehicleFieldErrors} from "../domain/vehicleModel.mjs";
-import {crearVehiculo, getVehicleErrorMessage} from "../services/vehicleService";
+import {crearVehiculo, getVehicleErrorMessage, listarClientesSeleccionablesTaller} from "../services/vehicleService";
 
 const EMPTY_VEHICLE = {patente: "", vin: "", marca: "", modelo: "", anio: "", color: "", tipo: ""};
-const MANAGE_ROLES = new Set(["OWNER", "ADMIN"]);
+const CREATE_ROLES = new Set(["OWNER", "ADMIN", "TECNICO"]);
 
 function NewVehiclePage({businessId, role}) {
   const navigate = useNavigate();
@@ -17,7 +17,7 @@ function NewVehiclePage({businessId, role}) {
   const [errors, setErrors] = useState({});
   const [serverError, setServerError] = useState("");
   const [saving, setSaving] = useState(false);
-  const canManage = MANAGE_ROLES.has(String(role || "").toUpperCase());
+  const canCreate = CREATE_ROLES.has(String(role || "").toUpperCase());
   const ownerError = errors.clienteId;
   const selectedOwnerId = owner?.clienteId || "";
   const formErrors = useMemo(() => ({...errors, clienteId: undefined}), [errors]);
@@ -46,8 +46,8 @@ function NewVehiclePage({businessId, role}) {
     } finally { setSaving(false); }
   };
 
-  if (!canManage) return <main className="erp-page"><div className="erp-empty-state" role="alert">Tu membresía no permite crear vehículos en el negocio activo.</div></main>;
-  return <main className="erp-page vehicles-page"><header className="erp-page-header"><div className="erp-page-header__content"><h1 className="erp-page-header__title">Nuevo vehículo</h1><p className="erp-page-header__description">Registra un vehículo y asigna su propietario actual.</p></div></header><form className="erp-panel vehicle-form" onSubmit={submit} noValidate><section><h2 className="erp-panel-title">Propietario actual</h2><ClientSelector businessId={businessId} value={owner} snapshot={owner} onChange={handleOwnerChange} />{ownerError && <p className="vehicle-field-error" role="alert">{ownerError}</p>}</section><section><h2 className="erp-panel-title">Datos del vehículo</h2><VehicleFormFields values={values} errors={formErrors} onChange={update} /></section>{serverError && <div className="vehicle-message vehicle-message--error" role="alert">{serverError}</div>}<div className="vehicle-form-actions"><Button type="button" variant="secondary" icon={ArrowLeft} disabled={saving} onClick={() => navigate("/taller/vehiculos")}>Volver</Button><Button type="submit" icon={Save} disabled={saving}>{saving ? "Guardando..." : "Guardar vehículo"}</Button></div></form></main>;
+  if (!canCreate) return <main className="erp-page"><div className="erp-empty-state" role="alert">Tu membresía no permite crear vehículos en el negocio activo.</div></main>;
+  return <main className="erp-page vehicles-page"><header className="erp-page-header"><div className="erp-page-header__content"><h1 className="erp-page-header__title">Nuevo vehículo</h1><p className="erp-page-header__description">Registra un vehículo y asigna su propietario actual.</p></div></header><form className="erp-panel vehicle-form" onSubmit={submit} noValidate><section><h2 className="erp-panel-title">Propietario actual</h2><ClientSelector businessId={businessId} loadClients={listarClientesSeleccionablesTaller} value={owner} snapshot={owner} onChange={handleOwnerChange} />{ownerError && <p className="vehicle-field-error" role="alert">{ownerError}</p>}</section><section><h2 className="erp-panel-title">Datos del vehículo</h2><VehicleFormFields values={values} errors={formErrors} onChange={update} /></section>{serverError && <div className="vehicle-message vehicle-message--error" role="alert">{serverError}</div>}<div className="vehicle-form-actions"><Button type="button" variant="secondary" icon={ArrowLeft} disabled={saving} onClick={() => navigate("/taller/vehiculos")}>Volver</Button><Button type="submit" icon={Save} disabled={saving}>{saving ? "Guardando..." : "Guardar vehículo"}</Button></div></form></main>;
 }
 
 export default NewVehiclePage;

@@ -111,6 +111,19 @@ export const workOrderDocPath = (businessId, otId) => [
   "ordenesTrabajo",
   otId,
 ];
+export const workOrderDiagnosesCollectionPath = (businessId, otId) => [
+  ...workOrderDocPath(businessId, otId),
+  "diagnosticos",
+];
+export const workOrderServicesCollectionPath = (businessId, otId) => [
+  ...workOrderDocPath(businessId, otId),
+  "servicios",
+];
+export const workshopPlazasCollectionPath = (businessId) => [
+  "negocios",
+  businessId,
+  "plazasTaller",
+];
 export const worksCollectionPath = (businessId) => [
   "negocios",
   businessId,

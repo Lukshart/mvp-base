@@ -43,6 +43,14 @@ export async function listarVehiculos(businessId) {
     .sort((left, right) => left.patente.localeCompare(right.patente, "es-CL", {sensitivity: "base"}));
 }
 
+export async function listarClientesSeleccionablesTaller(businessId) {
+  assertCloudFunctionAllowed("consultar clientes para Taller");
+  const response = await httpsCallable(functions, "listarClientesSeleccionablesTaller")({
+    businessId: requireIdentifier(businessId, "El negocio activo"),
+  });
+  return response.data.clientes || [];
+}
+
 export async function obtenerVehiculo(businessId, vehiculoId) {
   const snapshot = await getDoc(doc(db, ...vehicleDocPath(
     requireIdentifier(businessId, "El negocio activo"),

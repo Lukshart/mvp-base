@@ -44,11 +44,46 @@ const {
   actualizarVehiculoHandler,
   cambiarPropietarioVehiculoHandler,
   crearVehiculoHandler,
+  listarClientesSeleccionablesTallerHandler,
 } = require("./vehiclePersistence");
 const {
+  iniciarServicioOTHandler,
+  completarServicioOTHandler,
+  finalizarReparacionOTHandler,
+  registrarEntregaOTHandler,
+  obtenerEventosCierreOTHandler,
+  enviarOTAprobacionHandler,
+  aprobarOTHandler,
+  rechazarOTHandler,
+  revalidarDisponibilidadOTHandler,
+  obtenerResumenAprobacionOTHandler,
+  actualizarDiagnosticoHandler,
+  actualizarProductoOTHandler,
+  actualizarServicioOTHandler,
+  agregarProductoOTHandler,
+  completarDiagnosticoHandler,
   crearOrdenTrabajoHandler,
+  crearServicioOTHandler,
+  eliminarServicioOTHandler,
+  eliminarProductoOTHandler,
+  listarCatalogoTallerHandler,
+  listarPersonasAsignablesTallerHandler,
+  registrarDiagnosticoHandler,
   registrarRecepcionOrdenTrabajoHandler,
 } = require("./workOrderPersistence");
+const {
+  registrarSalidaMaterialOTHandler,
+  registrarDevolucionMaterialOTHandler,
+  obtenerMaterialesOTHandler,
+} = require("./workOrderMaterials");
+const {
+  activarPlazaTallerHandler,
+  actualizarPlazaTallerHandler,
+  asignarPlazaOTHandler,
+  crearPlazaTallerHandler,
+  inactivarPlazaTallerHandler,
+  liberarPlazaOTHandler,
+} = require("./workOrderPlazas");
 const {
   actualizarProveedorHandler,
   archivarProveedorHandler,
@@ -2316,16 +2351,29 @@ const vehiclePersistenceDependencies = {
   FieldValue,
   requireBusinessAccess: requireOperationalBusinessAccess,
 };
-
+const workOrderPersistenceDependencies = {...vehiclePersistenceDependencies, auth: adminAuth};
 const vehicleCallableOptions = {
   maxInstances: 20,
   memory: "256MiB",
   region: DEFAULT_FUNCTION_REGION,
   timeoutSeconds: 30,
 };
+exports.enviarOTAprobacion = onCall(vehicleCallableOptions, (request) =>
+  enviarOTAprobacionHandler(request, workOrderPersistenceDependencies));
+exports.aprobarOT = onCall(vehicleCallableOptions, (request) =>
+  aprobarOTHandler(request, workOrderPersistenceDependencies));
+exports.rechazarOT = onCall(vehicleCallableOptions, (request) =>
+  rechazarOTHandler(request, workOrderPersistenceDependencies));
+exports.revalidarDisponibilidadOT = onCall(vehicleCallableOptions, (request) =>
+  revalidarDisponibilidadOTHandler(request, workOrderPersistenceDependencies));
+exports.obtenerResumenAprobacionOT = onCall(vehicleCallableOptions, (request) =>
+  obtenerResumenAprobacionOTHandler(request, workOrderPersistenceDependencies));
 
 exports.crearVehiculo = onCall(vehicleCallableOptions, async (request) =>
   crearVehiculoHandler(request, vehiclePersistenceDependencies)
+);
+exports.listarClientesSeleccionablesTaller = onCall(vehicleCallableOptions, async (request) =>
+  listarClientesSeleccionablesTallerHandler(request, vehiclePersistenceDependencies)
 );
 
 exports.actualizarVehiculo = onCall(vehicleCallableOptions, async (request) =>
@@ -2339,14 +2387,82 @@ exports.cambiarPropietarioVehiculo = onCall(
 );
 
 exports.crearOrdenTrabajo = onCall(vehicleCallableOptions, async (request) =>
-  crearOrdenTrabajoHandler(request, vehiclePersistenceDependencies)
+  crearOrdenTrabajoHandler(request, workOrderPersistenceDependencies)
 );
 
 exports.registrarRecepcionOrdenTrabajo = onCall(
   vehicleCallableOptions,
   async (request) =>
-    registrarRecepcionOrdenTrabajoHandler(request, vehiclePersistenceDependencies)
+    registrarRecepcionOrdenTrabajoHandler(request, workOrderPersistenceDependencies)
 );
+
+exports.listarPersonasAsignablesTaller = onCall(vehicleCallableOptions, async (request) =>
+  listarPersonasAsignablesTallerHandler(request, workOrderPersistenceDependencies)
+);
+exports.listarCatalogoTaller = onCall(vehicleCallableOptions, async (request) =>
+  listarCatalogoTallerHandler(request, workOrderPersistenceDependencies)
+);
+
+exports.registrarDiagnostico = onCall(vehicleCallableOptions, async (request) =>
+  registrarDiagnosticoHandler(request, workOrderPersistenceDependencies)
+);
+
+exports.actualizarDiagnostico = onCall(vehicleCallableOptions, async (request) =>
+  actualizarDiagnosticoHandler(request, workOrderPersistenceDependencies)
+);
+
+exports.completarDiagnostico = onCall(vehicleCallableOptions, async (request) =>
+  completarDiagnosticoHandler(request, workOrderPersistenceDependencies)
+);
+
+exports.crearServicioOT = onCall(vehicleCallableOptions, async (request) =>
+  crearServicioOTHandler(request, workOrderPersistenceDependencies)
+);
+exports.actualizarServicioOT = onCall(vehicleCallableOptions, async (request) =>
+  actualizarServicioOTHandler(request, workOrderPersistenceDependencies)
+);
+exports.eliminarServicioOT = onCall(vehicleCallableOptions, async (request) =>
+  eliminarServicioOTHandler(request, workOrderPersistenceDependencies)
+);
+exports.iniciarServicioOT = onCall(vehicleCallableOptions, async (request) =>
+  iniciarServicioOTHandler(request, workOrderPersistenceDependencies)
+);
+exports.completarServicioOT = onCall(vehicleCallableOptions, async (request) =>
+  completarServicioOTHandler(request, workOrderPersistenceDependencies)
+);
+exports.finalizarReparacionOT = onCall(vehicleCallableOptions, (request) =>
+  finalizarReparacionOTHandler(request, workOrderPersistenceDependencies));
+exports.registrarEntregaOT = onCall(vehicleCallableOptions, (request) =>
+  registrarEntregaOTHandler(request, workOrderPersistenceDependencies));
+exports.obtenerEventosCierreOT = onCall(vehicleCallableOptions, (request) =>
+  obtenerEventosCierreOTHandler(request, workOrderPersistenceDependencies));
+exports.registrarSalidaMaterialOT = onCall(vehicleCallableOptions, (request) =>
+  registrarSalidaMaterialOTHandler(request, workOrderPersistenceDependencies));
+exports.registrarDevolucionMaterialOT = onCall(vehicleCallableOptions, (request) =>
+  registrarDevolucionMaterialOTHandler(request, workOrderPersistenceDependencies));
+exports.obtenerMaterialesOT = onCall(vehicleCallableOptions, (request) =>
+  obtenerMaterialesOTHandler(request, workOrderPersistenceDependencies));
+exports.agregarProductoOT = onCall(vehicleCallableOptions, async (request) =>
+  agregarProductoOTHandler(request, workOrderPersistenceDependencies)
+);
+exports.actualizarProductoOT = onCall(vehicleCallableOptions, async (request) =>
+  actualizarProductoOTHandler(request, workOrderPersistenceDependencies)
+);
+exports.eliminarProductoOT = onCall(vehicleCallableOptions, async (request) =>
+  eliminarProductoOTHandler(request, workOrderPersistenceDependencies)
+);
+exports.crearPlazaTaller = onCall(vehicleCallableOptions, (request) =>
+  crearPlazaTallerHandler(request, workOrderPersistenceDependencies));
+exports.actualizarPlazaTaller = onCall(vehicleCallableOptions, (request) =>
+  actualizarPlazaTallerHandler(request, workOrderPersistenceDependencies));
+exports.activarPlazaTaller = onCall(vehicleCallableOptions, (request) =>
+  activarPlazaTallerHandler(request, workOrderPersistenceDependencies));
+exports.inactivarPlazaTaller = onCall(vehicleCallableOptions, (request) =>
+  inactivarPlazaTallerHandler(request, workOrderPersistenceDependencies));
+exports.asignarPlazaOT = onCall(vehicleCallableOptions, (request) =>
+  asignarPlazaOTHandler(request, workOrderPersistenceDependencies));
+exports.liberarPlazaOT = onCall(vehicleCallableOptions, (request) =>
+  liberarPlazaOTHandler(request, workOrderPersistenceDependencies));
 
 const workPersistenceDependencies = {
   db,

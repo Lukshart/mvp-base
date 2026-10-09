@@ -4,15 +4,14 @@ import {useLocation, useNavigate} from "react-router-dom";
 import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
 import {normalizeVehiclePlate} from "../domain/vehicleModel.mjs";
-import {listarClientes} from "../services/clientService";
-import {getVehicleErrorMessage, listarVehiculos} from "../services/vehicleService";
+import {getVehicleErrorMessage, listarClientesSeleccionablesTaller, listarVehiculos} from "../services/vehicleService";
 import {
   crearOrdenTrabajo,
   createWorkOrderRequestId,
   getWorkOrderErrorMessage,
 } from "../services/workOrderService";
 
-const MANAGE_ROLES = new Set(["OWNER", "ADMIN"]);
+const CREATE_ROLES = new Set(["OWNER", "ADMIN", "TECNICO"]);
 
 export default function NewWorkOrderPage({businessId, role}) {
   const location = useLocation();
@@ -25,10 +24,10 @@ export default function NewWorkOrderPage({businessId, role}) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const canManage = MANAGE_ROLES.has(String(role || "").toUpperCase());
+  const canCreate = CREATE_ROLES.has(String(role || "").toUpperCase());
 
   const load = useCallback(async () => {
-    if (!businessId || !canManage) {
+    if (!businessId || !canCreate) {
       setLoading(false);
       return;
     }
@@ -37,7 +36,7 @@ export default function NewWorkOrderPage({businessId, role}) {
     try {
       const [vehicleItems, clientItems] = await Promise.all([
         listarVehiculos(businessId),
-        listarClientes(businessId),
+        listarClientesSeleccionablesTaller(businessId),
       ]);
       setVehicles(vehicleItems);
       setClientsById(new Map(clientItems.map((item) => [item.clienteId, item])));
@@ -52,7 +51,7 @@ export default function NewWorkOrderPage({businessId, role}) {
     } finally {
       setLoading(false);
     }
-  }, [businessId, canManage, location.state?.vehiculoId]);
+  }, [businessId, canCreate, location.state?.vehiculoId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -94,7 +93,7 @@ export default function NewWorkOrderPage({businessId, role}) {
     }
   };
 
-  if (!canManage) return <main className="erp-page"><div className="erp-empty-state"><h2>No tienes permisos para crear órdenes de trabajo</h2><p>OWNER o ADMIN pueden realizar esta operación.</p><Button type="button" variant="secondary" icon={ArrowLeft} onClick={() => navigate("/taller/ordenes")}>Volver a órdenes</Button></div></main>;
+  if (!canCreate) return <main className="erp-page"><div className="erp-empty-state"><h2>No tienes permisos para crear órdenes de trabajo</h2><p>Tu perfil no incluye esta operación.</p><Button type="button" variant="secondary" icon={ArrowLeft} onClick={() => navigate("/taller/ordenes")}>Volver a órdenes</Button></div></main>;
 
   return <main className="erp-page work-orders-page">
     <header className="erp-page-header"><div className="erp-page-header__content"><p className="erp-page-header__eyebrow">Taller · Órdenes de trabajo</p><h1 className="erp-page-header__title">Nueva orden de trabajo</h1><p className="erp-page-header__description">Busca y selecciona el vehículo antes de crear la OT.</p></div><Button type="button" variant="secondary" icon={ArrowLeft} disabled={saving} onClick={() => navigate("/taller/ordenes")}>Volver</Button></header>

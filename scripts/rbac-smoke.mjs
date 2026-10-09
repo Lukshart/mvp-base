@@ -22,6 +22,7 @@ assert.ok(ASSIGNABLE_BUSINESS_ROLES.includes("MEMBER"));
 assert.ok(!BUSINESS_ROLES.includes("PLATFORM_SUPERADMIN"));
 assert.deepEqual(backendRbac.BUSINESS_ROLES, BUSINESS_ROLES);
 assert.deepEqual(backendRbac.TALLER_MANAGEMENT_ROLES, ["OWNER", "ADMIN"]);
+assert.deepEqual(backendRbac.TALLER_CREATION_ROLES, ["OWNER", "ADMIN", "TECNICO"]);
 console.log("OK RBAC: perfiles predefinidos compatibles y Colaborador asignable");
 
 const P = BUSINESS_PERMISSIONS;

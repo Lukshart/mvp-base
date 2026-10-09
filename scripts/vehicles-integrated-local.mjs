@@ -339,6 +339,15 @@ try {
     }),
     ["permission-denied"]
   );
+  const selectableClients = await callable(technician, "listarClientesSeleccionablesTaller")({businessId});
+  assert.ok(selectableClients.data.clientes.some((client) => client.clienteId === "cliente-a"));
+  assert.ok(selectableClients.data.clientes.every((client) => !Object.hasOwn(client, "email") && !Object.hasOwn(client, "telefono")));
+  const technicianCreate = await callable(technician, "crearVehiculo")({
+    businessId,
+    requestId: `vehicle-technician-${RUN_ID}`,
+    vehiculo: vehiclePayload({patente: "TCDX12"}),
+  });
+  assert.equal(technicianCreate.data.vehiculo.creadoPorUid, technician.uid);
 
   const crossBusinessCreate = await callable(outsider, "crearVehiculo")({
     businessId: outsiderBusinessId,

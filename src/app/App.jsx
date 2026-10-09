@@ -37,13 +37,13 @@ import StatisticsPage from "../pages/StatisticsPage";
 import BusinessUnavailablePage from "../pages/BusinessUnavailablePage";
 import EmployeesPage from "../pages/EmployeesPage";
 import WorksPage from "../pages/WorksPage";
-import TallerPlaceholderPage from "../pages/TallerPlaceholderPage";
 import VehiclesPage from "../pages/VehiclesPage";
 import NewVehiclePage from "../pages/NewVehiclePage";
 import VehicleDetailPage from "../pages/VehicleDetailPage";
 import WorkOrdersPage from "../pages/WorkOrdersPage";
 import NewWorkOrderPage from "../pages/NewWorkOrderPage";
 import WorkOrderDetailPage from "../pages/WorkOrderDetailPage";
+import WorkshopPlazasPage from "../pages/WorkshopPlazasPage";
 import Button from "../components/ui/Button";
 import BusinessOperationGate from "../components/BusinessOperationGate";
 import { subscribeToAuth } from "../services/authService";
@@ -393,9 +393,10 @@ function AppRoutes({
         <Route
           path="/taller/plazas"
           element={
-            <TallerPlaceholderPage
-              title="Plazas"
-              description="Gestiona las plazas operacionales del taller."
+            <WorkshopPlazasPage
+              key={businessId}
+              businessId={businessId}
+              role={activeBusiness?.role}
             />
           }
         />

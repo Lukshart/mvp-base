@@ -1,8 +1,13 @@
-import React, {useCallback, useEffect, useState} from "react";
+import React, {useCallback, useEffect, useRef, useState} from "react";
 import {ArrowLeft, RefreshCw, Save} from "lucide-react";
 import {useNavigate, useParams} from "react-router-dom";
 import Button from "../components/ui/Button";
+import ResponsiveDialog from "../components/ui/ResponsiveDialog";
 import StatusBadge from "../components/ui/StatusBadge";
+import DiagnosisPanel from "../features/workOrders/DiagnosisPanel";
+import ServicePlanningPanel from "../features/workOrders/ServicePlanningPanel";
+import ApprovalPanel from "../features/workOrders/ApprovalPanel";
+import WorkOrderPlazaControl from "../features/workOrders/WorkOrderPlazaControl";
 import {
   getWorkOrderApprovalLabel,
   getWorkOrderApprovalVariant,
@@ -20,8 +25,14 @@ import {
 } from "../domain/workOrderReceptionModel.mjs";
 import {listarClientes} from "../services/clientService";
 import {obtenerVehiculo} from "../services/vehicleService";
+import {listarPlazasTaller} from "../services/workshopPlazaService";
 import {
+  createWorkOrderRequestId,
+  ejecutarCierreOT,
   getWorkOrderErrorMessage,
+  listarDiagnosticos,
+  listarServiciosOT,
+  obtenerEventosCierreOT,
   obtenerOrdenTrabajo,
   registrarRecepcionOrdenTrabajo,
 } from "../services/workOrderService";
@@ -41,11 +52,10 @@ function DetailItem({label, value}) {
   return <div className="vehicle-detail-item"><dt>{label}</dt><dd>{value}</dd></div>;
 }
 
-function PendingSection({title, description}) {
-  return <section className="erp-panel" aria-labelledby={`work-order-${title.toLowerCase().replaceAll(" ", "-")}-title`}>
-    <div className="erp-panel-header"><div><h2 id={`work-order-${title.toLowerCase().replaceAll(" ", "-")}-title`} className="erp-panel-title">{title}</h2><p className="erp-secondary-text">{description}</p></div></div>
-    <div className="erp-empty-state" role="status">Esta sección estará disponible cuando se implemente su etapa funcional.</div>
-  </section>;
+function closureDate(value) {
+  return Number.isSafeInteger(value)
+    ? new Date(value).toLocaleString("es-CL", {dateStyle: "medium", timeStyle: "short"})
+    : "Fecha no disponible";
 }
 
 function ReceptionField({children, error, label, required = false}) {
@@ -61,7 +71,8 @@ function ReceptionPanel({businessId, onSaved, order, otId, role}) {
   const [errors, setErrors] = useState({});
   const [serverError, setServerError] = useState("");
   const [saving, setSaving] = useState(false);
-  const canOperate = RECEPTION_OPERATION_ROLES.has(String(role || "").toUpperCase());
+  const canOperate = RECEPTION_OPERATION_ROLES.has(String(role || "").toUpperCase()) &&
+    !["pendiente_entrega", "cerrada", "cancelada"].includes(order.estado);
   const checklistComplete = isReceptionChecklistComplete(values.checklist);
   const hasAnomaly = hasReceptionAnomaly(values.checklist);
 
@@ -126,7 +137,6 @@ function ReceptionPanel({businessId, onSaved, order, otId, role}) {
 
   return <section className="erp-panel" aria-labelledby="work-order-reception-title">
     <div className="erp-panel-header"><div><h2 id="work-order-reception-title" className="erp-panel-title">Recepción</h2><p className="erp-secondary-text">Registra condiciones observables. Esta checklist no reemplaza un diagnóstico mecánico.</p></div></div>
-    {!canOperate && <div className="vehicle-message vehicle-message--warning" role="status">Tu perfil tiene acceso de lectura a esta recepción.</div>}
     {canOperate ? <form className="vehicle-form" onSubmit={submit} noValidate>
       <div className="work-order-reception-grid">
         <ReceptionField label="Kilometraje" error={errors.kilometraje} required><input className="erp-control" type="number" min="0" step="1" value={values.kilometraje} onChange={(event) => updateValue("kilometraje", event.target.value)} /></ReceptionField>
@@ -156,10 +166,22 @@ export default function WorkOrderDetailPage({businessId, role}) {
   const [order, setOrder] = useState(null);
   const [vehicle, setVehicle] = useState(null);
   const [client, setClient] = useState(null);
+  const [diagnoses, setDiagnoses] = useState([]);
+  const [services, setServices] = useState([]);
+  const [plazas, setPlazas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [activeSection, setActiveSection] = useState("resumen");
+  const [closureEvents, setClosureEvents] = useState([]);
+  const [closureLoading, setClosureLoading] = useState(false);
+  const [closureError, setClosureError] = useState("");
+  const [closureTarget, setClosureTarget] = useState(null);
+  const [closureBusy, setClosureBusy] = useState(false);
+  const [closureNotice, setClosureNotice] = useState("");
+  const [closureActionError, setClosureActionError] = useState("");
+  const closureRequest = useRef(0);
   const canReadClients = CLIENT_READ_ROLES.has(String(role || "").toUpperCase());
+  const canOperate = RECEPTION_OPERATION_ROLES.has(String(role || "").toUpperCase());
 
   const load = useCallback(async () => {
     if (!businessId || !otId) return;
@@ -171,15 +193,24 @@ export default function WorkOrderDetailPage({businessId, role}) {
         setOrder(null);
         setVehicle(null);
         setClient(null);
+        setDiagnoses([]);
+        setServices([]);
+        setPlazas([]);
         return;
       }
-      const [vehicleItem, clientItems] = await Promise.all([
+      const [vehicleItem, clientItems, diagnosisItems, serviceItems, plazaItems] = await Promise.all([
         obtenerVehiculo(businessId, orderItem.vehiculoId),
         canReadClients ? listarClientes(businessId) : Promise.resolve([]),
+        listarDiagnosticos(businessId, otId),
+        listarServiciosOT(businessId, otId),
+        listarPlazasTaller(businessId),
       ]);
       setOrder(orderItem);
       setVehicle(vehicleItem);
       setClient(clientItems.find((item) => item.clienteId === orderItem.clienteId) || null);
+      setDiagnoses(diagnosisItems);
+      setServices(serviceItems);
+      setPlazas(plazaItems);
     } catch (loadError) {
       setError(getWorkOrderErrorMessage(loadError));
     } finally {
@@ -188,6 +219,77 @@ export default function WorkOrderDetailPage({businessId, role}) {
   }, [businessId, canReadClients, otId]);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    setClosureTarget(null);
+    setClosureNotice("");
+    setClosureActionError("");
+  }, [businessId, otId]);
+
+  const refreshClosureEvents = useCallback(async () => {
+    if (!businessId || !otId) return;
+    const request = ++closureRequest.current;
+    setClosureLoading(true);
+    setClosureError("");
+    try {
+      const events = await obtenerEventosCierreOT(businessId, otId);
+      if (closureRequest.current === request) setClosureEvents(events);
+    } catch (loadError) {
+      if (closureRequest.current === request) setClosureError(getWorkOrderErrorMessage(loadError));
+    } finally {
+      if (closureRequest.current === request) setClosureLoading(false);
+    }
+  }, [businessId, otId]);
+
+  useEffect(() => {
+    setClosureEvents([]);
+    if (["pendiente_entrega", "cerrada"].includes(order?.estado)) void refreshClosureEvents();
+    else {
+      closureRequest.current += 1;
+      setClosureLoading(false);
+      setClosureError("");
+    }
+  }, [order?.estado, refreshClosureEvents]);
+
+  const refreshDiagnoses = useCallback(async () => {
+    const [items, currentOrder] = await Promise.all([
+      listarDiagnosticos(businessId, otId),
+      obtenerOrdenTrabajo(businessId, otId),
+    ]);
+    setDiagnoses(items);
+    if (currentOrder) setOrder(currentOrder);
+  }, [businessId, otId]);
+
+  const refreshServices = useCallback(async () => {
+    const [items, currentOrder] = await Promise.all([
+      listarServiciosOT(businessId, otId), obtenerOrdenTrabajo(businessId, otId),
+    ]);
+    setServices(items);
+    if (currentOrder) setOrder(currentOrder);
+  }, [businessId, otId]);
+
+  const confirmClosure = async () => {
+    if (!closureTarget || closureBusy) return;
+    setClosureBusy(true);
+    setClosureActionError("");
+    try {
+      await ejecutarCierreOT(businessId, otId, closureTarget.action,
+        closureTarget.revision, closureTarget.requestId);
+      setClosureTarget(null);
+      setClosureNotice(closureTarget.action === "finalizar"
+        ? "Reparación finalizada. El vehículo está pendiente de entrega."
+        : "Entrega registrada. La OT quedó cerrada.");
+      await refreshServices();
+      await refreshClosureEvents();
+    } catch (actionError) {
+      setClosureActionError(getWorkOrderErrorMessage(actionError));
+      if (String(actionError?.code || "").includes("aborted")) {
+        setClosureTarget(null);
+        try { await refreshServices(); } catch (refreshError) { setClosureActionError(getWorkOrderErrorMessage(refreshError)); }
+      }
+    } finally {
+      setClosureBusy(false);
+    }
+  };
 
   if (loading) return <main className="erp-page"><div className="erp-empty-state" role="status">Cargando orden de trabajo...</div></main>;
   if (error) return <main className="erp-page"><div className="vehicle-message vehicle-message--error" role="alert"><span>{error}</span><Button type="button" variant="secondary" icon={RefreshCw} onClick={load}>Reintentar</Button></div></main>;
@@ -195,7 +297,15 @@ export default function WorkOrderDetailPage({businessId, role}) {
 
   const vehicleLabel = vehicle ? `${vehicle.marca} ${vehicle.modelo}` : "Vehículo no disponible";
   const clientLabel = client?.nombreRazonSocial || order.clienteId || "Cliente histórico no disponible";
-  const plazaLabel = order.plazaId || "Sin asignar";
+  const plazaLabel = plazas.find((plaza) => plaza.plazaId === order.plazaId)?.nombre || "Sin asignar";
+  const completedServices = services.filter((service) => service.estado === "completado").length;
+  const allServicesCompleted = services.length > 0 && completedServices === services.length;
+
+  const beginClosure = (action) => {
+    setClosureActionError("");
+    setClosureNotice("");
+    setClosureTarget({action, revision: order.actualizadoEn?.toMillis?.(), requestId: createWorkOrderRequestId()});
+  };
 
   return <main className="erp-page work-orders-page">
     <header className="erp-page-header">
@@ -210,8 +320,14 @@ export default function WorkOrderDetailPage({businessId, role}) {
           <StatusBadge variant="neutral">Plaza: {plazaLabel}</StatusBadge>
         </div>
       </div>
-      <div className="erp-module-actions"><Button type="button" variant="secondary" icon={ArrowLeft} onClick={() => navigate("/taller/ordenes")}>Volver</Button></div>
+      <div className="erp-module-actions"><Button type="button" variant="secondary" icon={ArrowLeft} onClick={() => navigate("/taller/ordenes")}>Volver</Button><WorkOrderPlazaControl businessId={businessId} onChanged={load} order={order} plazas={plazas} role={role} /></div>
     </header>
+
+    {order.estado === "pendiente_entrega" &&
+      <div className="vehicle-message vehicle-message--warning work-order-delivery-notice" role="status">
+        <strong>Vehículo listo para entrega.</strong>
+        {canOperate && <Button type="button" disabled={closureBusy} onClick={() => beginClosure("entregar")}>Registrar entrega</Button>}
+      </div>}
 
     <div className="work-order-tabs" role="tablist" aria-label="Secciones de la orden de trabajo">
       {DETAIL_SECTIONS.map((section) => <button key={section.id} type="button" role="tab" aria-selected={activeSection === section.id} onClick={() => setActiveSection(section.id)}>{section.label}</button>)}
@@ -226,11 +342,32 @@ export default function WorkOrderDetailPage({businessId, role}) {
         <DetailItem label="Patente" value={vehicle?.patente || "No disponible"} />
         <DetailItem label="Cliente histórico" value={clientLabel} />
         <DetailItem label="Plaza" value={plazaLabel} />
+        <DetailItem label="Diagnósticos completados" value={diagnoses.filter((diagnosis) => diagnosis.estado === "completado").length} />
+        <DetailItem label="Servicios completados" value={`${completedServices} de ${services.length}`} />
       </dl>
     </section>}
     {activeSection === "recepcion" && <ReceptionPanel businessId={businessId} onSaved={load} order={order} otId={otId} role={role} />}
-    {activeSection === "diagnosticos" && <PendingSection title="Diagnósticos" description="Aquí se visualizarán los diagnósticos asociados a esta OT." />}
-    {activeSection === "servicios" && <PendingSection title="Servicios y repuestos" description="Aquí se definirá el alcance de reparación y sus materiales." />}
-    {activeSection === "historial" && <PendingSection title="Historial" description="Aquí se mostrarán los eventos registrados para esta OT." />}
+    {activeSection === "diagnosticos" && <DiagnosisPanel businessId={businessId} diagnoses={diagnoses} onChanged={refreshDiagnoses} order={order} otId={otId} role={role} />}
+    {activeSection === "servicios" && <ServicePlanningPanel businessId={businessId}
+      canFinalizeWorkOrder={canOperate && order.estado === "en_reparacion" && allServicesCompleted && !closureBusy}
+      onChanged={refreshServices}
+      onFinalizeWorkOrder={canOperate && order.estado === "en_reparacion" ? () => beginClosure("finalizar") : null}
+      order={order} otId={otId} role={role} services={services} />}
+    {["resumen", "servicios"].includes(activeSection) && <ApprovalPanel businessId={businessId} otId={otId} order={order} onChanged={refreshServices} />}
+    {activeSection === "historial" && <section className="erp-panel" aria-labelledby="work-order-history-title">
+      <div className="erp-panel-header"><div><h2 id="work-order-history-title" className="erp-panel-title">Finalización y entrega</h2><p className="erp-secondary-text">Eventos de cierre registrados para esta OT.</p></div></div>
+      {closureLoading && <div className="erp-empty-state" role="status">Cargando eventos de cierre...</div>}
+      {closureError && <div className="vehicle-message vehicle-message--error" role="alert">{closureError} <Button type="button" variant="secondary" onClick={refreshClosureEvents}>Reintentar</Button></div>}
+      {!closureLoading && !closureError && (closureEvents.length
+        ? <div className="erp-card-list">{closureEvents.map((event) => <article className="erp-record-card" key={event.eventoId}><h3 className="erp-record-card__title">{event.tipo === "reparacion_finalizada" ? "Reparación finalizada" : "Vehículo entregado"}</h3><p>{closureDate(event.fecha)} · {event.actorNombre}</p></article>)}</div>
+        : <div className="erp-empty-state">Aún no se ha registrado la finalización ni la entrega.</div>)}
+    </section>}
+    <ResponsiveDialog open={Boolean(closureTarget)} onClose={() => !closureBusy && setClosureTarget(null)} size="small" eyebrow="Taller"
+      title={closureTarget?.action === "finalizar" ? "Finalizar orden de trabajo" : "Registrar entrega"}
+      description={closureTarget?.action === "finalizar" ? "Se comprobará que todos los servicios estén completados." : "Se registrará la entrega física y la OT quedará cerrada."}
+      footer={<><Button type="button" variant="secondary" disabled={closureBusy} onClick={() => setClosureTarget(null)}>Cancelar</Button><Button type="button" disabled={closureBusy} onClick={confirmClosure}>{closureBusy ? "Procesando..." : "Confirmar"}</Button></>}>
+      <p>¿Confirmas esta acción para {order.numeroOT}?</p>
+      {closureActionError && <div className="vehicle-message vehicle-message--error" role="alert">{closureActionError}</div>}
+    </ResponsiveDialog>
   </main>;
 }

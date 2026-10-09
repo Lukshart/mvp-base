@@ -1,4 +1,9 @@
 import assert from "node:assert/strict";
+import {testWorkOrderApproval} from "./work-order-approval-cases.mjs";
+import {testServiceExecution} from "./work-order-service-execution-cases.mjs";
+import {testWorkOrderClosure} from "./work-order-closure-cases.mjs";
+import {testWorkOrderMaterials} from "./work-order-material-cases.mjs";
+import {testWorkshopPlazas} from "./work-order-plaza-cases.mjs";
 import {createRequire} from "node:module";
 import {deleteApp, initializeApp} from "firebase/app";
 import {
@@ -26,6 +31,9 @@ import {
 
 const PROJECT_ID = "tesis-inventario-ia";
 const RUN_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+const AUTH_PORT = Number(process.env.WORK_ORDER_TEST_AUTH_PORT || 9099);
+const FIRESTORE_PORT = Number(process.env.WORK_ORDER_TEST_FIRESTORE_PORT || 8080);
+const FUNCTIONS_PORT = Number(process.env.WORK_ORDER_TEST_FUNCTIONS_PORT || 5001);
 const requireFromFunctions = createRequire(
   new URL("../functions/package.json", import.meta.url)
 );
@@ -47,9 +55,9 @@ function createClientApp(name) {
   const auth = getAuth(app);
   const db = getFirestore(app);
   const functions = getFunctions(app, "us-central1");
-  connectAuthEmulator(auth, "http://127.0.0.1:9099", {disableWarnings: true});
-  connectFirestoreEmulator(db, "127.0.0.1", 8080);
-  connectFunctionsEmulator(functions, "127.0.0.1", 5001);
+  connectAuthEmulator(auth, `http://127.0.0.1:${AUTH_PORT}`, {disableWarnings: true});
+  connectFirestoreEmulator(db, "127.0.0.1", FIRESTORE_PORT);
+  connectFunctionsEmulator(functions, "127.0.0.1", FUNCTIONS_PORT);
   return {app, auth, db, functions};
 }
 
@@ -98,6 +106,10 @@ function storedClient(businessId, clienteId, name) {
   return {
     clienteId,
     negocioId: businessId,
+    tipoCliente: "persona",
+    paisCodigo: "CL",
+    identificadorFiscalTipo: "RUT",
+    identificadorFiscalValor: clienteId === "cliente-b" ? "11111111-1" : "76086428-5",
     nombreRazonSocial: name,
     estado: "activo",
   };
@@ -147,7 +159,8 @@ const admin = await authenticate(createClientApp("admin"), "admin");
 const technician = await authenticate(createClientApp("technician"), "technician");
 const member = await authenticate(createClientApp("member"), "member");
 const outsider = await authenticate(createClientApp("outsider"), "outsider");
-const clients = [owner, admin, technician, member, outsider];
+const anonymous = createClientApp("anonymous");
+const clients = [owner, admin, technician, member, outsider, anonymous];
 const adminApp = initializeAdminApp(
   {projectId: PROJECT_ID},
   `work-orders-admin-${RUN_ID}`
@@ -211,6 +224,17 @@ try {
     adminDb.doc(`negocios/${businessId}/vehiculos/vehiculo-b`).set(
       storedVehicle(businessId, "vehiculo-b", "cliente-b", "EFGH34")
     ),
+    adminDb.doc(`negocios/${businessId}/inventario/servicio-core`).set({
+      negocioId: businessId, tipoItem: "servicio", estado: "activo", nombre: "Cambio de aceite",
+      codigoInterno: "SER-001", unidad: "servicio", precioInterno: 25000,
+    }),
+    adminDb.doc(`negocios/${businessId}/inventario/producto-core`).set({
+      negocioId: businessId, tipoItem: "producto", estado: "activo", nombre: "Filtro",
+      codigoInterno: "PRO-001", unidad: "unidad", precioInterno: 8000, stock: 12,
+    }),
+    adminDb.doc(`negocios/${businessId}/inventario/servicio-externo`).set({
+      negocioId: outsiderBusinessId, tipoItem: "servicio", estado: "activo", nombre: "Ajeno",
+    }),
     adminDb.doc(`negocios/${businessId}/vehiculos/vehiculo-inconsistente`).set(
       storedVehicle(
         outsiderBusinessId,
@@ -276,6 +300,15 @@ try {
   console.log("OK creación OT: contrato inicial, autoría y timestamps autoritativos");
 
   await expectCallableError(
+    "diagnóstico exige recepción previa",
+    () => callable(owner, "registrarDiagnostico")({
+      businessId, otId, requestId: `diagnosis-early-${RUN_ID}`,
+      diagnostico: {responsableUid: technician.uid, descripcion: "", observaciones: ""},
+    }),
+    ["failed-precondition"], /recepción/i
+  );
+
+  await expectCallableError(
     "anomalía de recepción sin descripción",
     () => callable(owner, "registrarRecepcionOrdenTrabajo")({
       businessId,
@@ -328,6 +361,187 @@ try {
   assert.equal(orderAfterReceptionUpdate.actualizadoPorUid, technician.uid);
   console.log("OK actualización recepción: rol operativo autorizado y autoría inicial preservada");
 
+  const serviceRequestId = `service-create-${RUN_ID}`;
+  await expectCallableError("ServicioOT rechaza Producto Core", () => callable(owner, "crearServicioOT")({
+    businessId, otId, requestId: `service-wrong-${RUN_ID}`,
+    servicio: {itemId: "producto-core", responsableUid: technician.uid},
+  }), ["failed-precondition"], /servicio activo/i);
+  await expectCallableError("ServicioOT rechaza ítem de otro negocio", () => callable(owner, "crearServicioOT")({
+    businessId, otId, requestId: `service-cross-${RUN_ID}`,
+    servicio: {itemId: "servicio-externo", responsableUid: technician.uid},
+  }), ["failed-precondition"], /mismo negocio/i);
+  await expectCallableError("ServicioOT rechaza responsable externo", () => callable(owner, "crearServicioOT")({
+    businessId, otId, requestId: `service-responsible-${RUN_ID}`,
+    servicio: {itemId: "servicio-core", responsableUid: outsider.uid},
+  }), ["failed-precondition"], /responsable asignable/i);
+  await expectCallableError("ServicioOT rechaza precio manual", () => callable(owner, "crearServicioOT")({
+    businessId, otId, requestId: `service-price-${RUN_ID}`,
+    servicio: {itemId: "servicio-core", responsableUid: technician.uid, precioUnitario: 1},
+  }), ["invalid-argument"], /no está admitido/i);
+  const createdService = await callable(technician, "crearServicioOT")({
+    businessId, otId, requestId: serviceRequestId,
+    servicio: {itemId: "servicio-core", responsableUid: technician.uid},
+  });
+  const serviceId = createdService.data.servicioOtId;
+  const servicePath = `${orderPath}/servicios/${serviceId}`;
+  let service = (await adminDb.doc(servicePath).get()).data();
+  assert.equal(service.estado, "pendiente");
+  assert.equal(service.precioUnitario, null);
+  assert.equal(service.servicioSnapshot, null);
+  assert.deepEqual(service.productos, []);
+  assert.equal(service.creadoPorUid, technician.uid);
+  assert.equal((await callable(technician, "crearServicioOT")({
+    businessId, otId, requestId: serviceRequestId,
+    servicio: {itemId: "servicio-core", responsableUid: technician.uid},
+  })).data.sinCambios, true);
+  assert.equal((await adminDb.collection(`${orderPath}/servicios`).get()).size, 1);
+  await expectCallableError("ProductoOT rechaza Servicio Core", () => callable(owner, "agregarProductoOT")({
+    businessId, otId, servicioOtId: serviceId, requestId: `product-wrong-${RUN_ID}`,
+    itemId: "servicio-core", cantidad: 1,
+  }), ["failed-precondition"], /producto activo/i);
+  await expectCallableError("ProductoOT rechaza precio manual", () => callable(owner, "agregarProductoOT")({
+    businessId, otId, servicioOtId: serviceId, requestId: `product-price-${RUN_ID}`,
+    itemId: "producto-core", cantidad: 1, precioUnitario: 1,
+  }), ["invalid-argument"], /no está admitido/i);
+  const stockBefore = (await adminDb.doc(`negocios/${businessId}/inventario/producto-core`).get()).data().stock;
+  const addedProduct = await callable(owner, "agregarProductoOT")({
+    businessId, otId, servicioOtId: serviceId, requestId: `product-add-${RUN_ID}`,
+    itemId: "producto-core", cantidad: 2,
+  });
+  const productId = addedProduct.data.productoOtId;
+  service = (await adminDb.doc(servicePath).get()).data();
+  assert.equal(service.productos[0].productoOtId, productId);
+  assert.equal(service.productos[0].itemId, "producto-core");
+  assert.equal(service.productos[0].cantidad, 2);
+  assert.equal(service.productos[0].precioUnitario, null);
+  assert.equal(service.productos[0].productoSnapshot, null);
+  assert.equal((await callable(owner, "agregarProductoOT")({
+    businessId, otId, servicioOtId: serviceId, requestId: `product-add-${RUN_ID}`,
+    itemId: "producto-core", cantidad: 2,
+  })).data.sinCambios, true);
+  await callable(admin, "actualizarServicioOT")({
+    businessId, otId, servicioOtId: serviceId, expectedActualizadoEn: service.actualizadoEn.toMillis(),
+    servicio: {itemId: "servicio-core", responsableUid: member.uid},
+  });
+  service = (await adminDb.doc(servicePath).get()).data();
+  assert.equal(service.responsableUid, member.uid);
+  await callable(member, "actualizarProductoOT")({
+    businessId, otId, servicioOtId: serviceId, productoOtId: productId, cantidad: 3,
+    expectedActualizadoEn: service.actualizadoEn.toMillis(),
+  });
+  service = (await adminDb.doc(servicePath).get()).data();
+  assert.equal(service.productos[0].cantidad, 3);
+  await expectCallableError("versión obsoleta de ProductoOT", () => callable(owner, "eliminarProductoOT")({
+    businessId, otId, servicioOtId: serviceId, productoOtId: productId,
+    expectedActualizadoEn: 0,
+  }), ["aborted"], /otra sesión/i);
+  await callable(owner, "eliminarProductoOT")({
+    businessId, otId, servicioOtId: serviceId, productoOtId: productId,
+    expectedActualizadoEn: service.actualizadoEn.toMillis(),
+  });
+  service = (await adminDb.doc(servicePath).get()).data();
+  assert.deepEqual(service.productos, []);
+  assert.equal((await adminDb.doc(`negocios/${businessId}/inventario/producto-core`).get()).data().stock, stockBefore);
+  await expectFirestoreDenied("SDK cliente no escribe ServicioOT", () => setDoc(doc(owner.db, servicePath), {estado: "completado"}, {merge: true}));
+  await expectFirestoreDenied("otro negocio no lee ServicioOT", () => getDoc(doc(outsider.db, servicePath)));
+  assert.equal((await getDocs(query(collection(technician.db, `${orderPath}/servicios`),
+    where("negocioId", "==", businessId), where("otId", "==", otId)))).size, 1);
+  console.log("OK planificación OT: referencias Core, responsable, idempotencia, cantidad, stock intacto y RBAC");
+
+  const assignable = await callable(technician, "listarPersonasAsignablesTaller")({businessId});
+  assert.ok(assignable.data.personas.some((person) => person.uid === technician.uid));
+  assert.ok(!assignable.data.personas.some((person) => person.uid === owner.uid));
+  assert.ok(assignable.data.actores.some((person) => person.uid === owner.uid));
+  assert.ok(assignable.data.personas.every((person) => Object.keys(person).sort().join(",") === "nombre,uid"));
+  assert.ok(assignable.data.actores.every((person) => Object.keys(person).sort().join(",") === "nombre,uid"));
+  const diagnosisRequestId = `diagnosis-create-${RUN_ID}`;
+  const draftInput = {responsableUid: technician.uid, descripcion: "", observaciones: "Revisar motor"};
+  const draft = await callable(owner, "registrarDiagnostico")({
+    businessId, otId, requestId: diagnosisRequestId, diagnostico: draftInput,
+  });
+  const diagnosisId = draft.data.diagnosticoId;
+  const diagnosisPath = `${orderPath}/diagnosticos/${diagnosisId}`;
+  let diagnosis = (await adminDb.doc(diagnosisPath).get()).data();
+  assert.equal(diagnosis.estado, "borrador");
+  assert.equal(diagnosis.responsableUid, technician.uid);
+  assert.equal(diagnosis.creadoPorUid, owner.uid);
+  assert.equal(diagnosis.actualizadoPorUid, owner.uid);
+  assert.equal(diagnosis.completadoEn, null);
+  assert.ok(diagnosis.creadoEn?.toDate());
+  assert.ok(diagnosis.actualizadoEn?.toDate());
+  const retry = await callable(owner, "registrarDiagnostico")({
+    businessId, otId, requestId: diagnosisRequestId, diagnostico: draftInput,
+  });
+  assert.equal(retry.data.sinCambios, true);
+  assert.equal((await adminDb.collection(`${orderPath}/diagnosticos`).get()).size, 1);
+  await expectCallableError("responsable de otro negocio", () => callable(owner, "registrarDiagnostico")({
+    businessId, otId, requestId: `diagnosis-cross-${RUN_ID}`,
+    diagnostico: {responsableUid: outsider.uid, descripcion: "Falla", observaciones: ""},
+  }), ["failed-precondition"], /responsable asignable/i);
+  await expectCallableError("estado directo de diagnóstico", () => callable(owner, "registrarDiagnostico")({
+    businessId, otId, requestId: `diagnosis-state-${RUN_ID}`,
+    diagnostico: {...draftInput, estado: "completado"},
+  }), ["invalid-argument"], /no está admitido/i);
+  await expectCallableError("descripción vacía no completa", () => callable(technician, "completarDiagnostico")({
+    businessId, otId, diagnosticoId: diagnosisId, expectedActualizadoEn: diagnosis.actualizadoEn.toMillis(),
+  }), ["failed-precondition"], /Describe el diagnóstico/i);
+  await expectCallableError("miembro sin acceso no edita diagnóstico", () => callable(outsider, "actualizarDiagnostico")({
+    businessId, otId, diagnosticoId: diagnosisId, expectedActualizadoEn: diagnosis.actualizadoEn.toMillis(),
+    diagnostico: {responsableUid: technician.uid, descripcion: "No autorizado", observaciones: ""},
+  }), ["permission-denied"]);
+  await callable(technician, "actualizarDiagnostico")({
+    businessId, otId, diagnosticoId: diagnosisId, expectedActualizadoEn: diagnosis.actualizadoEn.toMillis(),
+    diagnostico: {responsableUid: technician.uid, descripcion: "Falla de arranque confirmada", observaciones: "Revisar motor"},
+  });
+  const oldRevision = diagnosis.actualizadoEn.toMillis();
+  diagnosis = (await adminDb.doc(diagnosisPath).get()).data();
+  assert.equal(diagnosis.actualizadoPorUid, technician.uid);
+  assert.equal(diagnosis.creadoPorUid, owner.uid);
+  await expectCallableError("edición concurrente", () => callable(owner, "actualizarDiagnostico")({
+    businessId, otId, diagnosticoId: diagnosisId, expectedActualizadoEn: oldRevision,
+    diagnostico: {responsableUid: technician.uid, descripcion: "Dato obsoleto", observaciones: ""},
+  }), ["aborted"], /otra sesión/i);
+  await callable(admin, "completarDiagnostico")({
+    businessId, otId, diagnosticoId: diagnosisId, expectedActualizadoEn: diagnosis.actualizadoEn.toMillis(),
+  });
+  diagnosis = (await adminDb.doc(diagnosisPath).get()).data();
+  assert.equal(diagnosis.estado, "completado");
+  assert.equal(diagnosis.completadoPorUid, admin.uid);
+  assert.ok(diagnosis.completadoEn?.toDate());
+  await expectCallableError("diagnóstico completado inmutable", () => callable(owner, "actualizarDiagnostico")({
+    businessId, otId, diagnosticoId: diagnosisId, expectedActualizadoEn: diagnosis.actualizadoEn.toMillis(),
+    diagnostico: {responsableUid: technician.uid, descripcion: "Cambio posterior", observaciones: ""},
+  }), ["failed-precondition"], /solo lectura/i);
+  await expectCallableError("completar dos veces", () => callable(admin, "completarDiagnostico")({
+    businessId, otId, diagnosticoId: diagnosisId, expectedActualizadoEn: diagnosis.actualizadoEn.toMillis(),
+  }), ["failed-precondition"], /ya está completado/i);
+  const nextDiagnosis = await callable(member, "registrarDiagnostico")({
+    businessId, otId, requestId: `diagnosis-second-${RUN_ID}`,
+    diagnostico: {responsableUid: member.uid, descripcion: "Nueva observación", observaciones: ""},
+  });
+  assert.notEqual(nextDiagnosis.data.diagnosticoId, diagnosisId);
+  assert.equal((await adminDb.collection(`${orderPath}/diagnosticos`).get()).size, 2);
+  const events = (await adminDb.collection(`${orderPath}/historial`).get()).docs.map((item) => item.data());
+  assert.deepEqual(events.filter((event) => event.tipo.startsWith("diagnostico_"))
+    .map((event) => event.tipo).sort(), [
+    "diagnostico_actualizado", "diagnostico_completado", "diagnostico_creado", "diagnostico_creado",
+  ].sort());
+  assert.ok(events.filter((event) => event.tipo.startsWith("diagnostico_"))
+    .every((event) => event.actorUid && event.fecha?.toDate() && event.detalle?.diagnosticoId));
+  assert.deepEqual(events.filter((event) => event.tipo.includes("_ot_"))
+    .map((event) => event.tipo).sort(), [
+      "servicio_ot_creado", "servicio_ot_actualizado", "producto_ot_agregar",
+      "producto_ot_actualizar", "producto_ot_eliminar",
+    ].sort());
+  await expectFirestoreDenied("SDK cliente no escribe diagnóstico", () => setDoc(doc(owner.db, `${orderPath}/diagnosticos/directo`), {
+    negocioId: businessId, otId, estado: "completado",
+  }));
+  await expectFirestoreDenied("otro negocio no lee diagnóstico", () => getDoc(doc(outsider.db, diagnosisPath)));
+  const visibleDiagnoses = await getDocs(query(collection(technician.db, `${orderPath}/diagnosticos`),
+    where("negocioId", "==", businessId), where("otId", "==", otId)));
+  assert.equal(visibleDiagnoses.size, 2);
+  console.log("OK Diagnósticos: borrador, responsable, concurrencia, completar explícito, inmutabilidad, auditoría y permisos");
+
   const repeated = await callable(owner, "crearOrdenTrabajo")({
     businessId,
     requestId,
@@ -363,12 +577,19 @@ try {
   assert.equal(afterOwnerChange.data.ordenTrabajo.numeroOT, "OT-000002");
   assert.equal(afterOwnerChange.data.ordenTrabajo.clienteId, "cliente-b");
   assert.equal((await adminDb.doc(orderPath).get()).data().clienteId, "cliente-a");
-  await adminDb.doc(`negocios/${businessId}/ordenesTrabajo/${afterOwnerChange.data.ordenTrabajo.otId}`).update({
-    plazaId: "plaza-prueba",
+  const transitionPlazaRequestId = `plaza-transition-${RUN_ID}`;
+  const transitionPlaza = await callable(owner, "crearPlazaTaller")({
+    businessId, requestId: transitionPlazaRequestId, plaza: {nombre: "Taller - Plaza 1"},
+  });
+  const transitionOtId = afterOwnerChange.data.ordenTrabajo.otId;
+  const transitionOrderRef = adminDb.doc(`negocios/${businessId}/ordenesTrabajo/${transitionOtId}`);
+  await callable(admin, "asignarPlazaOT")({
+    businessId, otId: transitionOtId, plazaId: transitionPlaza.data.plaza.plazaId,
+    expectedActualizadoEn: (await transitionOrderRef.get()).data().actualizadoEn.toMillis(),
   });
   const receptionWithPlaza = await callable(admin, "registrarRecepcionOrdenTrabajo")({
     businessId,
-    otId: afterOwnerChange.data.ordenTrabajo.otId,
+    otId: transitionOtId,
     recepcion: workOrderReception(),
   });
   assert.equal(receptionWithPlaza.data.ordenTrabajo.estado, "en_diagnostico");
@@ -400,6 +621,13 @@ try {
     4
   );
   console.log("OK concurrencia OT: el contador entrega números únicos e incrementales");
+
+  await testWorkshopPlazas({
+    adminDb, businessId, transitionOtId, transitionPlazaId: transitionPlaza.data.plaza.plazaId,
+    primaryOtId: otId, concurrentOtIds: concurrent.map((result) => result.data.ordenTrabajo.otId),
+    owner, admin, technician, member, outsider, callable, expectCallableError,
+    expectFirestoreDenied, runId: RUN_ID,
+  });
 
   await expectCallableError(
     "frontend intenta fijar numeroOT y estado",
@@ -447,15 +675,12 @@ try {
     ["failed-precondition"],
     /propietario actual no pertenece/i
   );
-  await expectCallableError(
-    "TECNICO no crea OT",
-    () => callable(technician, "crearOrdenTrabajo")({
-      businessId,
-      requestId: `work-order-technician-${RUN_ID}`,
-      ordenTrabajo: {vehiculoId: "vehiculo-a"},
-    }),
-    ["permission-denied"]
-  );
+  const technicianOrder = await callable(technician, "crearOrdenTrabajo")({
+    businessId,
+    requestId: `work-order-technician-${RUN_ID}`,
+    ordenTrabajo: {vehiculoId: "vehiculo-a"},
+  });
+  assert.equal(technicianOrder.data.ordenTrabajo.creadoPorUid, technician.uid);
   await expectCallableError(
     "MEMBER no crea OT",
     () => callable(member, "crearOrdenTrabajo")({
@@ -497,7 +722,7 @@ try {
     collection(technician.db, `negocios/${businessId}/ordenesTrabajo`),
     where("negocioId", "==", businessId)
   ));
-  assert.equal(listed.size, 4);
+  assert.equal(listed.size, 5);
   console.log("OK lectura OT: listado filtrado autorizado para Taller");
   await expectFirestoreDenied(
     "otro negocio no puede leer la OT",
@@ -523,7 +748,29 @@ try {
     "SDK cliente no puede leer idempotencia OT",
     () => getDoc(doc(owner.db, `negocios/${businessId}/otCreateRequests/${requestId}`))
   );
+  await adminDb.doc(`negocios/${businessId}/perfilesEmpleados/taller-only`).set({
+    negocioId: businessId, estado: "activo", modulos: ["taller"],
+  });
+  await adminDb.doc(`membresias/${businessId}__${member.uid}`).update({profileId: "taller-only"});
+  await expectFirestoreDenied("perfil solo Taller no lee costos de Inventario Core", () =>
+    getDocs(query(collection(member.db, `negocios/${businessId}/inventario`),
+      where("negocioId", "==", businessId))));
+  const coreCatalog = (await callable(member, "listarCatalogoTaller")({businessId})).data.items;
+  assert.ok(coreCatalog.some((item) => item.itemId === "servicio-core" && item.precioEfectivo === 25000));
+  assert.ok(coreCatalog.some((item) => item.itemId === "producto-core" && item.precioEfectivo === 8000));
+  assert.ok(coreCatalog.every((item) => !Object.keys(item).some((key) => /costo|margen|precioInterno/i.test(key))));
+  assert.ok((await getDoc(doc(member.db, servicePath))).exists());
+  console.log("OK perfil solo Taller: catálogo Core filtrado sin costos y ServiciosOT del mismo negocio");
   console.log("WORK_ORDERS_INTEGRATED_LOCAL_OK");
+  await testWorkOrderApproval({adminDb, businessId, otId, serviceId, diagnosisPath,
+    owner, admin, technician, member, outsider, callable, expectCallableError, expectFirestoreDenied, runId: RUN_ID});
+  await testServiceExecution({adminDb, businessId, otId, serviceId, owner, admin, technician, member,
+    outsider, callable, expectCallableError, expectFirestoreDenied, runId: RUN_ID});
+  await testWorkOrderMaterials({adminDb, businessId, otId, owner, admin, technician, member, outsider,
+    anonymous, callable, expectCallableError, expectFirestoreDenied, runId: RUN_ID});
+  await testWorkOrderClosure({adminDb, businessId, otId, serviceId, owner, admin, technician, member,
+    outsider, anonymous, callable, expectCallableError, expectFirestoreDenied,
+    reception: workOrderReception(), runId: RUN_ID});
 } finally {
   await Promise.all(clients.map((client) => terminate(client.db)));
   await Promise.all(clients.map((client) => deleteApp(client.app)));

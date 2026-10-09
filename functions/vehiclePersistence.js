@@ -1,7 +1,7 @@
 "use strict";
 
 const {createHash} = require("node:crypto");
-const {TALLER_MANAGEMENT_ROLES} = require("./rbac");
+const {TALLER_CREATION_ROLES, TALLER_MANAGEMENT_ROLES} = require("./rbac");
 
 const VEHICLE_TYPES = Object.freeze([
   "sedan",
@@ -261,9 +261,39 @@ async function requireManagementAccess(request, dependencies) {
   );
 }
 
+async function requireCreationAccess(request, dependencies) {
+  return dependencies.requireBusinessAccess(
+    request,
+    {db: dependencies.db, HttpsError: dependencies.HttpsError},
+    {
+      roles: TALLER_CREATION_ROLES,
+      requiresVerifiedBusiness: true,
+      moduleId: "taller",
+    }
+  );
+}
+
+async function listarClientesSeleccionablesTallerHandler(request, dependencies) {
+  const context = await requireCreationAccess(request, dependencies);
+  const snapshot = await context.businessRef.collection("clientes")
+    .where("negocioId", "==", context.businessId).get();
+  const clientes = snapshot.docs.map((entry) => ({clienteId: entry.id, ...entry.data()}))
+    .filter((client) => client.negocioId === context.businessId && client.estado === "activo")
+    .map((client) => ({
+      clienteId: client.clienteId,
+      negocioId: context.businessId,
+      nombreRazonSocial: String(client.nombreRazonSocial || "Cliente sin nombre"),
+      identificadorFiscalValor: String(client.identificadorFiscalValor || client.rut || ""),
+      rut: String(client.rut || ""),
+      estado: "activo",
+    }))
+    .sort((left, right) => left.nombreRazonSocial.localeCompare(right.nombreRazonSocial, "es", {sensitivity: "base"}));
+  return {clientes};
+}
+
 async function crearVehiculoHandler(request, dependencies) {
   const {db, FieldValue, HttpsError} = dependencies;
-  const context = await requireManagementAccess(request, dependencies);
+  const context = await requireCreationAccess(request, dependencies);
   const normalized = normalizeVehicleInput(
     request?.data?.vehiculo,
     HttpsError
@@ -520,6 +550,7 @@ module.exports = {
   actualizarVehiculoHandler,
   cambiarPropietarioVehiculoHandler,
   crearVehiculoHandler,
+  listarClientesSeleccionablesTallerHandler,
   normalizeVehicleInput,
   normalizeVehicleKey,
   normalizeVehiclePlate,

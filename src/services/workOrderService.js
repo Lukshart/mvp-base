@@ -3,7 +3,7 @@ import {httpsCallable} from "firebase/functions";
 import {assertCloudFunctionAllowed} from "../config/firebaseEnvironment.mjs";
 import {adaptStoredWorkOrder} from "../domain/workOrderModel.mjs";
 import {db, getFirebaseFunctions} from "../firebase/firebaseConfig";
-import {workOrderDocPath, workOrdersCollectionPath} from "../firebase/firestorePaths";
+import {workOrderDiagnosesCollectionPath, workOrderDocPath, workOrderServicesCollectionPath, workOrdersCollectionPath} from "../firebase/firestorePaths";
 
 const functions = getFirebaseFunctions("us-central1");
 
@@ -35,6 +35,7 @@ export function getWorkOrderErrorMessage(error) {
   }
   if (code === "not-found") return serverMessage || "El vehículo ya no existe.";
   if (code === "already-exists") return serverMessage || "La solicitud ya fue utilizada.";
+  if (code === "aborted") return serverMessage || "El registro cambió en otra sesión. Actualiza la ficha.";
   if (["invalid-argument", "failed-precondition"].includes(code)) {
     return serverMessage || "No fue posible crear la orden de trabajo.";
   }
@@ -94,4 +95,164 @@ export async function registrarRecepcionOrdenTrabajo(businessId, otId, recepcion
     recepcion,
   });
   return adaptStoredWorkOrder(response.data.ordenTrabajo);
+}
+
+export async function listarDiagnosticos(businessId, otId) {
+  const normalizedBusinessId = requireIdentifier(businessId, "El negocio activo");
+  const normalizedOtId = requireIdentifier(otId, "La orden de trabajo");
+  const reference = collection(db, ...workOrderDiagnosesCollectionPath(normalizedBusinessId, normalizedOtId));
+  const snapshot = await getDocs(query(reference,
+    where("negocioId", "==", normalizedBusinessId), where("otId", "==", normalizedOtId)));
+  return snapshot.docs.map((item) => ({...item.data(), diagnosticoId: item.id}))
+    .sort((left, right) => (left.creadoEn?.toMillis?.() || 0) - (right.creadoEn?.toMillis?.() || 0));
+}
+
+export async function listarPersonasAsignablesTaller(businessId) {
+  assertCloudFunctionAllowed("consultar responsables de Taller");
+  const response = await httpsCallable(functions, "listarPersonasAsignablesTaller")({
+    businessId: requireIdentifier(businessId, "El negocio activo"),
+  });
+  return {
+    personas: response.data.personas || [],
+    actores: response.data.actores || [],
+  };
+}
+
+async function diagnosisCall(name, operation, businessId, otId, payload) {
+  assertCloudFunctionAllowed(operation);
+  const response = await httpsCallable(functions, name)({
+    businessId: requireIdentifier(businessId, "El negocio activo"),
+    otId: requireIdentifier(otId, "La orden de trabajo"),
+    ...payload,
+  });
+  return response.data;
+}
+
+export function obtenerResumenAprobacionOT(businessId, otId) {
+  return diagnosisCall("obtenerResumenAprobacionOT", "consultar el alcance de la OT", businessId, otId, {});
+}
+
+export function ejecutarAccionAprobacionOT(businessId, otId, action, requestId, expectedActualizadoEn, motivo = "") {
+  const calls = {enviar: "enviarOTAprobacion", aprobar: "aprobarOT", rechazar: "rechazarOT", revalidar: "revalidarDisponibilidadOT"};
+  if (!calls[action]) throw new Error("Acción de aprobación no válida.");
+  return diagnosisCall(calls[action], "gestionar la aprobación de la OT", businessId, otId, {
+    requestId: requireIdentifier(requestId, "La solicitud"), expectedActualizadoEn, motivo,
+  });
+}
+
+export function registrarDiagnostico(businessId, otId, diagnostico, requestId) {
+  return diagnosisCall("registrarDiagnostico", "registrar un diagnóstico", businessId, otId, {
+    requestId: requireIdentifier(requestId, "La solicitud de diagnóstico"), diagnostico,
+  });
+}
+
+export function actualizarDiagnostico(businessId, otId, diagnosticoId, diagnostico, expectedActualizadoEn) {
+  return diagnosisCall("actualizarDiagnostico", "actualizar un diagnóstico", businessId, otId, {
+    diagnosticoId: requireIdentifier(diagnosticoId, "El diagnóstico"), diagnostico, expectedActualizadoEn,
+  });
+}
+
+export function completarDiagnostico(businessId, otId, diagnosticoId, expectedActualizadoEn) {
+  return diagnosisCall("completarDiagnostico", "completar un diagnóstico", businessId, otId, {
+    diagnosticoId: requireIdentifier(diagnosticoId, "El diagnóstico"), expectedActualizadoEn,
+  });
+}
+
+export async function listarServiciosOT(businessId, otId) {
+  const normalizedBusinessId = requireIdentifier(businessId, "El negocio activo");
+  const normalizedOtId = requireIdentifier(otId, "La orden de trabajo");
+  const reference = collection(db, ...workOrderServicesCollectionPath(normalizedBusinessId, normalizedOtId));
+  const snapshot = await getDocs(query(reference,
+    where("negocioId", "==", normalizedBusinessId), where("otId", "==", normalizedOtId)));
+  return snapshot.docs.map((item) => ({...item.data(), servicioOtId: item.id}))
+    .sort((left, right) => (left.creadoEn?.toMillis?.() || 0) - (right.creadoEn?.toMillis?.() || 0));
+}
+
+export async function listarCatalogoTaller(businessId) {
+  assertCloudFunctionAllowed("consultar catálogo Core para Taller");
+  const response = await httpsCallable(functions, "listarCatalogoTaller")({
+    businessId: requireIdentifier(businessId, "El negocio activo"),
+  });
+  return response.data.items || [];
+}
+
+export function crearServicioOT(businessId, otId, servicio, requestId) {
+  return diagnosisCall("crearServicioOT", "agregar un servicio a la OT", businessId, otId, {
+    requestId: requireIdentifier(requestId, "La solicitud de servicio"), servicio,
+  });
+}
+
+export function actualizarServicioOT(businessId, otId, servicioOtId, servicio, expectedActualizadoEn) {
+  return diagnosisCall("actualizarServicioOT", "actualizar un servicio de la OT", businessId, otId, {
+    servicioOtId: requireIdentifier(servicioOtId, "El servicio de la OT"), servicio, expectedActualizadoEn,
+  });
+}
+
+export function eliminarServicioOT(businessId, otId, servicioOtId, expectedActualizadoEn) {
+  return diagnosisCall("eliminarServicioOT", "eliminar un servicio de la OT", businessId, otId, {
+    servicioOtId: requireIdentifier(servicioOtId, "El servicio de la OT"), expectedActualizadoEn,
+  });
+}
+
+export function iniciarServicioOT(businessId, otId, servicioOtId, expectedActualizadoEn, requestId) {
+  return diagnosisCall("iniciarServicioOT", "iniciar un servicio de la OT", businessId, otId, {
+    servicioOtId: requireIdentifier(servicioOtId, "El servicio de la OT"), expectedActualizadoEn,
+    requestId: requireIdentifier(requestId, "La solicitud"),
+  });
+}
+
+export function obtenerMaterialesOT(businessId, otId) {
+  return diagnosisCall("obtenerMaterialesOT", "consultar consumos de la OT", businessId, otId, {});
+}
+
+export function registrarSalidaMaterialOT(businessId, otId, servicioOtId, itemId, cantidad, requestId) {
+  return diagnosisCall("registrarSalidaMaterialOT", "registrar consumo", businessId, otId,
+    {servicioOtId, itemId, cantidad, requestId});
+}
+
+export function registrarDevolucionMaterialOT(businessId, otId, servicioOtId, movimientoOrigenId, cantidad, requestId) {
+  return diagnosisCall("registrarDevolucionMaterialOT", "registrar devolución", businessId, otId,
+    {servicioOtId, movimientoOrigenId, cantidad, requestId});
+}
+
+export function completarServicioOT(businessId, otId, servicioOtId, expectedActualizadoEn, requestId) {
+  return diagnosisCall("completarServicioOT", "completar un servicio de la OT", businessId, otId, {
+    servicioOtId: requireIdentifier(servicioOtId, "El servicio de la OT"), expectedActualizadoEn,
+    requestId: requireIdentifier(requestId, "La solicitud"),
+  });
+}
+
+export function ejecutarCierreOT(businessId, otId, action, expectedActualizadoEn, requestId) {
+  const calls = {finalizar: "finalizarReparacionOT", entregar: "registrarEntregaOT"};
+  if (!calls[action]) throw new Error("Acción de cierre no válida.");
+  return diagnosisCall(calls[action], "actualizar el cierre de la OT", businessId, otId, {
+    expectedActualizadoEn, requestId: requireIdentifier(requestId, "La solicitud"),
+  });
+}
+
+export async function obtenerEventosCierreOT(businessId, otId) {
+  const response = await diagnosisCall("obtenerEventosCierreOT", "consultar la finalización y entrega", businessId, otId, {});
+  return response.eventos || [];
+}
+
+export function agregarProductoOT(businessId, otId, servicioOtId, itemId, cantidad, requestId) {
+  return diagnosisCall("agregarProductoOT", "planificar un producto", businessId, otId, {
+    servicioOtId: requireIdentifier(servicioOtId, "El servicio de la OT"),
+    itemId: requireIdentifier(itemId, "El producto Core"), cantidad,
+    requestId: requireIdentifier(requestId, "La solicitud de producto"),
+  });
+}
+
+export function actualizarProductoOT(businessId, otId, servicioOtId, productoOtId, cantidad, expectedActualizadoEn) {
+  return diagnosisCall("actualizarProductoOT", "actualizar la cantidad planificada", businessId, otId, {
+    servicioOtId: requireIdentifier(servicioOtId, "El servicio de la OT"),
+    productoOtId: requireIdentifier(productoOtId, "El producto planificado"), cantidad, expectedActualizadoEn,
+  });
+}
+
+export function eliminarProductoOT(businessId, otId, servicioOtId, productoOtId, expectedActualizadoEn) {
+  return diagnosisCall("eliminarProductoOT", "eliminar un producto planificado", businessId, otId, {
+    servicioOtId: requireIdentifier(servicioOtId, "El servicio de la OT"),
+    productoOtId: requireIdentifier(productoOtId, "El producto planificado"), expectedActualizadoEn,
+  });
 }
