@@ -345,9 +345,10 @@ try {
   const technicianCreate = await callable(technician, "crearVehiculo")({
     businessId,
     requestId: `vehicle-technician-${RUN_ID}`,
-    vehiculo: vehiclePayload({patente: "TCDX12"}),
+    vehiculo: vehiclePayload({patente: "TCDX12", vin: "1HGCM82633A004353"}),
   });
-  assert.equal(technicianCreate.data.vehiculo.creadoPorUid, technician.uid);
+  assert.equal((await adminDb.doc(`negocios/${businessId}/vehiculos/${technicianCreate.data.vehiculo.vehiculoId}`).get())
+    .data().creadoPorUid, technician.uid);
 
   const crossBusinessCreate = await callable(outsider, "crearVehiculo")({
     businessId: outsiderBusinessId,

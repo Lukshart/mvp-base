@@ -119,6 +119,7 @@ export async function testWorkOrderMaterials({adminDb, businessId, otId, owner, 
   assert.ok(first.creadoEn?.toDate()); assert.ok(!Number.isNaN(Date.parse(first.fecha)));
   assert.equal(first.otId, otId); assert.equal(first.servicioOtId, servicioOtId);
   assert.equal(first.movimientoOrigenId, null);
+  assert.equal(first.modeloEconomiaInventarioVersion, 1);
   assert.equal((await readItem()).baselineCostoInventario.valorInicial, 43.33);
   await assertStockValue(11, 36.66);
   await reject("requestId distinto payload", technician, "registrarSalidaMaterialOT", {...input, cantidad: 3}, ["already-exists"]);
@@ -189,6 +190,7 @@ export async function testWorkOrderMaterials({adminDb, businessId, otId, owner, 
   const partial = await giveBack(member, firstId, 1, returnInputId);
   noCosts(partial.data);
   const returnMovement = (await ledger.doc(partial.data.movimientoId).get()).data();
+  assert.equal(returnMovement.modeloEconomiaInventarioVersion, first.modeloEconomiaInventarioVersion);
   assert.equal(returnMovement.costoUnitario, first.costoUnitario);
   assert.equal(returnMovement.costoTotal, 3.33);
   assert.equal((await giveBack(member, firstId, 1, returnInputId)).data.sinCambios, true);

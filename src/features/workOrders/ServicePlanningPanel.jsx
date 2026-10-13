@@ -230,7 +230,7 @@ export default function ServicePlanningPanel({
       <p className="erp-secondary-text">Planifica el alcance con ítems de Inventario. La cantidad planificada no representa consumo.</p>
     </div><div className="erp-module-actions">
       {canOperate && editingService === null && <Button type="button" icon={Plus} onClick={() => startService()}>Agregar servicio</Button>}
-      {onFinalizeWorkOrder && <Button type="button" variant="warning" disabled={!canFinalizeWorkOrder} onClick={onFinalizeWorkOrder}>Finalizar orden de trabajo</Button>}
+      {onFinalizeWorkOrder && <Button type="button" variant="secondary" className="work-order-finalize-button" disabled={!canFinalizeWorkOrder} onClick={onFinalizeWorkOrder}>Finalizar orden de trabajo</Button>}
     </div></div>
     {!order.recepcion && <div className="vehicle-message vehicle-message--warning" role="status">Registra la Recepción antes de planificar servicios.</div>}
     {loading && <div className="erp-empty-state" role="status">Cargando catálogo y responsables...</div>}

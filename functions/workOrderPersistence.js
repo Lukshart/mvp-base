@@ -655,12 +655,30 @@ function receptionNextStatus(order) {
   return order.plazaId ? "en_diagnostico" : "en_cola";
 }
 
+function receptionChanges(previous, current) {
+  const changes = {};
+  for (const field of ["kilometraje", "nivelCombustible", "accesorios", "danosObservados", "observaciones"]) {
+    const before = previous?.[field] ?? null;
+    if (JSON.stringify(before) !== JSON.stringify(current[field])) {
+      changes[field] = {anterior: before, nuevo: current[field]};
+    }
+  }
+  for (const field of Object.keys(RECEPTION_CHECKLIST_VALUES)) {
+    const before = previous?.checklist?.[field] ?? null;
+    if (before !== current.checklist[field]) {
+      changes[`checklist.${field}`] = {anterior: before, nuevo: current.checklist[field]};
+    }
+  }
+  return changes;
+}
+
 async function registrarRecepcionOrdenTrabajoHandler(request, dependencies) {
   const {db, FieldValue, HttpsError} = dependencies;
   const context = await requireReceptionAccess(request, dependencies);
   const otId = identifier(request?.data?.otId, "La orden de trabajo", HttpsError);
   const input = normalizeReceptionInput(request?.data?.recepcion, HttpsError);
   const orderRef = context.businessRef.collection("ordenesTrabajo").doc(otId);
+  const actorSnapshot = await diagnosisActor(dependencies, context.uid);
   let result;
 
   await db.runTransaction(async (transaction) => {
@@ -679,6 +697,7 @@ async function registrarRecepcionOrdenTrabajoHandler(request, dependencies) {
     if (["pendiente_entrega", "cerrada", "cancelada"].includes(stored.estado)) {
       fail(HttpsError, "failed-precondition", "Esta OT ya no permite modificar la recepción.");
     }
+    const changes = receptionChanges(existingReception, input);
     const timestamp = FieldValue.serverTimestamp();
     const reception = {
       ...input,
@@ -686,12 +705,19 @@ async function registrarRecepcionOrdenTrabajoHandler(request, dependencies) {
       recibidoEn: existingReception?.recibidoEn || timestamp,
     };
     const estado = receptionNextStatus(stored);
-    transaction.update(orderRef, {
-      recepcion: reception,
-      estado,
-      actualizadoPorUid: context.uid,
-      actualizadoEn: timestamp,
-    });
+    if (Object.keys(changes).length) {
+      transaction.update(orderRef, {
+        recepcion: reception,
+        estado,
+        actualizadoPorUid: context.uid,
+        actualizadoEn: timestamp,
+      });
+      appendPlanningEvent(transaction, orderRef, {
+        businessId: context.businessId, actorUid: context.uid, actorSnapshot, timestamp,
+        type: existingReception ? "recepcion_actualizada" : "recepcion_registrada",
+        detail: {cambios: changes},
+      });
+    }
     result = {
       otId,
       negocioId: context.businessId,
@@ -707,6 +733,7 @@ async function registrarRecepcionOrdenTrabajoHandler(request, dependencies) {
         recibidoPorUid: existingReception?.recibidoPorUid || context.uid,
         recibidoEn: existingReception?.recibidoEn || null,
       },
+      sinCambios: !Object.keys(changes).length,
     };
   });
   return {ordenTrabajo: result};

@@ -393,6 +393,17 @@
   margin-top: var(--space-4);
 }
 
+.work-order-finalize-button.ui-button--secondary {
+  background: var(--color-warning-50);
+  border-color: var(--color-warning-200);
+  color: var(--color-warning-800);
+}
+
+.work-order-finalize-button.ui-button--secondary:hover:not(:disabled) {
+  background: var(--color-warning-50);
+  border-color: var(--color-warning-800);
+}
+
 .work-order-diagnoses-list {
   display: grid;
   gap: var(--space-3);

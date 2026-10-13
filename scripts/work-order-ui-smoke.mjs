@@ -115,7 +115,7 @@ assert.match(planningPanel, /Eliminar servicio/);
 assert.match(planningPanel, /Agregar servicio/);
 assert.match(planningPanel, /Finalizar orden de trabajo/);
 assert.match(planningPanel, /canFinalizeWorkOrder/);
-assert.match(planningPanel, /variant="warning"/);
+assert.match(planningPanel, /className="work-order-finalize-button"/);
 assert.match(planningPanel, /eliminarServicioOT/);
 assert.match(planningPanel, /service\.estado === "pendiente"/);
 assert.match(planningPanel, /service\.estado === "en_progreso"/);

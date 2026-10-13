@@ -1,17 +1,18 @@
-import React, {useCallback, useMemo, useState} from "react";
+import React, {useCallback, useMemo, useRef, useState} from "react";
 import {useNavigate} from "react-router-dom";
 import {ArrowLeft, Save} from "lucide-react";
 import Button from "../components/ui/Button";
 import ClientSelector from "../features/clients/ClientSelector";
 import VehicleFormFields from "../features/vehicles/VehicleFormFields";
 import {buildVehicleMutationPayload, getVehicleFieldErrors} from "../domain/vehicleModel.mjs";
-import {crearVehiculo, getVehicleErrorMessage, listarClientesSeleccionablesTaller} from "../services/vehicleService";
+import {crearVehiculo, createVehicleRequestId, getVehicleErrorMessage, listarClientesSeleccionablesTaller} from "../services/vehicleService";
 
 const EMPTY_VEHICLE = {patente: "", vin: "", marca: "", modelo: "", anio: "", color: "", tipo: ""};
 const CREATE_ROLES = new Set(["OWNER", "ADMIN", "TECNICO"]);
 
 function NewVehiclePage({businessId, role}) {
   const navigate = useNavigate();
+  const requestIdRef = useRef("");
   const [values, setValues] = useState(EMPTY_VEHICLE);
   const [owner, setOwner] = useState(null);
   const [errors, setErrors] = useState({});
@@ -22,11 +23,13 @@ function NewVehiclePage({businessId, role}) {
   const selectedOwnerId = owner?.clienteId || "";
   const formErrors = useMemo(() => ({...errors, clienteId: undefined}), [errors]);
   const handleOwnerChange = useCallback((client) => {
+    requestIdRef.current = "";
     setOwner(client);
     setErrors((current) => ({...current, clienteId: undefined}));
   }, []);
 
   const update = (field, value) => {
+    requestIdRef.current = "";
     setValues((current) => ({...current, [field]: value}));
     setErrors((current) => ({...current, [field]: undefined}));
     setServerError("");
@@ -36,10 +39,13 @@ function NewVehiclePage({businessId, role}) {
     const nextErrors = getVehicleFieldErrors({...values, clienteId: selectedOwnerId}, {requiresOwner: true});
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length) return;
+    if (saving) return;
+    if (!requestIdRef.current) requestIdRef.current = createVehicleRequestId();
     setSaving(true);
     setServerError("");
     try {
-      const vehicle = await crearVehiculo(businessId, selectedOwnerId, buildVehicleMutationPayload(values));
+      const vehicle = await crearVehiculo(businessId, selectedOwnerId, buildVehicleMutationPayload(values), requestIdRef.current);
+      requestIdRef.current = "";
       navigate(`/taller/vehiculos/${vehicle.vehiculoId}`, {replace: true, state: {feedback: "Vehículo creado correctamente."}});
     } catch (saveError) {
       setServerError(getVehicleErrorMessage(saveError));

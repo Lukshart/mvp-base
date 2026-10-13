@@ -13,7 +13,7 @@ function requireIdentifier(value, label) {
   return normalized;
 }
 
-function createRequestId() {
+export function createVehicleRequestId() {
   if (globalThis.crypto?.randomUUID) return `vehicle-${globalThis.crypto.randomUUID()}`;
   return `vehicle-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
 }
@@ -60,11 +60,11 @@ export async function obtenerVehiculo(businessId, vehiculoId) {
   return adaptStoredVehicle({...snapshot.data(), id: snapshot.id});
 }
 
-export async function crearVehiculo(businessId, clienteId, raw) {
+export async function crearVehiculo(businessId, clienteId, raw, requestId) {
   assertCloudFunctionAllowed("crear vehículos");
   const response = await httpsCallable(functions, "crearVehiculo")({
     businessId: requireIdentifier(businessId, "El negocio activo"),
-    requestId: createRequestId(),
+    requestId: requireIdentifier(requestId, "La solicitud de creación"),
     vehiculo: {...buildVehicleMutationPayload(raw), clienteId: requireIdentifier(clienteId, "El cliente")},
   });
   return adaptStoredVehicle(response.data.vehiculo);

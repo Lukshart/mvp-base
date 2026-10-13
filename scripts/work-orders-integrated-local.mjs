@@ -344,6 +344,13 @@ try {
   assert.equal(orderAfterReception.recepcion.recibidoPorUid, owner.uid);
   assert.ok(orderAfterReception.recepcion.recibidoEn?.toDate());
   assert.equal(orderAfterReception.actualizadoPorUid, owner.uid);
+  const receptionEventsRef = adminDb.collection(`${orderPath}/historial`);
+  const registrationEvents = (await receptionEventsRef.where("tipo", "==", "recepcion_registrada").get()).docs;
+  assert.equal(registrationEvents.length, 1);
+  assert.equal(registrationEvents[0].data().actorUid, owner.uid);
+  assert.ok(registrationEvents[0].data().actorSnapshot?.nombre);
+  assert.ok(registrationEvents[0].data().fecha?.toDate());
+  assert.deepEqual(registrationEvents[0].data().detalle.cambios.kilometraje, {anterior: null, nuevo: 45210});
   console.log("OK recepción OT: checklist completa, autoría backend y transición sin Plaza");
 
   const updatedReception = await callable(technician, "registrarRecepcionOrdenTrabajo")({
@@ -359,6 +366,42 @@ try {
   assert.equal(orderAfterReceptionUpdate.recepcion.recibidoPorUid, owner.uid);
   assert.equal(orderAfterReceptionUpdate.recepcion.danosObservados, "Rayón visible en puerta trasera.");
   assert.equal(orderAfterReceptionUpdate.actualizadoPorUid, technician.uid);
+  const updatedEvents = (await receptionEventsRef.where("tipo", "==", "recepcion_actualizada").get()).docs;
+  assert.equal(updatedEvents.length, 1);
+  assert.equal(updatedEvents[0].data().actorUid, technician.uid);
+  assert.deepEqual(updatedEvents[0].data().detalle.cambios["checklist.carroceriaPintura"],
+    {anterior: "SIN_DANOS_VISIBLES", nuevo: "CON_OBSERVACIONES"});
+  assert.deepEqual(updatedEvents[0].data().detalle.cambios.danosObservados,
+    {anterior: "Ninguno", nuevo: "Rayón visible en puerta trasera."});
+  const noChangeRevision = orderAfterReceptionUpdate.actualizadoEn.toMillis();
+  const repeatedReception = await callable(technician, "registrarRecepcionOrdenTrabajo")({
+    businessId, otId,
+    recepcion: workOrderReception({
+      checklist: {carroceriaPintura: "CON_OBSERVACIONES"},
+      danosObservados: "Rayón visible en puerta trasera.",
+    }),
+  });
+  assert.equal(repeatedReception.data.ordenTrabajo.sinCambios, true);
+  assert.equal((await adminDb.doc(orderPath).get()).data().actualizadoEn.toMillis(), noChangeRevision);
+  assert.equal((await receptionEventsRef.where("tipo", "==", "recepcion_actualizada").get()).size, 1);
+  const receptionRace = await Promise.allSettled([
+    callable(owner, "registrarRecepcionOrdenTrabajo")({businessId, otId,
+      recepcion: workOrderReception({checklist: {carroceriaPintura: "CON_OBSERVACIONES"},
+        danosObservados: "Rayón visible en puerta trasera.", observaciones: "Revisión A."})}),
+    callable(technician, "registrarRecepcionOrdenTrabajo")({businessId, otId,
+      recepcion: workOrderReception({checklist: {carroceriaPintura: "CON_OBSERVACIONES"},
+        danosObservados: "Rayón visible en puerta trasera.", observaciones: "Revisión B."})}),
+  ]);
+  assert.ok(receptionRace.every((entry) => entry.status === "fulfilled"),
+    receptionRace.map((entry) => entry.reason?.message || entry.status).join(" | "));
+  const raceEvents = (await receptionEventsRef.where("tipo", "==", "recepcion_actualizada").get()).docs;
+  assert.equal(raceEvents.length, 3);
+  const raceChanges = raceEvents.map((entry) => entry.data().detalle.cambios.observaciones).filter(Boolean);
+  assert.equal(raceChanges.length, 2);
+  assert.ok(raceChanges.some((change) => change.anterior === "Sin novedades visibles."));
+  assert.ok(raceChanges.some((change) => ["Revisión A.", "Revisión B."].includes(change.anterior)));
+  assert.equal((await adminDb.doc(orderPath).get()).data().recepcion.recibidoEn.toMillis(),
+    orderAfterReception.recepcion.recibidoEn.toMillis());
   console.log("OK actualización recepción: rol operativo autorizado y autoría inicial preservada");
 
   const serviceRequestId = `service-create-${RUN_ID}`;

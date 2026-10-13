@@ -2,6 +2,7 @@
 
 const {createHash} = require("node:crypto");
 const {
+  INVENTORY_ECONOMIC_MODEL_VERSION,
   applyInventoryCostedOutflow, applyInventoryEconomicDelta,
   assertCanonicalInventoryQuantity, inventoryEconomicFields,
   normalizeInventoryQuantity, resolveInventoryEconomicState, round,
@@ -173,6 +174,7 @@ async function materialOperation(request, dependencies, action) {
       stockAnterior: before.stock, stockPosterior: after.stock,
       valorInventarioAnterior: before.value, valorInventarioPosterior: after.value,
       costoPromedioAnterior: before.average, costoPromedioPosterior: after.average,
+      modeloEconomiaInventarioVersion: INVENTORY_ECONOMIC_MODEL_VERSION,
       movimientoOrigenId: returning ? referenceId : null, productoSnapshot,
       usuarioUid: context.uid, usuarioSnapshot: actorSnapshot, fecha: new Date().toISOString(), creadoEn: timestamp};
     transaction.update(itemRef, {stock: after.stock, ...inventoryEconomicFields(after, timestamp),

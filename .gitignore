@@ -37,7 +37,6 @@ ui-debug.*
 !.env.emulator
 !.env.production
 .firebase-emulator-data/
-firebase-export-*/
 .secret.local
 .secrets.local
 *.secret.local
