@@ -29,6 +29,7 @@ const EVENT_LABELS = Object.freeze({
   material_devuelto: "Devolución de material",
   reparacion_finalizada: "Reparación finalizada",
   vehiculo_entregado: "Vehículo entregado",
+  ot_cancelada: "Orden de trabajo cancelada",
 });
 
 const RECEPTION_FIELD_LABELS = Object.freeze({
@@ -84,7 +85,7 @@ export function getWorkOrderHistoryDetail(event = {}) {
     if (detail.motivo) parts.push(`Motivo: ${detail.motivo}`);
     return parts.join(" · ");
   }
-  if (["reparacion_finalizada", "vehiculo_entregado"].includes(event.tipo) && detail.estado) {
+  if (["reparacion_finalizada", "vehiculo_entregado", "ot_cancelada"].includes(event.tipo) && detail.estado) {
     return `Estado actual: ${getWorkOrderStatusLabel(detail.estado)}.`;
   }
   return "";

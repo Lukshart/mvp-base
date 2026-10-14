@@ -48,6 +48,13 @@ const RECEPTION_FUEL_LEVELS = new Set([
 const DIAGNOSIS_INPUT_FIELDS = new Set(["responsableUid", "descripcion", "observaciones"]);
 const SERVICE_INPUT_FIELDS = new Set(["itemId", "responsableUid"]);
 const PLANNING_STATES = new Set(["en_cola", "en_diagnostico", "esperando_aprobacion", "esperando_repuestos", "en_reparacion"]);
+const CANCELLABLE_ORDER_STATES = new Set([
+  "ingresada",
+  "en_cola",
+  "en_diagnostico",
+  "esperando_aprobacion",
+  "esperando_repuestos",
+]);
 
 function canApproveWorkOrder(membership) {
   return hasTallerCapability(membership, "approve");
@@ -1162,8 +1169,11 @@ async function transitionWorkOrderClosure(request, dependencies, action) {
   const actorSnapshot = await diagnosisActor(dependencies, context.uid);
   const fingerprint = createHash("sha256").update(JSON.stringify({otId, action, expected, actor: context.uid})).digest("hex");
   return db.runTransaction(async (transaction) => {
-    const [previous, data] = await Promise.all([
+    const [previous, data, materialBalances] = await Promise.all([
       transaction.get(requestRef), readApprovalContext(transaction, context, orderRef, dependencies, "skip"),
+      action === "cancelar"
+        ? transaction.get(context.businessRef.collection("tallerMaterialBalances").where("otId", "==", otId))
+        : Promise.resolve(null),
     ]);
     if (previous.exists) {
       if (previous.data().negocioId !== context.businessId || previous.data().fingerprint !== fingerprint) {
@@ -1173,10 +1183,15 @@ async function transitionWorkOrderClosure(request, dependencies, action) {
     }
     const {order, services} = data;
     assertDiagnosisRevision(order, expected, HttpsError, "orden de trabajo");
-    const previousStatus = action === "finalizar" ? "en_reparacion" : "pendiente_entrega";
-    if (order.estado !== previousStatus) {
-      fail(HttpsError, "failed-precondition", action === "finalizar" ?
-        "Solo se puede finalizar una OT en reparación." : "Solo se puede registrar la entrega de una OT pendiente de entrega.");
+    const previousStatus = order.estado;
+    if (action === "cancelar" ? !CANCELLABLE_ORDER_STATES.has(order.estado) :
+      order.estado !== (action === "finalizar" ? "en_reparacion" : "pendiente_entrega")) {
+      const message = action === "finalizar"
+        ? "Solo se puede finalizar una OT en reparación."
+        : action === "entregar"
+          ? "Solo se puede registrar la entrega de una OT pendiente de entrega."
+          : "Solo se puede cancelar una OT antes de iniciar la reparación.";
+      fail(HttpsError, "failed-precondition", message);
     }
     if (action === "finalizar") {
       if (!services.length || services.some((service) => service.estado !== "completado")) {
@@ -1190,8 +1205,24 @@ async function transitionWorkOrderClosure(request, dependencies, action) {
         fail(HttpsError, "failed-precondition", "La OT no tiene un alcance vigente aprobado.");
       }
     }
-    const estado = action === "finalizar" ? "pendiente_entrega" : "cerrada";
-    const plazaIdLiberada = action === "entregar" ? order.plazaId || null : null;
+    if (action === "cancelar") {
+      const hasPendingPhysicalEffect = materialBalances.docs.some((entry) => {
+        const balance = entry.data() || {};
+        if (balance.negocioId !== context.businessId || balance.otId !== otId ||
+            !Number.isFinite(balance.cantidadSalida) || !Number.isFinite(balance.cantidadDevuelta) ||
+            balance.cantidadSalida < 0 || balance.cantidadDevuelta < 0 ||
+            balance.cantidadDevuelta > balance.cantidadSalida) {
+          fail(HttpsError, "failed-precondition", "Los movimientos físicos de la OT requieren revisión antes de cancelar.");
+        }
+        return balance.cantidadSalida !== balance.cantidadDevuelta;
+      });
+      if (hasPendingPhysicalEffect) {
+        fail(HttpsError, "failed-precondition", "Devuelve o compensa todos los materiales consumidos antes de cancelar la OT.");
+      }
+    }
+    const estado = action === "finalizar" ? "pendiente_entrega" : action === "entregar" ? "cerrada" : "cancelada";
+    const releasesPlaza = ["entregar", "cancelar"].includes(action);
+    const plazaIdLiberada = releasesPlaza ? order.plazaId || null : null;
     const plazaLockRef = plazaIdLiberada
       ? context.businessRef.collection("plazaOccupancyKeys").doc(plazaIdLiberada)
       : null;
@@ -1204,17 +1235,17 @@ async function transitionWorkOrderClosure(request, dependencies, action) {
     }
     transaction.update(orderRef, {
       estado,
-      ...(action === "entregar" ? {plazaId: null} : {}),
+      ...(releasesPlaza ? {plazaId: null} : {}),
       actualizadoPorUid: context.uid,
       actualizadoEn: timestamp,
     });
     appendPlanningEvent(transaction, orderRef, {
       businessId: context.businessId, actorUid: context.uid, actorSnapshot, timestamp,
-      type: action === "finalizar" ? "reparacion_finalizada" : "vehiculo_entregado",
+      type: action === "finalizar" ? "reparacion_finalizada" : action === "entregar" ? "vehiculo_entregado" : "ot_cancelada",
       detail: {estadoAnterior: previousStatus, estado, plazaIdLiberada},
     });
     const resultado = {otId, estado, estadoAprobacion: order.estadoAprobacion,
-      plazaId: action === "entregar" ? null : order.plazaId || null};
+      plazaId: releasesPlaza ? null : order.plazaId || null};
     transaction.create(requestRef, {negocioId: context.businessId, otId, fingerprint, resultado, creadoEn: timestamp});
     return resultado;
   });
@@ -1222,6 +1253,7 @@ async function transitionWorkOrderClosure(request, dependencies, action) {
 
 const finalizarReparacionOTHandler = (request, deps) => transitionWorkOrderClosure(request, deps, "finalizar");
 const registrarEntregaOTHandler = (request, deps) => transitionWorkOrderClosure(request, deps, "entregar");
+const cancelarOTHandler = (request, deps) => transitionWorkOrderClosure(request, deps, "cancelar");
 
 async function obtenerEventosCierreOTHandler(request, dependencies) {
   const context = await requireTallerAccess(request, dependencies, "read");
@@ -1229,7 +1261,7 @@ async function obtenerEventosCierreOTHandler(request, dependencies) {
   const orderRef = context.businessRef.collection("ordenesTrabajo").doc(otId);
   assertStoredWorkOrder(await orderRef.get(), context.businessId, dependencies.HttpsError);
   const snapshot = await orderRef.collection("historial")
-    .where("tipo", "in", ["reparacion_finalizada", "vehiculo_entregado"]).get();
+    .where("tipo", "in", ["reparacion_finalizada", "vehiculo_entregado", "ot_cancelada"]).get();
   return {eventos: snapshot.docs.map((entry) => {
     const event = entry.data();
     if (event.negocioId !== context.businessId || event.otId !== otId) return null;
@@ -1499,7 +1531,8 @@ module.exports = {
   requestIdentifier,
   requireReceptionAccess,
   iniciarServicioOTHandler, completarServicioOTHandler,
-  finalizarReparacionOTHandler, registrarEntregaOTHandler, obtenerEventosCierreOTHandler, obtenerHistorialOTHandler,
+  finalizarReparacionOTHandler, registrarEntregaOTHandler, cancelarOTHandler,
+  obtenerEventosCierreOTHandler, obtenerHistorialOTHandler,
   enviarOTAprobacionHandler, aprobarOTHandler, rechazarOTHandler, revalidarDisponibilidadOTHandler,
   obtenerResumenAprobacionOTHandler, scopeFingerprint, canApproveWorkOrder, freezeCoreItem,
   actualizarProductoOTHandler,

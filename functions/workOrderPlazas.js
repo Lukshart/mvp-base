@@ -303,6 +303,9 @@ async function liberarPlazaOTHandler(request, dependencies) {
     await assertFreshAccess(transaction, context, dependencies, TALLER_OPERATION_ROLES);
     const order = assertOrder(await transaction.get(orderRef), context.businessId, HttpsError);
     assertRevision(order, expected, HttpsError, "La orden de trabajo");
+    if (!isActiveOrder(order)) {
+      fail(HttpsError, "failed-precondition", "No se puede liberar una Plaza de una OT cerrada o cancelada.");
+    }
     const plazaId = order.plazaId || null;
     if (!plazaId) return {otId, plazaId: null, estado: order.estado, sinCambios: true};
     const lockRef = context.businessRef.collection("plazaOccupancyKeys").doc(plazaId);

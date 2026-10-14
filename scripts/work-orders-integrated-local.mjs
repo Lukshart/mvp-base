@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import {testWorkOrderApproval} from "./work-order-approval-cases.mjs";
 import {testServiceExecution} from "./work-order-service-execution-cases.mjs";
 import {testWorkOrderClosure} from "./work-order-closure-cases.mjs";
+import {testWorkOrderCancellation} from "./work-order-cancellation-cases.mjs";
+import {testWorkOrderEndToEnd} from "./work-order-end-to-end-cases.mjs";
 import {testWorkOrderMaterials} from "./work-order-material-cases.mjs";
 import {testWorkshopPlazas} from "./work-order-plaza-cases.mjs";
 import {testWorkshopSecurity} from "./workshop-security-cases.mjs";
@@ -822,6 +824,10 @@ try {
     anonymous, callable, expectCallableError, expectFirestoreDenied, runId: RUN_ID});
   await testWorkOrderClosure({adminDb, businessId, otId, serviceId, owner, admin, technician, member,
     outsider, anonymous, callable, expectCallableError, expectFirestoreDenied,
+    reception: workOrderReception(), runId: RUN_ID});
+  await testWorkOrderCancellation({adminDb, businessId, owner, technician, outsider, callable,
+    expectCallableError, expectFirestoreDenied, reception: workOrderReception(), runId: RUN_ID});
+  await testWorkOrderEndToEnd({adminDb, businessId, owner, technician, callable, expectCallableError,
     reception: workOrderReception(), runId: RUN_ID});
   await testWorkshopSecurity({adminDb, businessId, otId, owner, member, technician, outsider,
     anonymous, callable, expectCallableError, expectFirestoreDenied, runId: RUN_ID});

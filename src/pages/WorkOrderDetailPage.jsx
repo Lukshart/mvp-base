@@ -1,6 +1,6 @@
 import {BUSINESS_PERMISSIONS, hasBusinessPermission} from "../domain/rbac.mjs";
 import React, {useCallback, useEffect, useRef, useState} from "react";
-import {ArrowLeft, RefreshCw, Save} from "lucide-react";
+import {ArrowLeft, Ban, RefreshCw, Save} from "lucide-react";
 import {useNavigate, useParams} from "react-router-dom";
 import Button from "../components/ui/Button";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
@@ -272,7 +272,9 @@ export default function WorkOrderDetailPage({businessId, role}) {
       setClosureTarget(null);
       setClosureNotice(closureTarget.action === "finalizar"
         ? "Reparación finalizada. El vehículo está pendiente de entrega."
-        : "Entrega registrada. La OT quedó cerrada.");
+        : closureTarget.action === "entregar"
+          ? "Entrega registrada. La OT quedó cerrada."
+          : "Orden de trabajo cancelada.");
       await refreshServices();
       await refreshHistory();
     } catch (actionError) {
@@ -295,6 +297,9 @@ export default function WorkOrderDetailPage({businessId, role}) {
   const plazaLabel = plazas.find((plaza) => plaza.plazaId === order.plazaId)?.nombre || "Sin asignar";
   const completedServices = services.filter((service) => service.estado === "completado").length;
   const allServicesCompleted = services.length > 0 && completedServices === services.length;
+  const canCancel = canOperate && [
+    "ingresada", "en_cola", "en_diagnostico", "esperando_aprobacion", "esperando_repuestos",
+  ].includes(order.estado);
 
   const beginClosure = (action) => {
     setClosureActionError("");
@@ -315,7 +320,7 @@ export default function WorkOrderDetailPage({businessId, role}) {
           <StatusBadge variant="neutral">Plaza: {plazaLabel}</StatusBadge>
         </div>
       </div>
-      <div className="erp-module-actions"><Button type="button" variant="secondary" icon={ArrowLeft} onClick={() => navigate("/taller/ordenes")}>Volver</Button><WorkOrderPlazaControl businessId={businessId} onChanged={load} order={order} plazas={plazas} role={role} /></div>
+      <div className="erp-module-actions"><Button type="button" variant="secondary" icon={ArrowLeft} onClick={() => navigate("/taller/ordenes")}>Volver</Button><WorkOrderPlazaControl businessId={businessId} onChanged={load} order={order} plazas={plazas} role={role} />{canCancel && <Button type="button" variant="ghost-danger" icon={Ban} disabled={closureBusy} onClick={() => beginClosure("cancelar")}>Cancelar OT</Button>}</div>
     </header>
 
     {order.estado === "pendiente_entrega" &&
@@ -358,9 +363,9 @@ export default function WorkOrderDetailPage({businessId, role}) {
         : <div className="erp-empty-state">Aún no hay eventos registrados para esta OT.</div>)}
     </section>}
     <ResponsiveDialog open={Boolean(closureTarget)} onClose={() => !closureBusy && setClosureTarget(null)} size="small" eyebrow="Taller"
-      title={closureTarget?.action === "finalizar" ? "Finalizar orden de trabajo" : "Registrar entrega"}
-      description={closureTarget?.action === "finalizar" ? "Se comprobará que todos los servicios estén completados." : "Se registrará la entrega física y la OT quedará cerrada."}
-      footer={<><Button type="button" variant="secondary" disabled={closureBusy} onClick={() => setClosureTarget(null)}>Cancelar</Button><Button type="button" disabled={closureBusy} onClick={confirmClosure}>{closureBusy ? "Procesando..." : "Confirmar"}</Button></>}>
+      title={closureTarget?.action === "finalizar" ? "Finalizar orden de trabajo" : closureTarget?.action === "entregar" ? "Registrar entrega" : "Cancelar orden de trabajo"}
+      description={closureTarget?.action === "finalizar" ? "Se comprobará que todos los servicios estén completados." : closureTarget?.action === "entregar" ? "Se registrará la entrega física y la OT quedará cerrada." : "La OT quedará cancelada de forma permanente y se liberará su Plaza, si corresponde."}
+      footer={<><Button type="button" variant="secondary" disabled={closureBusy} onClick={() => setClosureTarget(null)}>Volver</Button><Button type="button" variant={closureTarget?.action === "cancelar" ? "danger" : "primary"} disabled={closureBusy} onClick={confirmClosure}>{closureBusy ? "Procesando..." : closureTarget?.action === "cancelar" ? "Cancelar OT" : "Confirmar"}</Button></>}>
       <p>¿Confirmas esta acción para {order.numeroOT}?</p>
       {closureActionError && <div className="vehicle-message vehicle-message--error" role="alert">{closureActionError}</div>}
     </ResponsiveDialog>

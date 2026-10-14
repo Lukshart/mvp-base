@@ -20,7 +20,7 @@ export async function testWorkshopSecurity({adminDb, businessId, otId, owner, me
     iniciarServicioOT: {}, completarServicioOT: {}, enviarOTAprobacion: {}, aprobarOT: {}, rechazarOT: {},
     revalidarDisponibilidadOT: {}, obtenerResumenAprobacionOT: {},
     registrarSalidaMaterialOT: {}, registrarDevolucionMaterialOT: {}, obtenerMaterialesOT: {},
-    finalizarReparacionOT: {}, registrarEntregaOT: {}, obtenerHistorialOT: {}, obtenerEventosCierreOT: {},
+    finalizarReparacionOT: {}, registrarEntregaOT: {}, cancelarOT: {}, obtenerHistorialOT: {}, obtenerEventosCierreOT: {},
     listarCatalogoTaller: {}, listarPersonasAsignablesTaller: {},
     crearPlazaTaller: {requestId: `security-${runId}`, plaza: {nombre: "Prueba"}},
     actualizarPlazaTaller: {plazaId: "plaza", plaza: {nombre: "Prueba"}, expectedActualizadoEn: 1},

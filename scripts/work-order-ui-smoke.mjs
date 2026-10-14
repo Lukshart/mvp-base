@@ -67,6 +67,8 @@ assert.match(detail, /<WorkOrderPlazaControl/);
 assert.match(detail, /listarPlazasTaller/);
 assert.match(detail, /Finalizar orden de trabajo/);
 assert.match(detail, /Registrar entrega/);
+assert.match(detail, /Cancelar OT/);
+assert.match(detail, /beginClosure\("cancelar"\)/);
 assert.match(detail, /allServicesCompleted/);
 assert.match(detail, /ejecutarCierreOT/);
 assert.match(detail, /obtenerHistorialOT/);
@@ -77,7 +79,7 @@ assert.match(detail, /ResponsiveDialog/);
 assert.match(detail, /\["pendiente_entrega", "cerrada", "cancelada"\]\.includes\(order\.estado\)/);
 assert.doesNotMatch(detail, /updateDoc|setDoc|pendiente_pago/);
 const historyModel = fs.readFileSync("src/domain/workOrderHistoryModel.mjs", "utf8");
-for (const event of ["ot_creada", "recepcion_registrada", "diagnostico_completado", "material_consumido", "vehiculo_entregado"]) {
+for (const event of ["ot_creada", "recepcion_registrada", "diagnostico_completado", "material_consumido", "vehiculo_entregado", "ot_cancelada"]) {
   assert.match(historyModel, new RegExp(event));
 }
 assert.doesNotMatch(historyModel, /costoUnitario|costoTotal|scopeHash/);

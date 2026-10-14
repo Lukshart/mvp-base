@@ -1285,3 +1285,207 @@ Taller.
 **Prueba negativa.** La matriz de seguridad cubre funciones de Taller frente a
 falta de sesión, negocio ajeno, membresía inactiva, perfil sin Taller y usuario
 suspendido.
+
+## 19. Revisión de integración — etapa 16 (2026-10-14)
+
+### Hallazgos previos a las correcciones
+
+- **Cancelación faltante al iniciar la revisión:** la SPEC final contempla
+  cancelar antes de `en_reparacion`, pero el código solamente reconocía
+  `cancelada` como estado terminal. Confirmado que pertenece al MVP, se incorporó
+  la acción pública autoritativa y su interfaz sin ampliar estados ni efectos.
+- **Terminalidad de Plaza:** `liberarPlazaOTHandler` comprobaba autorización,
+  pertenencia y revisión, pero no el estado terminal. Una OT histórica cerrada
+  que conservara `plazaId` podía ser modificada. Se corrigió en Taller, sin
+  migrar registros ni modificar contratos del Core.
+- **Cantidades:** la planificación admite números positivos con hasta tres
+  decimales en backend (comportamiento cubierto por pruebas anteriores), mientras
+  la UI y los movimientos físicos usan enteros. No se cambia este contrato
+  silenciosamente en una revisión de integración; requiere una decisión de
+  producto para su eventual alineación.
+- **Alcance de la evidencia:** los smokes de UI existentes son verificaciones de
+  código, no sesiones de navegador. No equivalen a validación visual o responsive.
+
+### 19.1 Planificado
+
+Revisar integración, invariantes, seguridad y regresiones del flujo ya existente,
+desde Cliente Core hasta entrega. Corregir únicamente fallos de ese contrato;
+no implementar nuevas operaciones, cambiar el kernel económico, modificar la
+persistencia local ni ampliar el MVP.
+
+Autoridades revisadas: `AGENTS.md`, contrato de desarrollo de módulos, SPEC final
+de Taller, modelo definitivo y propuesta de navegación. La propuesta histórica
+que exigía VIN no sustituye la SPEC final: VIN sigue siendo opcional.
+
+### 19.2 Implementado
+
+Se incorporó `scripts/work-order-end-to-end-cases.mjs` al runner integrado
+existente. No introduce un framework, dependencia ni comando paralelo.
+
+El recorrido crea un Cliente mediante `crearCliente` y reutiliza
+`buildClientMutationPayload` del Core. El técnico registra un Vehículo sin VIN,
+crea la OT, registra Recepción sin Plaza, asigna una Plaza creada por OWNER,
+completa un Diagnóstico, planifica ServicioOT y ProductoOT, envía a aprobación,
+ejecuta el servicio y registra salida y devolución. OWNER aprueba; el técnico
+finaliza reparación y registra entrega. No se fuerzan estados de esa OT con
+Admin SDK. El catálogo Core es un fixture sintético; no se prueba aquí el alta
+del catálogo, que tiene sus propias pruebas.
+
+Las regresiones legacy finales sí preparan documentos terminales con `plazaId`
+residual. Están separadas del flujo feliz.
+
+Se implementó además la cancelación explícita de OT desde `ingresada`, `en_cola`,
+`en_diagnostico`, `esperando_aprobacion` y `esperando_repuestos`. La acción usa
+la capacidad operacional existente, conserva `estadoAprobacion`, snapshots,
+Cliente, Vehículo y número OT; libera Plaza y lock en la misma transacción, crea
+el evento `ot_cancelada` y deja la OT terminal. Antes de cancelar revisa los
+balances protegidos de materiales y exige que toda salida esté completamente
+devuelta o compensada. No se agregó motivo obligatorio porque la SPEC no lo exige.
+
+### 19.3 Verificado
+
+| Contrato | Evidencia ejecutada |
+| --- | --- |
+| Cliente Core y Vehículo | Alta pública, VIN ausente, patente canónica, duplicado rechazado y reintento sin duplicación. |
+| Cliente histórico | Cambio de propietario por Function; la OT conserva el `clienteId` original hasta su consulta cerrada. |
+| Creación de OT | Número backend, estado `ingresada`, aprobación `pendiente`, idempotencia y concurrencia en la suite existente. |
+| Recepción | Diez enums, anomalías, `Ninguno`, `NO_REVISADO`/`NO_PROBADO`, autoría y transición sin/con Plaza. |
+| Plaza | `en_cola → en_diagnostico`, exclusividad, cambio/liberación, inactivas y carreras de doble asignación. |
+| Diagnóstico | Borrador distinto de completado, completado explícito, responsable y bloqueo de edición posterior. |
+| Alcance | Referencias y tipos Core, planificación sin stock, prohibición de precio/snapshot autoritativo del cliente. |
+| Aprobación | Diagnóstico requerido, snapshots y precios backend, rechazo, reenvío e invalidación al editar alcance. |
+| Stock antes/después de aprobar | Esperas correspondientes, aprobación independiente, revalidación y ausencia de reserva. |
+| ServicioOT | Secuencia explícita, permiso y responsable, OT habilitada, carreras y reintentos. |
+| Materiales | Stock insuficiente rechazado; costo origen; salidas/devoluciones parciales y múltiples; sobredevolución, idempotencia y concurrencia. |
+| Finalización/entrega | Todos los servicios completados, estados previos, terminalidad, auditoría y liberación de Plaza. |
+| Cancelación | Estados previos permitidos, rechazo desde reparación o estados posteriores, número conservado, Plaza liberada, consumo neto bloqueado, compensación admitida, idempotencia y carrera concurrente. |
+| Historial | Eventos persistidos, actor/fecha, orden estable, sin costos en DTO y OT cerrada consultable por Vehículo. |
+| Aislamiento/RBAC | 38 Functions por cinco escenarios negativos: sin sesión, negocio ajeno, membresía inactiva, perfil sin Taller y usuario suspendido. |
+| Colecciones internas | 13 rutas internas sometidas a denegación de get/list/create/update/delete incluso para OWNER. |
+
+**Consistencia económica del recorrido nuevo:** stock inicial 10, costo unitario
+100 CLP; planificar/aprobar 2 mantiene stock 10. Salida de 2 y devolución de 1
+dejan stock 9 y valor de inventario 900 CLP. Reintentar ambas operaciones mantiene
+exactamente dos movimientos vinculados a la misma OT y ServicioOT; la devolución
+apunta a la salida. Cambiar nombre/precio del catálogo no reescribe el snapshot.
+Completar y entregar no descuentan otra vez y no crean Venta.
+
+**Reutilización Core inspeccionada, sin modificarla en esta etapa:**
+
+- `functions/inventoryAcquisition.js`: resolución del estado económico,
+  `applyInventoryCostedOutflow`, `applyInventoryEconomicDelta`,
+  `inventoryEconomicFields` y normalización/redondeo. Taller no invoca endpoints
+  de materiales de Proyectos ni `updateInventoryItem` para consumo.
+- `functions/businessOnboarding.js`: guard de acceso operacional, aplicado por
+  las dependencias de las Functions.
+- `functions/businessOperations.js` y `businessJurisdiction.js`: habilitación
+  del negocio y contexto fiscal, reutilizados por `tallerAccess.js`.
+- `functions/rbac.js`, membresías/perfiles y reglas: autoridad de permisos;
+  ocultar botones no autoriza operaciones.
+- `src/domain/clientModel.mjs` y `crearCliente`: contrato existente de Clientes,
+  utilizado por la prueba nueva sin duplicar esa entidad.
+- Layout, navegación y primitivas existentes (`Button`, `StatusBadge`,
+  `ResponsiveDialog`): inspección estática de rutas, estados, formularios y acciones.
+
+No se detectaron escrituras SDK autoritativas de stock, movimientos, aprobación,
+estado OT ni snapshots en los servicios frontend revisados de Taller. Las
+mutaciones pasan por Functions; las Rules niegan escrituras directas de Taller.
+
+### 19.4 Correcciones realizadas y archivos
+
+1. `functions/workOrderPlazas.js`: `liberarPlazaOTHandler` rechaza `cerrada` y
+   `cancelada` dentro de la transacción y antes de tocar OT, lock o historial.
+   Conserva los guards de negocio, membresía, capacidad y revisión. La liberación
+   normal al entregar sigue en su transacción de cierre; no se ve alterada.
+2. `scripts/work-order-end-to-end-cases.mjs`: recorrido público continuo y
+   regresiones terminales, incluidas OTs históricas con asignación residual.
+3. `scripts/work-orders-integrated-local.mjs`: ejecuta los casos nuevos antes
+   de la matriz de seguridad existente.
+4. Este documento consolidado: evidencia, diferencias y pendientes de etapa 16.
+5. `functions/workOrderPersistence.js` y `functions/index.js`: transición
+   transaccional `cancelarOT`, idempotencia compartida con cierres, validación de
+   efectos físicos, liberación de Plaza, evento y exportación callable.
+6. `src/services/workOrderService.js`, `src/pages/WorkOrderDetailPage.jsx` y
+   `src/domain/workOrderHistoryModel.mjs`: llamada controlada, acción contextual,
+   confirmación destructiva y lectura del evento en Historial.
+7. `scripts/work-order-cancellation-cases.mjs`, runner, smoke UI y matriz de
+   seguridad: cobertura positiva, negativa y concurrente de cancelación.
+
+No se modificaron contratos compartidos del Core, Rules, índices, contratos de
+precios, roles globales, launcher de emuladores ni datos locales. No hubo commit,
+push ni despliegue. No se recrearon los documentos eliminados de etapas anteriores.
+
+### 19.5 Pruebas ejecutadas
+
+Resultados de esta sesión, no inferidos de ejecuciones históricas:
+
+| Verificación | Resultado |
+| --- | --- |
+| `npm run test:work-orders-integrated` | Pasó: suite existente, cancelación, recorrido continuo y seguridad. |
+| `npm run test:rules` | Pasó (`RULES_SMOKE_OK`, código 0); advertencia de apagado descrita abajo. |
+| `npm run test:vehicles-integrated` | Pasó (`VEHICLES_INTEGRATED_LOCAL_OK`); reintentado tras liberar el proceso de prueba huérfano. |
+| `npm run test:work-orders-model` / `test:work-orders-ui` | Pasaron; UI es smoke estático. |
+| `npm run test:vehicles-model` / `test:vehicles-ui` | Pasaron; UI es smoke estático. |
+| `npm run test:rbac` / `test:firebase-environment` | Pasaron. |
+| `npm run test:inventory-model` | Pasaron modelo y MVP de Inventario. |
+| `node scripts/inventory-acquisition-smoke.mjs` | Pasó: kernel económico. |
+| `npm run test:works-model` / `test:reports` | Pasaron: regresiones Proyectos, balance y Reportes. |
+| `npm run build` | Pasó; advertencia de bundle grande, no fallo de compilación. |
+| `npm --prefix functions run lint` | Pasó. |
+| `node --check scripts/work-order-end-to-end-cases.mjs` | Pasó. |
+| `git diff --check` | Pasó, sin errores de whitespace; Git avisa conversión LF/CRLF. |
+
+Los tests usan `emulators:exec` sin importar ni exportar respaldos. Los registros
+detallados de esta ejecución están en `.local-logs/etapa16-*.log`, ignorados por
+Git. Los rechazos `PERMISSION_DENIED` esperados son evidencia de pruebas negativas,
+no fallos de la suite.
+
+Los primeros intentos de build/emuladores encontraron restricciones del entorno
+aislado. Se repitieron con permiso. Rules terminó correctamente, pero su proceso
+Java emitió una excepción durante el apagado y quedó ocupando 8080. Se identificó
+por PID, padre, comando y hora de inicio como perteneciente a la prueba antes de
+cerrarlo. No se detuvieron procesos ajenos ni se borraron exports.
+
+### 19.6 Riesgos pendientes
+
+- **Validación UI pendiente:** no se ejecutó un recorrido interactivo en navegador
+  ni comparación visual/responsive. Build, revisión de código y smokes no prueban
+  interacción real, accesibilidad o los estados visuales bajo red lenta.
+- **Matriz de costos Core:** la prueba confirma que TECNICO puede leer costos de
+  Inventario Core según el contrato vigente. Los DTOs de Taller revisados siguen
+  filtrados. La alineación central previamente indicada por Mauricio no se cambió
+  ni se presenta como resuelta por Taller.
+- **Ambiente:** pruebas ejecutadas con Node 26 del host; Functions declara Node 22
+  y el emulador advierte del desajuste. No se verificó esta ejecución con Node 22
+  ni en producción. El apagado de emuladores presentó la incidencia descrita.
+
+### 19.7 Deuda técnica detectada
+
+- Alinear explícitamente cantidad planificada decimal backend frente a controles
+  enteros de UI y movimientos. Mientras tanto no se afirma que backend restrinja
+  toda planificación a enteros.
+- Los listados e historial cargan colecciones completas; revisar volumen y
+  paginación en una tarea autorizada, sin introducirlos aquí.
+- El ledger conserva vínculos de servicio/movimiento/origen más ricos que el DTO
+  resumido del Historial. La trazabilidad detallada de devoluciones está en el
+  panel de movimientos; evitar interpretar el resumen textual como ledger completo.
+- Completar automatización de navegador; los smokes con expresiones sobre código
+  no reemplazan pruebas de interacción.
+- Warning de bundle superior a 500 kB. Se conserva el diseño de empaquetado actual;
+  no se efectuó un refactor de rendimiento fuera de alcance.
+
+### 19.8 Funcionalidades fuera de alcance confirmadas
+
+Esta revisión no implementa Pago, Venta automática, reservas, fotografías, HH,
+agenda, capacidad/equipamiento de Plaza, reapertura de OT ni entidades paralelas
+de Clientes/Inventario/Proyectos. El recorrido comprueba ausencia de Venta
+automática y de descuento de stock adicional al cierre. Esto se refiere a Taller:
+las funcionalidades preexistentes de otros módulos Core no se eliminan.
+
+### 19.9 Recomendación de estado final
+
+**Listo con observaciones.** El flujo completo, la cancelación y las correcciones
+automatizadas pasan. Permanece pendiente una validación interactiva/visual de
+navegador, la ejecución con Node 22 y las observaciones técnicas indicadas. No se
+han identificado en las pruebas ejecutadas fallos críticos/altos sin documentar;
+esto no constituye garantía de ausencia de defectos fuera de su cobertura.

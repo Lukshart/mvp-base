@@ -223,7 +223,7 @@ export function completarServicioOT(businessId, otId, servicioOtId, expectedActu
 }
 
 export function ejecutarCierreOT(businessId, otId, action, expectedActualizadoEn, requestId) {
-  const calls = {finalizar: "finalizarReparacionOT", entregar: "registrarEntregaOT"};
+  const calls = {finalizar: "finalizarReparacionOT", entregar: "registrarEntregaOT", cancelar: "cancelarOT"};
   if (!calls[action]) throw new Error("Acción de cierre no válida.");
   return diagnosisCall(calls[action], "actualizar el cierre de la OT", businessId, otId, {
     expectedActualizadoEn, requestId: requireIdentifier(requestId, "La solicitud"),
