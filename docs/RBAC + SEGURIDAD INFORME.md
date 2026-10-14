@@ -22,27 +22,27 @@ de actualización que aún exigía VIN y dejaba checklist pendiente.
 4. El selector de Clientes permite que clienteId almacenado reemplace la identidad
    de documento al construir su DTO. Debe omitir referencias inconsistentes.
 
-## Riesgo Core detectado y límite de la etapa
+## Resolución de Core sobre visibilidad de costos
 
 `firestore.rules`, lectura de `negocios/{businessId}/inventario/{itemId}`:
-TECNICO y perfiles con módulos como Inventario/Proyectos pueden leer el documento
-completo, incluidos costoBase/costoPromedio/valorInventario. Firestore no permite
-ocultar campos individuales en una lectura autorizada. Ocultarlos en React o en
-los DTOs de Taller no cierra ese acceso independiente al Core.
+El análisis comprobó que Firestore entrega el documento de Inventario completo
+cuando la regla autoriza la lectura; no admite ocultar campos individuales. La
+revisión del mantenedor del 13-10-2026 confirmó que esto es el comportamiento
+esperado para TECNICO: debe poder consultar costos de materiales en terreno y
+solo se restringe su edición.
 
-No se cambia el contrato global de Inventario en esta etapa: otros módulos leen
-estos documentos. Se recomienda al mantenedor definir proyección pública o lectura
-backend de catálogo para todos sus consumidores, y luego restringir las lecturas
-completas a la capacidad Core de costos. Requiere pruebas Core y compatibilidad.
-La aceptación global «costos protegidos por cualquier vía» queda pendiente de
-resolver ese contrato; no debe presentarse esta etapa como seguridad integral cerrada.
+La matriz de permisos Core aún no refleja esa decisión mediante
+`INVENTORY_COSTS_READ`. El mantenedor alineará ese contrato central en la próxima
+baseline. Esta diferencia no bloquea Taller ni requiere modificar Rules globales
+desde esta rama. La propuesta de un catálogo público sin costos queda registrada
+como mejora futura para negocios que requieran una política distinta.
 
 ## Matriz compatible
 
 | Perfil | Lectura | Operación | Crear Vehículo/OT | Aprobación | Administración | Costos Taller |
 |---|---|---|---|---|---|---|
 | OWNER / ADMIN sin perfil personalizado | Sí | Sí | Sí | Sí | Sí | Sí |
-| TECNICO sin perfil personalizado | Sí | Sí | Sí | No | No | No |
+| TECNICO sin perfil personalizado | Sí | Sí | Sí | No | No | Sí, según decisión Core |
 | MEMBER legacy sin perfil personalizado | Sí | Sí | No | No | No | Sí (Core) |
 | MEMBER con perfil activo que incluye Taller | Sí | Sí | No | No | No | No |
 | Otros roles / sin módulo / membresía inactiva | No | No | No | No | No | No |
@@ -84,10 +84,10 @@ La primera ejecución integrada detectó una capacidad denegada serializada como
 null en lugar de false para perfiles sin módulos resueltos. Se corrigió el
 retorno booleano y se añadió regresión; la repetición completa pasó.
 
-La prueba sintética también **confirmó**, no resolvió, la exposición Core:
-un TECNICO obtiene costoBase mediante lectura SDK de Inventario; el DTO Taller
-del mismo ítem no devuelve campos de costo. El mensaje `WORKSHOP_SECURITY_OK`
-acredita la matriz negativa de Taller, no la aceptación global del riesgo Core.
+La prueba sintética confirmó la lectura directa de costoBase por TECNICO. Tras
+la decisión del mantenedor, se registra como evidencia de la política vigente,
+no como filtración. El DTO de Taller continúa sin exponer costos hasta que la
+alineación central de capacidades sea publicada.
 
 El runtime Java del emulador de reglas imprimió un NullPointerException durante
 el apagado, después de `RULES_SMOKE_OK` y salida 0. No hubo aserciones fallidas;
@@ -151,25 +151,16 @@ local; no deben atribuirse a esta revisión de seguridad ni descartarse.
 
 ## Dictamen y riesgos residuales
 
-**Etapa 15 no cerrada para aceptación integral.** Los controles de Taller
-probados funcionan; queda abierta la protección de costos por la lectura
-directa del catálogo Core. El contrato `docs/MODULE_DEVELOPMENT_CONTRACT.md`
-requiere revisión explícita del mantenedor antes de alterar Rules globales.
+**La etapa 15 queda aceptable dentro del alcance de Taller.** Los controles de
+autorización, aislamiento y colecciones internas se verificaron en emuladores.
+La visibilidad de costos para TECNICO es una decisión explícita de producto;
+la posterior alineación de `INVENTORY_COSTS_READ` pertenece al Core y no bloquea
+este módulo.
 
-Propuesta para esa revisión:
-
-1. Contrato afectado: lectura SDK de `negocios/{businessId}/inventario/{itemId}`
-   en `firestore.rules` y consumidores Core del catálogo.
-2. Necesidad: negar costos a Técnico/perfiles sin capacidad, no solo ocultarlos.
-3. Integración aislada insuficiente: el cliente puede omitir los DTOs de Taller
-   y consultar el documento completo con sus credenciales.
-4. Cambio mínimo a acordar: ofrecer datos no sensibles por DTO/proyección y
-   reservar el documento económico completo a usuarios con capacidad de costos.
-5. Riesgo de compatibilidad: negar la lectura completa sin adaptar consumidores
-   rompería selectores/listados de Inventario, Proyectos y otros módulos.
-6. Verificación requerida: SDK get/list y consultas, capacidades de todos los
-   roles/perfiles y regresión de todos los consumidores afectados, sin migrar
-   ni alterar economía, stock o snapshots históricos.
+Como mejora futura, el Core podrá introducir proyecciones de catálogo sin costos
+para empresas que necesiten ocultarlos a perfiles operacionales. Esa alternativa
+afecta consumidores compartidos de Inventario, Proyectos y Reportes, por lo que
+debe diseñarse, aprobarse y probarse fuera de esta rama.
 
 No se incorporaron capacidades configurables nuevas en membresías ni se cambió
 la semántica legacy de MEMBER. No se realizó despliegue ni prueba manual completa
