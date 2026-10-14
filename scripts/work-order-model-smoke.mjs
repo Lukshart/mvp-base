@@ -92,7 +92,7 @@ const catalog = await listarCatalogoTallerHandler({data: {businessId: "business-
   requireBusinessAccess: async (request, dependencies, options) => {
     assert.equal(request.data.businessId, "business-1");
     assert.equal(options.moduleId, "taller");
-    return {businessId: "business-1", businessRef: {collection: () => ({where: () => ({get: async () => ({docs: [
+    return {membership: {rol: "TECNICO"}, businessId: "business-1", businessRef: {collection: () => ({where: () => ({get: async () => ({docs: [
       {id: "service-1", data: () => ({negocioId: "business-1", tipoItem: "servicio", estado: "activo", nombre: "Servicio", precioInterno: 25000, costoBase: 10000})},
       {id: "foreign", data: () => ({negocioId: "business-2", tipoItem: "producto", estado: "activo", nombre: "Ajeno"})},
     ]})})})}};

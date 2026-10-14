@@ -1,3 +1,4 @@
+import {BUSINESS_PERMISSIONS, hasBusinessPermission} from "../../domain/rbac.mjs";
 import React, {useEffect, useState} from "react";
 import {Plus, Save} from "lucide-react";
 import Button from "../../components/ui/Button";
@@ -8,7 +9,7 @@ import {
   getWorkOrderErrorMessage, listarPersonasAsignablesTaller, registrarDiagnostico,
 } from "../../services/workOrderService";
 
-const OPERATION_ROLES = new Set(["OWNER", "ADMIN", "TECNICO", "MEMBER"]);
+
 const emptyDraft = {responsableUid: "", descripcion: "", observaciones: ""};
 
 function dateLabel(value) {
@@ -19,8 +20,8 @@ function dateLabel(value) {
 }
 
 export default function DiagnosisPanel({businessId, diagnoses, onChanged, order, otId, role}) {
-  const canAccess = OPERATION_ROLES.has(String(role || "").toUpperCase());
-  const canOperate = canAccess &&
+  const canAccess = hasBusinessPermission(role, BUSINESS_PERMISSIONS.TALLER_READ);
+  const canOperate = hasBusinessPermission(role, BUSINESS_PERMISSIONS.TALLER_OPERATE) &&
     Boolean(order.recepcion) && !["ingresada", "pendiente_entrega", "cerrada", "cancelada"].includes(order.estado);
   const [people, setPeople] = useState([]);
   const [actors, setActors] = useState([]);

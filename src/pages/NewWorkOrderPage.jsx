@@ -1,3 +1,4 @@
+import {BUSINESS_PERMISSIONS, hasBusinessPermission} from "../domain/rbac.mjs";
 import React, {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {ArrowLeft, Car, FilePlus2, Plus, RefreshCw, Search} from "lucide-react";
 import {useLocation, useNavigate} from "react-router-dom";
@@ -11,7 +12,7 @@ import {
   getWorkOrderErrorMessage,
 } from "../services/workOrderService";
 
-const CREATE_ROLES = new Set(["OWNER", "ADMIN", "TECNICO"]);
+
 
 export default function NewWorkOrderPage({businessId, role}) {
   const location = useLocation();
@@ -24,7 +25,7 @@ export default function NewWorkOrderPage({businessId, role}) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const canCreate = CREATE_ROLES.has(String(role || "").toUpperCase());
+  const canCreate = hasBusinessPermission(role, BUSINESS_PERMISSIONS.TALLER_CREATE);
 
   const load = useCallback(async () => {
     if (!businessId || !canCreate) {

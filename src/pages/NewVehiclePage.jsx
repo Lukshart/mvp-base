@@ -1,3 +1,4 @@
+import {BUSINESS_PERMISSIONS, hasBusinessPermission} from "../domain/rbac.mjs";
 import React, {useCallback, useMemo, useRef, useState} from "react";
 import {useNavigate} from "react-router-dom";
 import {ArrowLeft, Save} from "lucide-react";
@@ -8,7 +9,7 @@ import {buildVehicleMutationPayload, getVehicleFieldErrors} from "../domain/vehi
 import {crearVehiculo, createVehicleRequestId, getVehicleErrorMessage, listarClientesSeleccionablesTaller} from "../services/vehicleService";
 
 const EMPTY_VEHICLE = {patente: "", vin: "", marca: "", modelo: "", anio: "", color: "", tipo: ""};
-const CREATE_ROLES = new Set(["OWNER", "ADMIN", "TECNICO"]);
+
 
 function NewVehiclePage({businessId, role}) {
   const navigate = useNavigate();
@@ -18,7 +19,7 @@ function NewVehiclePage({businessId, role}) {
   const [errors, setErrors] = useState({});
   const [serverError, setServerError] = useState("");
   const [saving, setSaving] = useState(false);
-  const canCreate = CREATE_ROLES.has(String(role || "").toUpperCase());
+  const canCreate = hasBusinessPermission(role, BUSINESS_PERMISSIONS.TALLER_CREATE);
   const ownerError = errors.clienteId;
   const selectedOwnerId = owner?.clienteId || "";
   const formErrors = useMemo(() => ({...errors, clienteId: undefined}), [errors]);

@@ -142,6 +142,8 @@ assert.match(packageSource, /node scripts\/firebase-emulators-start\.mjs/);
 assert.match(emulatorStartSource, /auth,firestore,functions,storage/);
 assert.match(emulatorStartSource, /--export-on-exit=/);
 assert.match(emulatorStartSource, /--import=/);
+assert.match(emulatorStartSource, /findLatestLocalBackup/);
+assert.match(emulatorStartSource, /Se restauró automáticamente la persistencia local/);
 assert.doesNotMatch(loginSource, /firebaseEnvironment\.isReadOnly/);
 assert.doesNotMatch(inventoryPageSource, /firebaseEnvironment\.isReadOnly/);
 assert.doesNotMatch(companyServiceSource, /firebaseEnvironment\.isReadOnly/);

@@ -2,6 +2,7 @@
 
 const {normalizeBusinessVerificationState} = require("./businessOperations");
 const {TALLER_MANAGEMENT_ROLES, TALLER_OPERATION_ROLES} = require("./rbac");
+const {requireTallerAccess, assertFreshTallerAccess} = require("./tallerAccess");
 const {
   appendPlanningEvent,
   diagnosisActor,
@@ -76,14 +77,12 @@ function isActiveOrder(order) {
 }
 
 async function requirePlazaAccess(request, dependencies, roles) {
-  return dependencies.requireBusinessAccess(
-    request,
-    {db: dependencies.db, HttpsError: dependencies.HttpsError},
-    {roles, requiresVerifiedBusiness: true, moduleId: "taller"}
-  );
+  return requireTallerAccess(request, dependencies, roles === TALLER_MANAGEMENT_ROLES ? "manage" : "operate");
 }
 
 async function assertFreshAccess(transaction, context, dependencies, roles) {
+  await assertFreshTallerAccess(transaction, context, dependencies,
+    roles === TALLER_MANAGEMENT_ROLES ? "manage" : "operate");
   const {HttpsError} = dependencies;
   const [membershipSnapshot, businessSnapshot] = await Promise.all([
     transaction.get(context.membershipRef),

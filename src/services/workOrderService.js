@@ -235,6 +235,11 @@ export async function obtenerEventosCierreOT(businessId, otId) {
   return response.eventos || [];
 }
 
+export async function obtenerHistorialOT(businessId, otId) {
+  const response = await diagnosisCall("obtenerHistorialOT", "consultar el historial de la OT", businessId, otId, {});
+  return response.eventos || [];
+}
+
 export function agregarProductoOT(businessId, otId, servicioOtId, itemId, cantidad, requestId) {
   return diagnosisCall("agregarProductoOT", "planificar un producto", businessId, otId, {
     servicioOtId: requireIdentifier(servicioOtId, "El servicio de la OT"),

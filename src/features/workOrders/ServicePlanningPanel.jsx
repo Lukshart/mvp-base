@@ -1,3 +1,4 @@
+import {BUSINESS_PERMISSIONS, hasBusinessPermission} from "../../domain/rbac.mjs";
 import React, {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {Plus, Save} from "lucide-react";
 import Button from "../../components/ui/Button";
@@ -11,7 +12,7 @@ import {
   listarCatalogoTaller, listarPersonasAsignablesTaller,
 } from "../../services/workOrderService";
 
-const OPERATION_ROLES = new Set(["OWNER", "ADMIN", "TECNICO", "MEMBER"]);
+
 const SERVICE_LABELS = {pendiente: "Pendiente", en_progreso: "En progreso", completado: "Completado"};
 
 function priceLabel(value, currency) {
@@ -30,10 +31,10 @@ export default function ServicePlanningPanel({
   role,
   services,
 }) {
-  const canOperate = OPERATION_ROLES.has(String(role || "").toUpperCase()) &&
+  const canOperate = hasBusinessPermission(role, BUSINESS_PERMISSIONS.TALLER_OPERATE) &&
     Boolean(order.recepcion) && ["en_cola", "en_diagnostico", "esperando_aprobacion", "esperando_repuestos", "en_reparacion"].includes(order.estado);
   const frozen = ["esperando_aprobacion", "esperando_repuestos", "en_reparacion", "pendiente_entrega", "cerrada"].includes(order.estado);
-  const canExecute = OPERATION_ROLES.has(String(role || "").toUpperCase()) &&
+  const canExecute = hasBusinessPermission(role, BUSINESS_PERMISSIONS.TALLER_OPERATE) &&
     order.estado === "en_reparacion" && order.estadoAprobacion === "aprobada";
   const [inventory, setInventory] = useState([]);
   const [people, setPeople] = useState([]);

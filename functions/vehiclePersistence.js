@@ -1,7 +1,7 @@
 "use strict";
 
 const {createHash} = require("node:crypto");
-const {TALLER_CREATION_ROLES, TALLER_MANAGEMENT_ROLES} = require("./rbac");
+const {requireTallerAccess, assertFreshTallerAccess} = require("./tallerAccess");
 
 const VEHICLE_TYPES = Object.freeze([
   "sedan",
@@ -250,34 +250,19 @@ function vehicleResponse(vehiculoId, businessId, normalized) {
 }
 
 async function requireManagementAccess(request, dependencies) {
-  return dependencies.requireBusinessAccess(
-    request,
-    {db: dependencies.db, HttpsError: dependencies.HttpsError},
-    {
-      roles: TALLER_MANAGEMENT_ROLES,
-      requiresVerifiedBusiness: true,
-      moduleId: "taller",
-    }
-  );
+  return requireTallerAccess(request, dependencies, "manage");
 }
 
 async function requireCreationAccess(request, dependencies) {
-  return dependencies.requireBusinessAccess(
-    request,
-    {db: dependencies.db, HttpsError: dependencies.HttpsError},
-    {
-      roles: TALLER_CREATION_ROLES,
-      requiresVerifiedBusiness: true,
-      moduleId: "taller",
-    }
-  );
+  return requireTallerAccess(request, dependencies, "create");
 }
 
 async function listarClientesSeleccionablesTallerHandler(request, dependencies) {
   const context = await requireCreationAccess(request, dependencies);
   const snapshot = await context.businessRef.collection("clientes")
     .where("negocioId", "==", context.businessId).get();
-  const clientes = snapshot.docs.map((entry) => ({clienteId: entry.id, ...entry.data()}))
+  const clientes = snapshot.docs.filter((entry) => entry.data().clienteId === entry.id)
+    .map((entry) => ({...entry.data(), clienteId: entry.id}))
     .filter((client) => client.negocioId === context.businessId && client.estado === "activo")
     .map((client) => ({
       clienteId: client.clienteId,
@@ -315,6 +300,7 @@ async function crearVehiculoHandler(request, dependencies) {
     .doc(requestId);
 
   const result = await db.runTransaction(async (transaction) => {
+    await assertFreshTallerAccess(transaction, context, dependencies, "create");
     const requestSnapshot = await transaction.get(requestRef);
     if (requestSnapshot.exists) {
       const storedRequest = requestSnapshot.data() || {};
@@ -400,6 +386,7 @@ async function actualizarVehiculoHandler(request, dependencies) {
   const vehicleRef = context.businessRef.collection("vehiculos").doc(vehiculoId);
 
   const result = await db.runTransaction(async (transaction) => {
+    await assertFreshTallerAccess(transaction, context, dependencies, "manage");
     const vehicleSnapshot = await transaction.get(vehicleRef);
     const stored = assertVehicle(vehicleSnapshot, context.businessId, HttpsError);
     const previousPlate = normalizeVehicleKey(
@@ -516,6 +503,7 @@ async function cambiarPropietarioVehiculoHandler(request, dependencies) {
   const clientRef = context.businessRef.collection("clientes").doc(clienteId);
 
   const result = await db.runTransaction(async (transaction) => {
+    await assertFreshTallerAccess(transaction, context, dependencies, "manage");
     const [vehicleSnapshot, clientSnapshot] = await transaction.getAll(
       vehicleRef,
       clientRef

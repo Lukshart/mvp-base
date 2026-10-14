@@ -1,3 +1,4 @@
+import {BUSINESS_PERMISSIONS, hasBusinessPermission} from "./rbac.mjs";
 export const WORKSHOP_PLAZA_STATES = Object.freeze([
   {value: "activa", label: "Activa"},
   {value: "inactiva", label: "Inactiva"},
@@ -63,9 +64,9 @@ export function getWorkshopPlazaFieldErrors(values = {}) {
 }
 
 export function canManageWorkshopPlazas(role) {
-  return ["OWNER", "ADMIN"].includes(normalizedText(role).toUpperCase());
+  return hasBusinessPermission(role, BUSINESS_PERMISSIONS.TALLER_MANAGE);
 }
 
 export function canAssignWorkshopPlazas(role) {
-  return ["OWNER", "ADMIN", "TECNICO", "MEMBER"].includes(normalizedText(role).toUpperCase());
+  return hasBusinessPermission(role, BUSINESS_PERMISSIONS.TALLER_OPERATE);
 }

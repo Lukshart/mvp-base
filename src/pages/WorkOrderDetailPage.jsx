@@ -1,3 +1,4 @@
+import {BUSINESS_PERMISSIONS, hasBusinessPermission} from "../domain/rbac.mjs";
 import React, {useCallback, useEffect, useRef, useState} from "react";
 import {ArrowLeft, RefreshCw, Save} from "lucide-react";
 import {useNavigate, useParams} from "react-router-dom";
@@ -14,6 +15,11 @@ import {
   getWorkOrderStatusLabel,
   getWorkOrderStatusVariant,
 } from "../domain/workOrderModel.mjs";
+import {
+  formatWorkOrderHistoryDate,
+  getWorkOrderHistoryDetail,
+  getWorkOrderHistoryEventLabel,
+} from "../domain/workOrderHistoryModel.mjs";
 import {
   buildReceptionMutationPayload,
   getReceptionFieldErrors,
@@ -32,13 +38,13 @@ import {
   getWorkOrderErrorMessage,
   listarDiagnosticos,
   listarServiciosOT,
-  obtenerEventosCierreOT,
+  obtenerHistorialOT,
   obtenerOrdenTrabajo,
   registrarRecepcionOrdenTrabajo,
 } from "../services/workOrderService";
 
-const CLIENT_READ_ROLES = new Set(["OWNER", "ADMIN"]);
-const RECEPTION_OPERATION_ROLES = new Set(["OWNER", "ADMIN", "TECNICO", "MEMBER"]);
+
+
 
 const DETAIL_SECTIONS = Object.freeze([
   {id: "resumen", label: "Resumen"},
@@ -50,12 +56,6 @@ const DETAIL_SECTIONS = Object.freeze([
 
 function DetailItem({label, value}) {
   return <div className="vehicle-detail-item"><dt>{label}</dt><dd>{value}</dd></div>;
-}
-
-function closureDate(value) {
-  return Number.isSafeInteger(value)
-    ? new Date(value).toLocaleString("es-CL", {dateStyle: "medium", timeStyle: "short"})
-    : "Fecha no disponible";
 }
 
 function ReceptionField({children, error, label, required = false}) {
@@ -71,7 +71,7 @@ function ReceptionPanel({businessId, onSaved, order, otId, role}) {
   const [errors, setErrors] = useState({});
   const [serverError, setServerError] = useState("");
   const [saving, setSaving] = useState(false);
-  const canOperate = RECEPTION_OPERATION_ROLES.has(String(role || "").toUpperCase()) &&
+  const canOperate = hasBusinessPermission(role, BUSINESS_PERMISSIONS.TALLER_OPERATE) &&
     !["pendiente_entrega", "cerrada", "cancelada"].includes(order.estado);
   const checklistComplete = isReceptionChecklistComplete(values.checklist);
   const hasAnomaly = hasReceptionAnomaly(values.checklist);
@@ -172,16 +172,16 @@ export default function WorkOrderDetailPage({businessId, role}) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [activeSection, setActiveSection] = useState("resumen");
-  const [closureEvents, setClosureEvents] = useState([]);
-  const [closureLoading, setClosureLoading] = useState(false);
-  const [closureError, setClosureError] = useState("");
+  const [historyEvents, setHistoryEvents] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState("");
   const [closureTarget, setClosureTarget] = useState(null);
   const [closureBusy, setClosureBusy] = useState(false);
   const [closureNotice, setClosureNotice] = useState("");
   const [closureActionError, setClosureActionError] = useState("");
-  const closureRequest = useRef(0);
-  const canReadClients = CLIENT_READ_ROLES.has(String(role || "").toUpperCase());
-  const canOperate = RECEPTION_OPERATION_ROLES.has(String(role || "").toUpperCase());
+  const historyRequest = useRef(0);
+  const canReadClients = hasBusinessPermission(role, BUSINESS_PERMISSIONS.TALLER_MANAGE);
+  const canOperate = hasBusinessPermission(role, BUSINESS_PERMISSIONS.TALLER_OPERATE);
 
   const load = useCallback(async () => {
     if (!businessId || !otId) return;
@@ -225,30 +225,25 @@ export default function WorkOrderDetailPage({businessId, role}) {
     setClosureActionError("");
   }, [businessId, otId]);
 
-  const refreshClosureEvents = useCallback(async () => {
+  const refreshHistory = useCallback(async () => {
     if (!businessId || !otId) return;
-    const request = ++closureRequest.current;
-    setClosureLoading(true);
-    setClosureError("");
+    const request = ++historyRequest.current;
+    setHistoryLoading(true);
+    setHistoryError("");
     try {
-      const events = await obtenerEventosCierreOT(businessId, otId);
-      if (closureRequest.current === request) setClosureEvents(events);
+      const events = await obtenerHistorialOT(businessId, otId);
+      if (historyRequest.current === request) setHistoryEvents(events);
     } catch (loadError) {
-      if (closureRequest.current === request) setClosureError(getWorkOrderErrorMessage(loadError));
+      if (historyRequest.current === request) setHistoryError(getWorkOrderErrorMessage(loadError));
     } finally {
-      if (closureRequest.current === request) setClosureLoading(false);
+      if (historyRequest.current === request) setHistoryLoading(false);
     }
   }, [businessId, otId]);
 
   useEffect(() => {
-    setClosureEvents([]);
-    if (["pendiente_entrega", "cerrada"].includes(order?.estado)) void refreshClosureEvents();
-    else {
-      closureRequest.current += 1;
-      setClosureLoading(false);
-      setClosureError("");
-    }
-  }, [order?.estado, refreshClosureEvents]);
+    if (activeSection !== "historial") return;
+    void refreshHistory();
+  }, [activeSection, refreshHistory]);
 
   const refreshDiagnoses = useCallback(async () => {
     const [items, currentOrder] = await Promise.all([
@@ -279,7 +274,7 @@ export default function WorkOrderDetailPage({businessId, role}) {
         ? "Reparación finalizada. El vehículo está pendiente de entrega."
         : "Entrega registrada. La OT quedó cerrada.");
       await refreshServices();
-      await refreshClosureEvents();
+      await refreshHistory();
     } catch (actionError) {
       setClosureActionError(getWorkOrderErrorMessage(actionError));
       if (String(actionError?.code || "").includes("aborted")) {
@@ -355,12 +350,12 @@ export default function WorkOrderDetailPage({businessId, role}) {
       order={order} otId={otId} role={role} services={services} />}
     {["resumen", "servicios"].includes(activeSection) && <ApprovalPanel businessId={businessId} otId={otId} order={order} onChanged={refreshServices} />}
     {activeSection === "historial" && <section className="erp-panel" aria-labelledby="work-order-history-title">
-      <div className="erp-panel-header"><div><h2 id="work-order-history-title" className="erp-panel-title">Finalización y entrega</h2><p className="erp-secondary-text">Eventos de cierre registrados para esta OT.</p></div></div>
-      {closureLoading && <div className="erp-empty-state" role="status">Cargando eventos de cierre...</div>}
-      {closureError && <div className="vehicle-message vehicle-message--error" role="alert">{closureError} <Button type="button" variant="secondary" onClick={refreshClosureEvents}>Reintentar</Button></div>}
-      {!closureLoading && !closureError && (closureEvents.length
-        ? <div className="erp-card-list">{closureEvents.map((event) => <article className="erp-record-card" key={event.eventoId}><h3 className="erp-record-card__title">{event.tipo === "reparacion_finalizada" ? "Reparación finalizada" : "Vehículo entregado"}</h3><p>{closureDate(event.fecha)} · {event.actorNombre}</p></article>)}</div>
-        : <div className="erp-empty-state">Aún no se ha registrado la finalización ni la entrega.</div>)}
+      <div className="erp-panel-header"><div><h2 id="work-order-history-title" className="erp-panel-title">Historial</h2><p className="erp-secondary-text">Eventos registrados de la orden de trabajo.</p></div></div>
+      {historyLoading && <div className="erp-empty-state" role="status">Cargando historial...</div>}
+      {historyError && <div className="vehicle-message vehicle-message--error" role="alert">{historyError} <Button type="button" variant="secondary" onClick={refreshHistory}>Reintentar</Button></div>}
+      {!historyLoading && !historyError && (historyEvents.length
+        ? <ol className="work-order-history-list">{historyEvents.map((event) => { const detail = getWorkOrderHistoryDetail(event); return <li key={event.eventoId} className="work-order-history-event"><time>{formatWorkOrderHistoryDate(event.fecha)}</time><div><h3>{getWorkOrderHistoryEventLabel(event.tipo)}</h3><p>{event.actorNombre || "Usuario no disponible"}</p>{detail && <p className="erp-secondary-text">{detail}</p>}</div></li>; })}</ol>
+        : <div className="erp-empty-state">Aún no hay eventos registrados para esta OT.</div>)}
     </section>}
     <ResponsiveDialog open={Boolean(closureTarget)} onClose={() => !closureBusy && setClosureTarget(null)} size="small" eyebrow="Taller"
       title={closureTarget?.action === "finalizar" ? "Finalizar orden de trabajo" : "Registrar entrega"}

@@ -2,6 +2,7 @@
 
 const {createHash} = require("node:crypto");
 const {normalizeBusinessVerificationState} = require("./businessOperations");
+const {hasTallerCapability, requireTallerAccess, assertFreshTallerAccess} = require("./tallerAccess");
 const {
   ASSIGNABLE_BUSINESS_ROLES,
   TALLER_CREATION_ROLES,
@@ -46,11 +47,10 @@ const RECEPTION_FUEL_LEVELS = new Set([
 ]);
 const DIAGNOSIS_INPUT_FIELDS = new Set(["responsableUid", "descripcion", "observaciones"]);
 const SERVICE_INPUT_FIELDS = new Set(["itemId", "responsableUid"]);
-const APPROVAL_ROLES = new Set(["OWNER", "ADMIN"]);
 const PLANNING_STATES = new Set(["en_cola", "en_diagnostico", "esperando_aprobacion", "esperando_repuestos", "en_reparacion"]);
 
 function canApproveWorkOrder(membership) {
-  return APPROVAL_ROLES.has(membership.rol) && !membership.profileId;
+  return hasTallerCapability(membership, "approve");
 }
 
 function fail(HttpsError, code, message) {
@@ -276,39 +276,15 @@ function businessCurrency(context) {
 }
 
 async function requireManagementAccess(request, dependencies) {
-  return dependencies.requireBusinessAccess(
-    request,
-    {db: dependencies.db, HttpsError: dependencies.HttpsError},
-    {
-      roles: TALLER_MANAGEMENT_ROLES,
-      requiresVerifiedBusiness: true,
-      moduleId: "taller",
-    }
-  );
+  return requireTallerAccess(request, dependencies, "manage");
 }
 
 async function requireCreationAccess(request, dependencies) {
-  return dependencies.requireBusinessAccess(
-    request,
-    {db: dependencies.db, HttpsError: dependencies.HttpsError},
-    {
-      roles: TALLER_CREATION_ROLES,
-      requiresVerifiedBusiness: true,
-      moduleId: "taller",
-    }
-  );
+  return requireTallerAccess(request, dependencies, "create");
 }
 
 async function requireReceptionAccess(request, dependencies) {
-  return dependencies.requireBusinessAccess(
-    request,
-    {db: dependencies.db, HttpsError: dependencies.HttpsError},
-    {
-      roles: TALLER_OPERATION_ROLES,
-      requiresVerifiedBusiness: true,
-      moduleId: "taller",
-    }
-  );
+  return requireTallerAccess(request, dependencies, "operate");
 }
 
 function normalizeDiagnosisInput(raw, HttpsError) {
@@ -393,7 +369,7 @@ function appendPlanningEvent(transaction, orderRef, {businessId, actorUid, actor
 }
 
 async function listarCatalogoTallerHandler(request, dependencies) {
-  const context = await requireReceptionAccess(request, dependencies);
+  const context = await requireTallerAccess(request, dependencies, "read");
   const snapshot = await context.businessRef.collection("inventario")
     .where("tipoItem", "in", ["servicio", "producto"]).get();
   const items = snapshot.docs.flatMap((document) => {
@@ -474,7 +450,7 @@ function appendDiagnosisEvent(transaction, orderRef, {businessId, diagnosisId, t
 }
 
 async function listarPersonasAsignablesTallerHandler(request, dependencies) {
-  const context = await requireReceptionAccess(request, dependencies);
+  const context = await requireTallerAccess(request, dependencies, "read");
   const snapshot = await dependencies.db.collection("membresias")
     .where("negocioId", "==", context.businessId).get();
   const members = snapshot.docs.filter((item) => {
@@ -527,8 +503,10 @@ async function crearOrdenTrabajoHandler(request, dependencies) {
   const requestRef = context.businessRef
     .collection("otCreateRequests")
     .doc(requestId);
+  const actorSnapshot = await diagnosisActor(dependencies, context.uid);
 
   const result = await db.runTransaction(async (transaction) => {
+    await assertFreshTallerAccess(transaction, context, dependencies, "create");
     const requestSnapshot = await transaction.get(requestRef);
     if (requestSnapshot.exists) {
       const storedRequest = requestSnapshot.data() || {};
@@ -602,6 +580,18 @@ async function crearOrdenTrabajoHandler(request, dependencies) {
     };
 
     transaction.create(orderRef, stored);
+    appendPlanningEvent(transaction, orderRef, {
+      businessId: context.businessId,
+      actorUid: context.uid,
+      actorSnapshot,
+      timestamp,
+      type: "ot_creada",
+      detail: {
+        numeroOT,
+        estado: stored.estado,
+        estadoAprobacion: stored.estadoAprobacion,
+      },
+    });
     transaction.set(counterRef, {
       negocioId: context.businessId,
       lastNumber: sequence,
@@ -682,6 +672,7 @@ async function registrarRecepcionOrdenTrabajoHandler(request, dependencies) {
   let result;
 
   await db.runTransaction(async (transaction) => {
+    await assertFreshTallerAccess(transaction, context, dependencies, "operate");
     const stored = assertStoredWorkOrder(
       await transaction.get(orderRef),
       context.businessId,
@@ -752,6 +743,7 @@ async function registrarDiagnosticoHandler(request, dependencies) {
   const assignedUser = await dependencies.auth.getUser(input.responsableUid);
   if (assignedUser.disabled) fail(HttpsError, "failed-precondition", "El responsable seleccionado está deshabilitado.");
   return db.runTransaction(async (transaction) => {
+    await assertFreshTallerAccess(transaction, context, dependencies, "operate");
     const existing = await transaction.get(diagnosisRef);
     if (existing.exists) {
       const stored = assertDiagnosis(existing, context.businessId, otId, HttpsError);
@@ -798,6 +790,7 @@ async function actualizarDiagnosticoHandler(request, dependencies) {
   const assignedUser = await dependencies.auth.getUser(input.responsableUid);
   if (assignedUser.disabled) fail(HttpsError, "failed-precondition", "El responsable seleccionado está deshabilitado.");
   return db.runTransaction(async (transaction) => {
+    await assertFreshTallerAccess(transaction, context, dependencies, "operate");
     const [orderSnapshot, diagnosisSnapshot, memberSnapshot] = await Promise.all([
       transaction.get(orderRef), transaction.get(diagnosisRef), transaction.get(memberRef),
     ]);
@@ -828,6 +821,7 @@ async function completarDiagnosticoHandler(request, dependencies) {
   const diagnosisRef = orderRef.collection("diagnosticos").doc(diagnosticoId);
   const actorSnapshot = await diagnosisActor(dependencies, context.uid);
   return db.runTransaction(async (transaction) => {
+    await assertFreshTallerAccess(transaction, context, dependencies, "operate");
     const [orderSnapshot, diagnosisSnapshot] = await Promise.all([
       transaction.get(orderRef), transaction.get(diagnosisRef),
     ]);
@@ -869,6 +863,7 @@ async function crearServicioOTHandler(request, dependencies) {
   const assignedUser = await dependencies.auth.getUser(input.responsableUid);
   if (assignedUser.disabled) fail(HttpsError, "failed-precondition", "El responsable seleccionado está deshabilitado.");
   return db.runTransaction(async (transaction) => {
+    await assertFreshTallerAccess(transaction, context, dependencies, "operate");
     const [existing, orderSnapshot, itemSnapshot, memberSnapshot] = await Promise.all([
       transaction.get(serviceRef), transaction.get(orderRef), transaction.get(itemRef), transaction.get(memberRef),
     ]);
@@ -915,6 +910,7 @@ async function actualizarServicioOTHandler(request, dependencies) {
   const assignedUser = await dependencies.auth.getUser(input.responsableUid);
   if (assignedUser.disabled) fail(HttpsError, "failed-precondition", "El responsable seleccionado está deshabilitado.");
   return db.runTransaction(async (transaction) => {
+    await assertFreshTallerAccess(transaction, context, dependencies, "operate");
     const [orderSnapshot, serviceSnapshot, itemSnapshot, memberSnapshot] = await Promise.all([
       transaction.get(orderRef), transaction.get(serviceRef), transaction.get(itemRef), transaction.get(memberRef),
     ]);
@@ -952,6 +948,7 @@ async function eliminarServicioOTHandler(request, dependencies) {
     .where("servicioOtId", "==", serviceId);
   const actorSnapshot = await diagnosisActor(dependencies, context.uid);
   return db.runTransaction(async (transaction) => {
+    await assertFreshTallerAccess(transaction, context, dependencies, "operate");
     const [orderSnapshot, serviceSnapshot, movementSnapshot] = await Promise.all([
       transaction.get(orderRef), transaction.get(serviceRef), transaction.get(movementsQuery),
     ]);
@@ -1000,6 +997,7 @@ async function changeProductoOTHandler(request, dependencies, action) {
   const itemRef = itemId ? context.businessRef.collection("inventario").doc(itemId) : null;
   const actorSnapshot = await diagnosisActor(dependencies, context.uid);
   return db.runTransaction(async (transaction) => {
+    await assertFreshTallerAccess(transaction, context, dependencies, "operate");
     const [orderSnapshot, serviceSnapshot, itemSnapshot] = await Promise.all([
       transaction.get(orderRef), transaction.get(serviceRef),
       itemRef ? transaction.get(itemRef) : Promise.resolve(null),
@@ -1077,6 +1075,7 @@ async function transitionServiceOT(request, dependencies, action) {
   const actorSnapshot = await diagnosisActor(dependencies, context.uid);
   const fingerprint = createHash("sha256").update(JSON.stringify({otId, serviceId, action, expected, actor: context.uid})).digest("hex");
   return db.runTransaction(async (transaction) => {
+    await assertFreshTallerAccess(transaction, context, dependencies, "operate");
     const [requestSnapshot, orderSnapshot, serviceSnapshot, approvalSnapshot, servicesSnapshot, memberSnapshot,
       businessSnapshot] = await Promise.all([
       transaction.get(requestRef), transaction.get(orderRef), transaction.get(serviceRef), transaction.get(approvalRef),
@@ -1225,7 +1224,7 @@ const finalizarReparacionOTHandler = (request, deps) => transitionWorkOrderClosu
 const registrarEntregaOTHandler = (request, deps) => transitionWorkOrderClosure(request, deps, "entregar");
 
 async function obtenerEventosCierreOTHandler(request, dependencies) {
-  const context = await requireReceptionAccess(request, dependencies);
+  const context = await requireTallerAccess(request, dependencies, "read");
   const otId = identifier(request?.data?.otId, "La orden de trabajo", dependencies.HttpsError);
   const orderRef = context.businessRef.collection("ordenesTrabajo").doc(otId);
   assertStoredWorkOrder(await orderRef.get(), context.businessId, dependencies.HttpsError);
@@ -1237,6 +1236,47 @@ async function obtenerEventosCierreOTHandler(request, dependencies) {
     return {eventoId: entry.id, tipo: event.tipo, fecha: event.fecha?.toMillis?.() || null,
       actorNombre: event.actorSnapshot?.nombre || event.actorSnapshot?.correo || "Usuario no disponible"};
   }).filter(Boolean).sort((a, b) => (a.fecha || 0) - (b.fecha || 0))};
+}
+
+function historyEventDetail(type, detail = {}) {
+  const changes = detail.cambios && typeof detail.cambios === "object"
+    ? Object.keys(detail.cambios) : [];
+  const material = ["material_consumido", "material_devuelto"].includes(type);
+  return {
+    ...(changes.length ? {camposModificados: changes} : {}),
+    ...(material ? {
+      productoNombre: String(detail.productoNombre || "Producto"),
+      cantidad: Number.isFinite(detail.cantidad) ? detail.cantidad : null,
+    } : {}),
+    ...(typeof detail.estadoAnterior === "string" ? {estadoAnterior: detail.estadoAnterior} : {}),
+    ...(typeof detail.estado === "string" ? {estado: detail.estado} : {}),
+    ...(typeof detail.aprobacionAnterior === "string" ? {aprobacionAnterior: detail.aprobacionAnterior} : {}),
+    ...(typeof detail.estadoAprobacion === "string" ? {estadoAprobacion: detail.estadoAprobacion} : {}),
+    ...(typeof detail.motivo === "string" && detail.motivo.trim() ? {motivo: detail.motivo.trim()} : {}),
+  };
+}
+
+async function obtenerHistorialOTHandler(request, dependencies) {
+  const context = await requireTallerAccess(request, dependencies, "read");
+  const otId = identifier(request?.data?.otId, "La orden de trabajo", dependencies.HttpsError);
+  const orderRef = context.businessRef.collection("ordenesTrabajo").doc(otId);
+  assertStoredWorkOrder(await orderRef.get(), context.businessId, dependencies.HttpsError);
+  const snapshot = await orderRef.collection("historial").get();
+  const events = snapshot.docs.flatMap((entry) => {
+    const event = entry.data() || {};
+    if (event.negocioId !== context.businessId || event.otId !== otId ||
+        typeof event.tipo !== "string" || !event.tipo.trim()) return [];
+    return [{
+      eventoId: entry.id,
+      tipo: event.tipo,
+      fecha: event.fecha?.toMillis?.() || null,
+      actorNombre: String(event.actorSnapshot?.nombre || event.actorSnapshot?.correo || "Usuario no disponible").trim(),
+      detalle: historyEventDetail(event.tipo, event.detalle),
+    }];
+  });
+  events.sort((left, right) => (left.fecha || 0) - (right.fecha || 0) ||
+    left.eventoId.localeCompare(right.eventoId));
+  return {eventos: events};
 }
 
 function freezeCoreItem(snapshot, businessId, itemId, type, HttpsError) {
@@ -1258,6 +1298,7 @@ function freezeCoreItem(snapshot, businessId, itemId, type, HttpsError) {
 }
 
 async function readApprovalContext(transaction, context, orderRef, dependencies, inventoryMode = "required") {
+  await assertFreshTallerAccess(transaction, context, dependencies, "read");
   const {db, HttpsError} = dependencies;
   const [orderSnapshot, serviceSnapshot, diagnoses, business, member] = await Promise.all([
     transaction.get(orderRef), transaction.get(orderRef.collection("servicios")),
@@ -1332,7 +1373,7 @@ function approvalIsSubmitted(order) {
 }
 
 async function obtenerResumenAprobacionOTHandler(request, dependencies) {
-  const context = await requireReceptionAccess(request, dependencies);
+  const context = await requireTallerAccess(request, dependencies, "read");
   const otId = identifier(request?.data?.otId, "La OT", dependencies.HttpsError);
   return dependencies.db.runTransaction(async (transaction) => {
     const data = await readApprovalContext(transaction, context, context.businessRef.collection("ordenesTrabajo").doc(otId), dependencies, "preview");
@@ -1458,7 +1499,7 @@ module.exports = {
   requestIdentifier,
   requireReceptionAccess,
   iniciarServicioOTHandler, completarServicioOTHandler,
-  finalizarReparacionOTHandler, registrarEntregaOTHandler, obtenerEventosCierreOTHandler,
+  finalizarReparacionOTHandler, registrarEntregaOTHandler, obtenerEventosCierreOTHandler, obtenerHistorialOTHandler,
   enviarOTAprobacionHandler, aprobarOTHandler, rechazarOTHandler, revalidarDisponibilidadOTHandler,
   obtenerResumenAprobacionOTHandler, scopeFingerprint, canApproveWorkOrder, freezeCoreItem,
   actualizarProductoOTHandler,

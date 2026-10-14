@@ -11,10 +11,9 @@ const {
   appendPlanningEvent, diagnosisActor, identifier, readApprovalContext,
   requestIdentifier, requireReceptionAccess, scopeFingerprint,
 } = require("./workOrderPersistence");
+const {hasTallerCapability, requireTallerAccess} = require("./tallerAccess");
 
 const MATERIAL_TYPES = new Set(["SALIDA_TALLER", "DEVOLUCION_TALLER"]);
-// Matches Core INVENTORY_COSTS_READ; custom module profiles grant no cost capability.
-const COST_ROLES = new Set(["OWNER", "ADMIN", "COMPRAS", "FINANZAS", "MEMBER"]);
 const RETURN_STATES = new Set(["en_cola", "en_diagnostico", "esperando_aprobacion",
   "esperando_repuestos", "en_reparacion", "pendiente_entrega"]);
 
@@ -116,7 +115,8 @@ async function materialOperation(request, dependencies, action) {
       if (stored.negocioId !== context.businessId || stored.fingerprint !== fingerprint) {
         fail(HttpsError, "already-exists", "La solicitud ya fue utilizada con otros datos.");
       }
-      return {...stored.resultado, sinCambios: true};
+      return {movimientoId: stored.resultado.movimientoId, tipo: stored.resultado.tipo,
+        stockPosterior: stored.resultado.stockPosterior, sinCambios: true};
     }
     const service = data.services.find((entry) => entry.servicioOtId === servicioOtId);
     if (!service) fail(HttpsError, "not-found", "No se encontró el servicio de esta OT.");
@@ -206,7 +206,7 @@ const registrarDevolucionMaterialOTHandler = (request, deps) => materialOperatio
 
 async function obtenerMaterialesOTHandler(request, dependencies) {
   const {db, HttpsError} = dependencies;
-  const context = await requireReceptionAccess(request, dependencies);
+  const context = await requireTallerAccess(request, dependencies, "read");
   onlyFields(request.data, ["businessId", "otId"], HttpsError);
   const otId = identifier(request.data.otId, "La OT", HttpsError);
   const orderRef = context.businessRef.collection("ordenesTrabajo").doc(otId);
@@ -216,7 +216,7 @@ async function obtenerMaterialesOTHandler(request, dependencies) {
       transaction.get(context.businessRef.collection("movimientosInventario").where("otId", "==", otId)),
       transaction.get(context.businessRef.collection("otApprovalState").doc(otId)),
     ]);
-    const puedeVerCostos = !data.membership.profileId && COST_ROLES.has(data.membership.rol);
+    const puedeVerCostos = hasTallerCapability(data.membership, "costs");
     const movements = movementSnapshot.docs.map((entry) => entry.data()).filter((entry) =>
       entry.negocioId === context.businessId && MATERIAL_TYPES.has(entry.tipo));
     const exits = movements.filter((entry) => entry.tipo === "SALIDA_TALLER");

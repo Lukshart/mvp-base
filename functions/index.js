@@ -52,6 +52,7 @@ const {
   finalizarReparacionOTHandler,
   registrarEntregaOTHandler,
   obtenerEventosCierreOTHandler,
+  obtenerHistorialOTHandler,
   enviarOTAprobacionHandler,
   aprobarOTHandler,
   rechazarOTHandler,
@@ -2436,6 +2437,8 @@ exports.registrarEntregaOT = onCall(vehicleCallableOptions, (request) =>
   registrarEntregaOTHandler(request, workOrderPersistenceDependencies));
 exports.obtenerEventosCierreOT = onCall(vehicleCallableOptions, (request) =>
   obtenerEventosCierreOTHandler(request, workOrderPersistenceDependencies));
+exports.obtenerHistorialOT = onCall(vehicleCallableOptions, (request) =>
+  obtenerHistorialOTHandler(request, workOrderPersistenceDependencies));
 exports.registrarSalidaMaterialOT = onCall(vehicleCallableOptions, (request) =>
   registrarSalidaMaterialOTHandler(request, workOrderPersistenceDependencies));
 exports.registrarDevolucionMaterialOT = onCall(vehicleCallableOptions, (request) =>

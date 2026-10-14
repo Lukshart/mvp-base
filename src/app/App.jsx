@@ -336,7 +336,7 @@ function AppRoutes({
             <WorkOrdersPage
               key={businessId}
               businessId={businessId}
-              role={activeBusiness?.role}
+              role={activeBusiness}
             />
           }
         />
@@ -346,7 +346,7 @@ function AppRoutes({
             <NewWorkOrderPage
               key={businessId}
               businessId={businessId}
-              role={activeBusiness?.role}
+              role={activeBusiness}
             />
           }
         />
@@ -356,7 +356,7 @@ function AppRoutes({
             <WorkOrderDetailPage
               key={businessId}
               businessId={businessId}
-              role={activeBusiness?.role}
+              role={activeBusiness}
             />
           }
         />
@@ -366,7 +366,7 @@ function AppRoutes({
             <VehiclesPage
               key={businessId}
               businessId={businessId}
-              role={activeBusiness?.role}
+              role={activeBusiness}
             />
           }
         />
@@ -376,7 +376,7 @@ function AppRoutes({
             <NewVehiclePage
               key={businessId}
               businessId={businessId}
-              role={activeBusiness?.role}
+              role={activeBusiness}
             />
           }
         />
@@ -386,7 +386,7 @@ function AppRoutes({
             <VehicleDetailPage
               key={businessId}
               businessId={businessId}
-              role={activeBusiness?.role}
+              role={activeBusiness}
             />
           }
         />
@@ -396,7 +396,7 @@ function AppRoutes({
             <WorkshopPlazasPage
               key={businessId}
               businessId={businessId}
-              role={activeBusiness?.role}
+              role={activeBusiness}
             />
           }
         />

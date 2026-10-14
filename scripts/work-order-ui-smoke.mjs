@@ -32,7 +32,7 @@ const creation = fs.readFileSync("src/pages/NewWorkOrderPage.jsx", "utf8");
 assert.match(creation, /normalizeVehiclePlate/);
 assert.match(creation, /listarVehiculos/);
 assert.match(creation, /listarClientesSeleccionablesTaller/);
-assert.match(creation, /"OWNER", "ADMIN", "TECNICO"/);
+assert.match(creation, /hasBusinessPermission\(role, BUSINESS_PERMISSIONS.TALLER_CREATE\)/);
 assert.match(creation, /if \(!normalizedSearch\) return vehicles/);
 assert.match(creation, /Vehículos disponibles/);
 assert.match(creation, /Crear vehículo/);
@@ -69,10 +69,18 @@ assert.match(detail, /Finalizar orden de trabajo/);
 assert.match(detail, /Registrar entrega/);
 assert.match(detail, /allServicesCompleted/);
 assert.match(detail, /ejecutarCierreOT/);
-assert.match(detail, /obtenerEventosCierreOT/);
+assert.match(detail, /obtenerHistorialOT/);
+assert.match(detail, /work-order-history-list/);
+assert.match(detail, /getWorkOrderHistoryEventLabel/);
+assert.match(detail, /getWorkOrderHistoryDetail/);
 assert.match(detail, /ResponsiveDialog/);
 assert.match(detail, /\["pendiente_entrega", "cerrada", "cancelada"\]\.includes\(order\.estado\)/);
 assert.doesNotMatch(detail, /updateDoc|setDoc|pendiente_pago/);
+const historyModel = fs.readFileSync("src/domain/workOrderHistoryModel.mjs", "utf8");
+for (const event of ["ot_creada", "recepcion_registrada", "diagnostico_completado", "material_consumido", "vehiculo_entregado"]) {
+  assert.match(historyModel, new RegExp(event));
+}
+assert.doesNotMatch(historyModel, /costoUnitario|costoTotal|scopeHash/);
 const plazasPage = fs.readFileSync("src/pages/WorkshopPlazasPage.jsx", "utf8");
 for (const text of ["Nombre", "Estado", "Ocupación actual", "OT asignada", "Vehículo asignado", "Disponible", "En uso", "Nueva Plaza", "Editar", "Activar", "Inactivar"]) {
   assert.ok(plazasPage.includes(text));

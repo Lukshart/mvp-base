@@ -4,6 +4,7 @@ import {testServiceExecution} from "./work-order-service-execution-cases.mjs";
 import {testWorkOrderClosure} from "./work-order-closure-cases.mjs";
 import {testWorkOrderMaterials} from "./work-order-material-cases.mjs";
 import {testWorkshopPlazas} from "./work-order-plaza-cases.mjs";
+import {testWorkshopSecurity} from "./workshop-security-cases.mjs";
 import {createRequire} from "node:module";
 import {deleteApp, initializeApp} from "firebase/app";
 import {
@@ -289,6 +290,14 @@ try {
   assert.equal(stored.vehiculoId, "vehiculo-a");
   assert.equal(stored.clienteId, "cliente-a");
   assert.equal(stored.estado, "ingresada");
+  const initialHistory = (await callable(owner, "obtenerHistorialOT")({businessId, otId})).data.eventos;
+  assert.equal(initialHistory.length, 1);
+  assert.equal(initialHistory[0].tipo, "ot_creada");
+  assert.ok(initialHistory[0].fecha);
+  assert.ok(initialHistory[0].actorNombre);
+  assert.deepEqual(initialHistory[0].detalle, {estado: "ingresada", estadoAprobacion: "pendiente"});
+  assert.ok(!Object.keys(initialHistory[0].detalle).some((key) => /precio|costo|alcance/i.test(key)));
+  console.log("OK historial OT: evento de creación autoritativo y DTO sin datos económicos internos");
   assert.equal(stored.estadoAprobacion, "pendiente");
   assert.equal(stored.plazaId, null);
   assert.equal(stored.moneda, "CLP");
@@ -814,6 +823,8 @@ try {
   await testWorkOrderClosure({adminDb, businessId, otId, serviceId, owner, admin, technician, member,
     outsider, anonymous, callable, expectCallableError, expectFirestoreDenied,
     reception: workOrderReception(), runId: RUN_ID});
+  await testWorkshopSecurity({adminDb, businessId, otId, owner, member, technician, outsider,
+    anonymous, callable, expectCallableError, expectFirestoreDenied, runId: RUN_ID});
 } finally {
   await Promise.all(clients.map((client) => terminate(client.db)));
   await Promise.all(clients.map((client) => deleteApp(client.app)));

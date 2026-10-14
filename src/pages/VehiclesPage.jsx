@@ -1,3 +1,4 @@
+import {BUSINESS_PERMISSIONS, hasBusinessPermission} from "../domain/rbac.mjs";
 import React, {useCallback, useEffect, useMemo, useState} from "react";
 import {Link, useNavigate} from "react-router-dom";
 import {Car, Plus, RefreshCw, Search} from "lucide-react";
@@ -7,9 +8,9 @@ import {matchesVehicleSearch, getVehicleTypeLabel} from "../domain/vehicleModel.
 import {getClientErrorMessage, listarClientes} from "../services/clientService";
 import {getVehicleErrorMessage, listarVehiculos} from "../services/vehicleService";
 
-const MANAGE_ROLES = new Set(["OWNER", "ADMIN"]);
-const CREATE_ROLES = new Set(["OWNER", "ADMIN", "TECNICO"]);
-const CLIENT_READ_ROLES = new Set(["OWNER", "ADMIN"]);
+
+
+
 
 function ownerName(vehicle, clientsById, canReadClients) {
   if (!canReadClients) return "Restringido por permisos";
@@ -23,9 +24,9 @@ function VehiclesPage({businessId, role}) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
-  const canManage = MANAGE_ROLES.has(String(role || "").toUpperCase());
-  const canCreate = CREATE_ROLES.has(String(role || "").toUpperCase());
-  const canReadClients = CLIENT_READ_ROLES.has(String(role || "").toUpperCase());
+  const canManage = hasBusinessPermission(role, BUSINESS_PERMISSIONS.TALLER_MANAGE);
+  const canCreate = hasBusinessPermission(role, BUSINESS_PERMISSIONS.TALLER_CREATE);
+  const canReadClients = hasBusinessPermission(role, BUSINESS_PERMISSIONS.TALLER_MANAGE);
 
   const load = useCallback(async () => {
     if (!businessId) return;

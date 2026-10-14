@@ -145,6 +145,10 @@ export async function testWorkOrderMaterials({adminDb, businessId, otId, owner, 
     }
   };
   noCosts(concurrentRetry[0].data);
+  await adminDb.doc(`${base}/tallerMaterialRequests/${input.requestId}`).update({
+    "resultado.costoUnitario": 123, "resultado.costoTotal": 456,
+    "resultado.valorInventarioPosterior": 789,
+  });
   noCosts((await exit(technician, input)).data);
   for (const client of [technician, member]) {
     const data = (await call(client, "obtenerMaterialesOT", {businessId, otId})).data;

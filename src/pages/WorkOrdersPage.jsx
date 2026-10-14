@@ -1,3 +1,4 @@
+import {BUSINESS_PERMISSIONS, hasBusinessPermission} from "../domain/rbac.mjs";
 import React, {useCallback, useEffect, useMemo, useState} from "react";
 import {FilePlus2, RefreshCw, Search, Wrench} from "lucide-react";
 import {Link, useLocation, useNavigate} from "react-router-dom";
@@ -22,9 +23,9 @@ import {
 } from "../services/workOrderService";
 import {formatDate} from "../utils/formatters";
 
-const MANAGE_ROLES = new Set(["OWNER", "ADMIN"]);
-const CREATE_ROLES = new Set(["OWNER", "ADMIN", "TECNICO"]);
-const CLIENT_READ_ROLES = new Set(["OWNER", "ADMIN"]);
+
+
+
 
 function OrderStatus({order}) {
   return <StatusBadge variant={getWorkOrderStatusVariant(order.estado)}>{getWorkOrderStatusLabel(order.estado)}</StatusBadge>;
@@ -54,10 +55,10 @@ export default function WorkOrdersPage({businessId, role}) {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("todos");
   const [approval, setApproval] = useState("todos");
-  const normalizedRole = String(role || "").toUpperCase();
-  const canManage = MANAGE_ROLES.has(normalizedRole);
-  const canCreate = CREATE_ROLES.has(normalizedRole);
-  const canReadClients = CLIENT_READ_ROLES.has(normalizedRole);
+
+  const canManage = hasBusinessPermission(role, BUSINESS_PERMISSIONS.TALLER_MANAGE);
+  const canCreate = hasBusinessPermission(role, BUSINESS_PERMISSIONS.TALLER_CREATE);
+  const canReadClients = hasBusinessPermission(role, BUSINESS_PERMISSIONS.TALLER_MANAGE);
 
   const load = useCallback(async () => {
     if (!businessId) return;

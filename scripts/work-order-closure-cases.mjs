@@ -118,7 +118,18 @@ export async function testWorkOrderClosure({adminDb, businessId, otId, serviceId
   const visible = (await call(technician, "obtenerEventosCierreOT", {businessId, otId})).data.eventos;
   assert.deepEqual(visible.map((event) => event.tipo), ["reparacion_finalizada", "vehiculo_entregado"]);
   assert.ok(visible.every((event) => Number.isSafeInteger(event.fecha) && event.actorNombre));
+  const timeline = (await call(technician, "obtenerHistorialOT", {businessId, otId})).data.eventos;
+  assert.ok(timeline.some((event) => event.tipo === "ot_creada"));
+  assert.ok(timeline.some((event) => event.tipo === "material_consumido"));
+  assert.ok(timeline.some((event) => event.tipo === "vehiculo_entregado"));
+  assert.ok(timeline.every((event, index) => index === 0 ||
+    event.fecha > timeline[index - 1].fecha ||
+    (event.fecha === timeline[index - 1].fecha && event.eventoId.localeCompare(timeline[index - 1].eventoId) >= 0)));
+  const hasProtectedHistoryField = (value) => value && typeof value === "object" &&
+    Object.entries(value).some(([key, child]) => /costo|precio|alcance/i.test(key) || hasProtectedHistoryField(child));
+  assert.ok(timeline.every((event) => event.actorNombre && !hasProtectedHistoryField(event.detalle)));
   await reject("historial cross-tenant", outsider, "obtenerEventosCierreOT", {businessId, otId}, ["permission-denied"]);
+  await reject("timeline cross-tenant", outsider, "obtenerHistorialOT", {businessId, otId}, ["permission-denied"]);
   await expectFirestoreDenied("SDK no lee requests de cierre", () => getDoc(doc(owner.db, `${requests.path}/${winner.input.requestId}`)));
   await expectFirestoreDenied("SDK no escribe requests de cierre", () => setDoc(doc(owner.db, `${requests.path}/directo`), {}));
   assert.equal((await adminDb.collection(`${base}/ventas`).get()).size, initialSales);
