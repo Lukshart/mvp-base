@@ -74,11 +74,6 @@ const {
   registrarRecepcionOrdenTrabajoHandler,
 } = require("./workOrderPersistence");
 const {
-  registrarSalidaMaterialOTHandler,
-  registrarDevolucionMaterialOTHandler,
-  obtenerMaterialesOTHandler,
-} = require("./workOrderMaterials");
-const {
   activarPlazaTallerHandler,
   actualizarPlazaTallerHandler,
   asignarPlazaOTHandler,
@@ -2442,12 +2437,6 @@ exports.obtenerEventosCierreOT = onCall(vehicleCallableOptions, (request) =>
   obtenerEventosCierreOTHandler(request, workOrderPersistenceDependencies));
 exports.obtenerHistorialOT = onCall(vehicleCallableOptions, (request) =>
   obtenerHistorialOTHandler(request, workOrderPersistenceDependencies));
-exports.registrarSalidaMaterialOT = onCall(vehicleCallableOptions, (request) =>
-  registrarSalidaMaterialOTHandler(request, workOrderPersistenceDependencies));
-exports.registrarDevolucionMaterialOT = onCall(vehicleCallableOptions, (request) =>
-  registrarDevolucionMaterialOTHandler(request, workOrderPersistenceDependencies));
-exports.obtenerMaterialesOT = onCall(vehicleCallableOptions, (request) =>
-  obtenerMaterialesOTHandler(request, workOrderPersistenceDependencies));
 exports.agregarProductoOT = onCall(vehicleCallableOptions, async (request) =>
   agregarProductoOTHandler(request, workOrderPersistenceDependencies)
 );

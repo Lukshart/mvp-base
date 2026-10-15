@@ -1220,14 +1220,6 @@ service cloud.firestore {
       match /movimientosInventario/{movimientoId} {
         allow read: if resource.data.negocioId == businessId
           && (
-            (resource.data.tipo != "SALIDA_TALLER" && resource.data.tipo != "DEVOLUCION_TALLER")
-            ||
-            (
-              get(membershipPath(businessId, request.auth.uid)).data.rol in ["OWNER", "ADMIN", "COMPRAS", "FINANZAS", "MEMBER"]
-              && get(membershipPath(businessId, request.auth.uid)).data.get("profileId", "") == ""
-            )
-          )
-          && (
             hasBusinessModuleAccess(businessId, ["OWNER", "ADMIN", "VENTAS", "COMPRAS", "FINANZAS", "MEMBER"], ["inventario", "trabajos", "ventas", "recepciones", "compras", "reportes"])
             || (
               resource.data.get("trabajoId", "") != ""

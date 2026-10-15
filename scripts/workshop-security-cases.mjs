@@ -19,7 +19,6 @@ export async function testWorkshopSecurity({adminDb, businessId, otId, owner, me
     agregarProductoOT: {}, actualizarProductoOT: {}, eliminarProductoOT: {},
     iniciarServicioOT: {}, completarServicioOT: {}, enviarOTAprobacion: {}, aprobarOT: {}, rechazarOT: {},
     revalidarDisponibilidadOT: {}, obtenerResumenAprobacionOT: {},
-    registrarSalidaMaterialOT: {}, registrarDevolucionMaterialOT: {}, obtenerMaterialesOT: {},
     finalizarReparacionOT: {}, registrarEntregaOT: {}, cancelarOT: {}, obtenerHistorialOT: {}, obtenerEventosCierreOT: {},
     listarCatalogoTaller: {}, listarPersonasAsignablesTaller: {},
     crearPlazaTaller: {requestId: `security-${runId}`, plaza: {nombre: "Prueba"}},
@@ -82,7 +81,7 @@ export async function testWorkshopSecurity({adminDb, businessId, otId, owner, me
   // An OWNER still cannot access internal collections through the client SDK.
   for (const name of ["vehiclePlateKeys", "vehicleVinKeys", "vehicleCreateRequests", "otCounters",
     "otCreateRequests", "otApprovalState", "otApprovalRequests", "otServiceExecutionRequests",
-    "otClosureRequests", "tallerMaterialRequests", "tallerMaterialBalances", "plazaOccupancyKeys",
+    "otClosureRequests", "plazaOccupancyKeys",
     `ordenesTrabajo/${otId}/historial`]) {
     const path = `${base}/${name}/security-proof`;
     await adminDb.doc(path).set({negocioId: businessId, otId});
@@ -108,5 +107,5 @@ export async function testWorkshopSecurity({adminDb, businessId, otId, owner, me
   assert.ok(!Object.keys(safeItem).some((key) => /costo|margen|valorInventario/i.test(key)));
   console.log("DECISION_CORE_CONFIRMADA: TECNICO lee costos de Inventario; DTO Taller permanece acotado hasta la alineación central");
   await adminDb.doc(`${base}/inventario/security-cost-probe`).delete();
-  console.log(`WORKSHOP_SECURITY_OK: ${Object.keys(calls).length} Functions × 5 escenarios negativos; 13 colecciones internas cerradas`);
+  console.log(`WORKSHOP_SECURITY_OK: ${Object.keys(calls).length} Functions × 5 escenarios negativos; 11 colecciones internas cerradas`);
 }

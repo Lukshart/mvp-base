@@ -951,13 +951,11 @@ async function eliminarServicioOTHandler(request, dependencies) {
   const expected = request?.data?.expectedActualizadoEn;
   const orderRef = context.businessRef.collection("ordenesTrabajo").doc(otId);
   const serviceRef = orderRef.collection("servicios").doc(serviceId);
-  const movementsQuery = context.businessRef.collection("movimientosInventario")
-    .where("servicioOtId", "==", serviceId);
   const actorSnapshot = await diagnosisActor(dependencies, context.uid);
   return db.runTransaction(async (transaction) => {
     await assertFreshTallerAccess(transaction, context, dependencies, "operate");
-    const [orderSnapshot, serviceSnapshot, movementSnapshot] = await Promise.all([
-      transaction.get(orderRef), transaction.get(serviceRef), transaction.get(movementsQuery),
+    const [orderSnapshot, serviceSnapshot] = await Promise.all([
+      transaction.get(orderRef), transaction.get(serviceRef),
     ]);
     const order = assertStoredWorkOrder(orderSnapshot, context.businessId, HttpsError);
     assertPlanningOrder(order, HttpsError);
@@ -966,12 +964,6 @@ async function eliminarServicioOTHandler(request, dependencies) {
       fail(HttpsError, "failed-precondition", "Solo se puede eliminar un servicio que aún no ha iniciado.");
     }
     assertDiagnosisRevision(stored, expected, HttpsError, "servicio");
-    if (movementSnapshot.docs.some((entry) => {
-      const movement = entry.data();
-      return movement.negocioId === context.businessId && movement.otId === otId;
-    })) {
-      fail(HttpsError, "failed-precondition", "No se puede eliminar un servicio con movimientos de inventario.");
-    }
     const timestamp = FieldValue.serverTimestamp();
     transaction.delete(serviceRef);
     invalidateWorkOrderScope(transaction, orderRef, order, context, actorSnapshot, timestamp);
@@ -1169,11 +1161,8 @@ async function transitionWorkOrderClosure(request, dependencies, action) {
   const actorSnapshot = await diagnosisActor(dependencies, context.uid);
   const fingerprint = createHash("sha256").update(JSON.stringify({otId, action, expected, actor: context.uid})).digest("hex");
   return db.runTransaction(async (transaction) => {
-    const [previous, data, materialBalances] = await Promise.all([
+    const [previous, data] = await Promise.all([
       transaction.get(requestRef), readApprovalContext(transaction, context, orderRef, dependencies, "skip"),
-      action === "cancelar"
-        ? transaction.get(context.businessRef.collection("tallerMaterialBalances").where("otId", "==", otId))
-        : Promise.resolve(null),
     ]);
     if (previous.exists) {
       if (previous.data().negocioId !== context.businessId || previous.data().fingerprint !== fingerprint) {
@@ -1203,21 +1192,6 @@ async function transitionWorkOrderClosure(request, dependencies, action) {
           approvalData.negocioId !== context.businessId || approvalData.otId !== otId ||
           approvalData.scopeHash !== scopeFingerprint(services)) {
         fail(HttpsError, "failed-precondition", "La OT no tiene un alcance vigente aprobado.");
-      }
-    }
-    if (action === "cancelar") {
-      const hasPendingPhysicalEffect = materialBalances.docs.some((entry) => {
-        const balance = entry.data() || {};
-        if (balance.negocioId !== context.businessId || balance.otId !== otId ||
-            !Number.isFinite(balance.cantidadSalida) || !Number.isFinite(balance.cantidadDevuelta) ||
-            balance.cantidadSalida < 0 || balance.cantidadDevuelta < 0 ||
-            balance.cantidadDevuelta > balance.cantidadSalida) {
-          fail(HttpsError, "failed-precondition", "Los movimientos físicos de la OT requieren revisión antes de cancelar.");
-        }
-        return balance.cantidadSalida !== balance.cantidadDevuelta;
-      });
-      if (hasPendingPhysicalEffect) {
-        fail(HttpsError, "failed-precondition", "Devuelve o compensa todos los materiales consumidos antes de cancelar la OT.");
       }
     }
     const estado = action === "finalizar" ? "pendiente_entrega" : action === "entregar" ? "cerrada" : "cancelada";
@@ -1273,13 +1247,8 @@ async function obtenerEventosCierreOTHandler(request, dependencies) {
 function historyEventDetail(type, detail = {}) {
   const changes = detail.cambios && typeof detail.cambios === "object"
     ? Object.keys(detail.cambios) : [];
-  const material = ["material_consumido", "material_devuelto"].includes(type);
   return {
     ...(changes.length ? {camposModificados: changes} : {}),
-    ...(material ? {
-      productoNombre: String(detail.productoNombre || "Producto"),
-      cantidad: Number.isFinite(detail.cantidad) ? detail.cantidad : null,
-    } : {}),
     ...(typeof detail.estadoAnterior === "string" ? {estadoAnterior: detail.estadoAnterior} : {}),
     ...(typeof detail.estado === "string" ? {estado: detail.estado} : {}),
     ...(typeof detail.aprobacionAnterior === "string" ? {aprobacionAnterior: detail.aprobacionAnterior} : {}),

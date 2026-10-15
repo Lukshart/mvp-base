@@ -25,8 +25,6 @@ const EVENT_LABELS = Object.freeze({
   ot_rechazada: "OT rechazada",
   aprobacion_invalidada: "Aprobación invalidada",
   disponibilidad_revalidada: "Disponibilidad revalidada",
-  material_consumido: "Salida de material",
-  material_devuelto: "Devolución de material",
   reparacion_finalizada: "Reparación finalizada",
   vehiculo_entregado: "Vehículo entregado",
   ot_cancelada: "Orden de trabajo cancelada",
@@ -71,10 +69,6 @@ export function getWorkOrderHistoryDetail(event = {}) {
       .map((field) => RECEPTION_FIELD_LABELS[field])
       .filter(Boolean);
     return fields.length ? `Campos registrados: ${fields.join(", ")}.` : "";
-  }
-  if (["material_consumido", "material_devuelto"].includes(event.tipo)) {
-    const quantity = Number.isFinite(detail.cantidad) ? `${detail.cantidad} × ` : "";
-    return `${quantity}${detail.productoNombre || "Producto"}.`;
   }
   if (["ot_enviada_aprobacion", "ot_aprobada", "ot_rechazada", "disponibilidad_revalidada", "aprobacion_invalidada"].includes(event.tipo)) {
     const parts = [];

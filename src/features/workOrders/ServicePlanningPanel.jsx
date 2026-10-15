@@ -1,14 +1,13 @@
 import {BUSINESS_PERMISSIONS, hasBusinessPermission} from "../../domain/rbac.mjs";
-import React, {useCallback, useEffect, useMemo, useRef, useState} from "react";
+import React, {useEffect, useMemo, useState} from "react";
 import {Plus, Save} from "lucide-react";
 import Button from "../../components/ui/Button";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
 import StatusBadge from "../../components/ui/StatusBadge";
-import ServiceMaterialsPanel from "./ServiceMaterialsPanel";
 import {
   actualizarProductoOT, actualizarServicioOT, agregarProductoOT, crearServicioOT,
   completarServicioOT, createWorkOrderRequestId, eliminarProductoOT, eliminarServicioOT, getWorkOrderErrorMessage,
-  iniciarServicioOT, obtenerMaterialesOT,
+  iniciarServicioOT,
   listarCatalogoTaller, listarPersonasAsignablesTaller,
 } from "../../services/workOrderService";
 
@@ -53,35 +52,6 @@ export default function ServicePlanningPanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [materials, setMaterials] = useState(null);
-  const [materialsLoading, setMaterialsLoading] = useState(true);
-  const [materialsError, setMaterialsError] = useState("");
-  const materialsRequest = useRef(0);
-
-  const refreshMaterials = useCallback(async () => {
-    const request = materialsRequest.current + 1;
-    materialsRequest.current = request;
-    setMaterialsLoading(true);
-    setMaterialsError("");
-    try {
-      const result = await obtenerMaterialesOT(businessId, otId);
-      if (materialsRequest.current === request) setMaterials(result);
-      return true;
-    } catch (failure) {
-      if (materialsRequest.current === request) {
-        setMaterials(null);
-        setMaterialsError(getWorkOrderErrorMessage(failure));
-      }
-      return false;
-    } finally {
-      if (materialsRequest.current === request) setMaterialsLoading(false);
-    }
-  }, [businessId, otId]);
-
-  useEffect(() => {
-    void refreshMaterials();
-  }, [refreshMaterials, services, order.estado, order.estadoAprobacion]);
-
   useEffect(() => {
     let active = true;
     setLoading(true);
@@ -265,7 +235,6 @@ export default function ServicePlanningPanel({
       {services.map((service) => {
         const item = itemById(service.itemId);
         const products = Array.isArray(service.productos) ? service.productos : [];
-        const materialsData = materials?.servicios.find((entry) => entry.servicioOtId === service.servicioOtId);
         const canEditServicePlanning = canOperate && service.estado === "pendiente" && editingService === null;
         return <article className="erp-record-card" key={service.servicioOtId}>
           <header className="erp-record-card__header"><div><h3 className="erp-record-card__title">{(frozen ? service.servicioSnapshot?.nombre : item?.nombre) || "Servicio Core no disponible"}</h3><p className="erp-record-card__subtitle">Responsable: {personName(service.responsableUid)} · Valor: {priceLabel(currentPrice(service, item), order.moneda)}</p></div><StatusBadge variant={service.estado === "completado" ? "success" : service.estado === "en_progreso" ? "warning" : "neutral"}>{SERVICE_LABELS[service.estado] || service.estado}</StatusBadge></header>
@@ -281,26 +250,32 @@ export default function ServicePlanningPanel({
             </div><p className="erp-secondary-text">Stock actual Core: {itemById(productDraft.itemId)?.stock ?? "—"} · Precio Core vigente: {priceLabel(itemById(productDraft.itemId)?.precioEfectivo, order.moneda)}</p>
             <div className="vehicle-form-actions"><Button type="button" variant="secondary" disabled={busy} onClick={() => setProductServiceId(null)}>Cancelar</Button><Button type="submit" icon={Save} disabled={busy || loading || Boolean(loadError)}>{busy ? "Guardando..." : "Agregar a planificación"}</Button></div>
           </form>}
-          <ServiceMaterialsPanel businessId={businessId} otId={otId}
-            data={materialsData} products={products}
-            canViewCosts={materials?.puedeVerCostos === true} loading={materialsLoading} error={materialsError}
-            canEditPlanning={canEditServicePlanning} quantityEdit={quantityEdit?.servicioOtId === service.servicioOtId ? quantityEdit : null} busy={busy}
-            getProductName={(product) => {const core = itemById(product.itemId); return (frozen ? product.productoSnapshot?.nombre : core?.nombre) || "Producto Core no disponible";}}
-            getProductPrice={(product) => priceLabel(currentPrice(product, itemById(product.itemId)), order.moneda)}
-            onQuantityChange={(cantidad) => setQuantityEdit((current) => ({...current, cantidad}))}
-            onSaveQuantity={() => saveQuantity(service)} onCancelQuantity={() => setQuantityEdit(null)}
-            onStartQuantityEdit={(product) => {setQuantityEdit({servicioOtId: service.servicioOtId, productoOtId: product.productoOtId, cantidad: String(product.cantidad)}); setError("");}}
-            onRemoveProduct={(product) => setRemoveTarget({servicioOtId: service.servicioOtId, productoOtId: product.productoOtId})}
-            onReload={() => {void refreshMaterials();}}
-            onChanged={async () => {
-              const [refreshed] = await Promise.all([refreshMaterials(), onChanged()]);
-              if (!refreshed) throw new Error("No se pudo recargar el historial de movimientos.");
-            }} />
+          {!products.length ? <p className="erp-secondary-text">Sin productos planificados.</p> :
+            <div className="erp-table-region"><table className="erp-table work-order-products-table"><thead><tr>
+              <th>Producto</th><th>Cantidad</th><th>Precio</th>{canEditServicePlanning && <th>Acciones</th>}
+            </tr></thead><tbody>{products.map((product) => {
+              const editing = quantityEdit?.servicioOtId === service.servicioOtId &&
+                quantityEdit?.productoOtId === product.productoOtId;
+              const core = itemById(product.itemId);
+              return <tr key={product.productoOtId}>
+                <td>{(frozen ? product.productoSnapshot?.nombre : core?.nombre) || "Producto Core no disponible"}</td>
+                <td>{editing ? <input className="erp-control work-order-products-table__quantity"
+                  aria-label="Cantidad" type="number" min="1" step="1" value={quantityEdit.cantidad}
+                  onChange={(event) => setQuantityEdit((current) => ({...current, cantidad: event.target.value}))} /> : product.cantidad}</td>
+                <td>{priceLabel(currentPrice(product, core), order.moneda)}</td>
+                {canEditServicePlanning && <td><div className="erp-actions">
+                  {editing ? <><Button type="button" disabled={busy} onClick={() => saveQuantity(service)}>Guardar</Button>
+                    <Button type="button" variant="secondary" disabled={busy} onClick={() => setQuantityEdit(null)}>Cancelar</Button></> : <>
+                    <Button type="button" variant="secondary" onClick={() => {setQuantityEdit({servicioOtId: service.servicioOtId, productoOtId: product.productoOtId, cantidad: String(product.cantidad)}); setError("");}}>Modificar</Button>
+                    <Button type="button" variant="secondary" onClick={() => setRemoveTarget({servicioOtId: service.servicioOtId, productoOtId: product.productoOtId})}>Eliminar</Button></>}
+                </div></td>}
+              </tr>;
+            })}</tbody></table></div>}
         </article>;
       })}
     </div>
     <ResponsiveDialog open={Boolean(removeTarget)} onClose={() => !busy && setRemoveTarget(null)} size="small" eyebrow="Taller" title="Eliminar producto planificado" description="Se quitará de este ServicioOT. El stock de Inventario Core no cambiará." footer={<><Button type="button" variant="secondary" disabled={busy} onClick={() => setRemoveTarget(null)}>Volver</Button><Button type="button" disabled={busy} onClick={removeProduct}>{busy ? "Eliminando..." : "Eliminar producto"}</Button></>}><p>¿Confirmas que deseas quitar este producto de la planificación?</p></ResponsiveDialog>
-    <ResponsiveDialog open={Boolean(removeServiceTarget)} onClose={() => !busy && setRemoveServiceTarget(null)} size="small" eyebrow="Taller" title="Eliminar servicio" description="Se quitarán el servicio y sus productos planificados del alcance de la OT." footer={<><Button type="button" variant="secondary" disabled={busy} onClick={() => setRemoveServiceTarget(null)}>Volver</Button><Button type="button" disabled={busy} onClick={removeService}>{busy ? "Eliminando..." : "Eliminar servicio"}</Button></>}><p>Solo es posible eliminar servicios pendientes y sin movimientos de inventario. Si la OT estaba aprobada, deberá enviarse nuevamente a aprobación.</p></ResponsiveDialog>
+    <ResponsiveDialog open={Boolean(removeServiceTarget)} onClose={() => !busy && setRemoveServiceTarget(null)} size="small" eyebrow="Taller" title="Eliminar servicio" description="Se quitarán el servicio y sus productos planificados del alcance de la OT." footer={<><Button type="button" variant="secondary" disabled={busy} onClick={() => setRemoveServiceTarget(null)}>Volver</Button><Button type="button" disabled={busy} onClick={removeService}>{busy ? "Eliminando..." : "Eliminar servicio"}</Button></>}><p>Solo es posible eliminar servicios pendientes. Si la OT estaba aprobada, deberá enviarse nuevamente a aprobación.</p></ResponsiveDialog>
     <ResponsiveDialog open={Boolean(executionTarget)} onClose={() => !busy && setExecutionTarget(null)} size="small" eyebrow="Taller"
       title={executionTarget?.action === "iniciar" ? "Iniciar servicio" : "Completar servicio"}
       description="Se registrará la transición y su autoría en el historial de la OT."

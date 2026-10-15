@@ -79,7 +79,7 @@ assert.match(detail, /ResponsiveDialog/);
 assert.match(detail, /\["pendiente_entrega", "cerrada", "cancelada"\]\.includes\(order\.estado\)/);
 assert.doesNotMatch(detail, /updateDoc|setDoc|pendiente_pago/);
 const historyModel = fs.readFileSync("src/domain/workOrderHistoryModel.mjs", "utf8");
-for (const event of ["ot_creada", "recepcion_registrada", "diagnostico_completado", "material_consumido", "vehiculo_entregado", "ot_cancelada"]) {
+for (const event of ["ot_creada", "recepcion_registrada", "diagnostico_completado", "vehiculo_entregado", "ot_cancelada"]) {
   assert.match(historyModel, new RegExp(event));
 }
 assert.doesNotMatch(historyModel, /costoUnitario|costoTotal|scopeHash/);
@@ -112,6 +112,7 @@ assert.match(diagnosisPanel, /Completar diagnóstico/);
 assert.match(diagnosisPanel, /diagnosis\.estado === "borrador"/);
 assert.match(diagnosisPanel, /"pendiente_entrega", "cerrada", "cancelada"/);
 const planningPanel = fs.readFileSync("src/features/workOrders/ServicePlanningPanel.jsx", "utf8");
+const workOrderService = fs.readFileSync("src/services/workOrderService.js", "utf8");
 assert.match(planningPanel, /listarCatalogoTaller/);
 assert.doesNotMatch(planningPanel, /getInventoryItems/);
 assert.match(planningPanel, /tipoItem === "servicio"/);
@@ -134,32 +135,16 @@ assert.doesNotMatch(planningPanel, /Productos planificados/);
 assert.doesNotMatch(planningPanel, /<th>Stock actual Core<\/th>/);
 assert.match(planningPanel, /type="number" min="1" step="1"/);
 assert.doesNotMatch(planningPanel, /type="number"[^>]*precio/);
-assert.match(planningPanel, /<ServiceMaterialsPanel/);
-assert.match(planningPanel, /obtenerMaterialesOT/);
-const materialsPanel = fs.readFileSync("src/features/workOrders/ServiceMaterialsPanel.jsx", "utf8");
-for (const text of ["Planificado", "Consumido", "Stock", "Máximo devolvible", "Registrar consumo", "Registrar devolución"]) {
-  assert.ok(materialsPanel.includes(text));
-}
-assert.match(materialsPanel, /canViewCosts &&/);
-assert.match(materialsPanel, /data\?\.puedeConsumir/);
-assert.match(materialsPanel, /data\.puedeDevolver/);
-assert.match(materialsPanel, /className="work-order-materials-panel"/);
-assert.match(materialsPanel, /className="erp-table work-order-products-table"/);
-assert.match(materialsPanel, /<th>Planificado<\/th><th>Consumido<\/th><th>Stock<\/th><th>Precio<\/th>/);
-assert.match(materialsPanel, /showActions = canEditPlanning \|\| canConsume/);
-assert.match(materialsPanel, /ResponsiveDialog/);
-assert.match(materialsPanel, /target\.requestId/);
-assert.match(materialsPanel, /<details className="work-order-material-history" open=\{historyOpen\}/);
-assert.match(materialsPanel, /Ver movimientos de inventario/);
-assert.match(materialsPanel, /min="1" step="1"/);
-assert.match(materialsPanel, /Number\.isSafeInteger\(cantidad\)/);
-assert.doesNotMatch(materialsPanel, /step="0\.000001"/);
-assert.doesNotMatch(materialsPanel, /updateDoc|setDoc|updateInventoryItem|registrarSalidaMaterialTrabajo|registrarDevolucionMaterialTrabajo/);
+assert.match(planningPanel, /className="erp-table work-order-products-table"/);
+assert.match(planningPanel, /<th>Producto<\/th><th>Cantidad<\/th><th>Precio<\/th>/);
+assert.match(planningPanel, /Sin productos planificados/);
+assert.doesNotMatch(planningPanel, /ServiceMaterialsPanel|obtenerMaterialesOT|Registrar consumo|Registrar devolución|movimientos de inventario/);
+assert.doesNotMatch(workOrderService, /registrarSalidaMaterialOT|registrarDevolucionMaterialOT|obtenerMaterialesOT/);
 assert.match(approvalPanel, /work-order-approval-table/);
 assert.match(approvalPanel, /work-order-approval-actions/);
 const interiorStyles = fs.readFileSync("src/styles/interior.css", "utf8");
-assert.match(interiorStyles, /\.work-order-materials-panel \{/);
 assert.match(interiorStyles, /\.work-order-products-table__quantity/);
+assert.doesNotMatch(interiorStyles, /\.work-order-material-history/);
 assert.doesNotMatch(detail, /value=\{order\.estado\}/);
 console.log("OK UI OT: rutas, listado real, selección por patente y reutilización de Vehículos");
 console.log("WORK_ORDER_UI_SMOKE_OK");

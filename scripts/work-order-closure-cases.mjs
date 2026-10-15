@@ -120,7 +120,6 @@ export async function testWorkOrderClosure({adminDb, businessId, otId, serviceId
   assert.ok(visible.every((event) => Number.isSafeInteger(event.fecha) && event.actorNombre));
   const timeline = (await call(technician, "obtenerHistorialOT", {businessId, otId})).data.eventos;
   assert.ok(timeline.some((event) => event.tipo === "ot_creada"));
-  assert.ok(timeline.some((event) => event.tipo === "material_consumido"));
   assert.ok(timeline.some((event) => event.tipo === "vehiculo_entregado"));
   assert.ok(timeline.every((event, index) => index === 0 ||
     event.fecha > timeline[index - 1].fecha ||

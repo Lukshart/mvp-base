@@ -4,7 +4,6 @@ import {testServiceExecution} from "./work-order-service-execution-cases.mjs";
 import {testWorkOrderClosure} from "./work-order-closure-cases.mjs";
 import {testWorkOrderCancellation} from "./work-order-cancellation-cases.mjs";
 import {testWorkOrderEndToEnd} from "./work-order-end-to-end-cases.mjs";
-import {testWorkOrderMaterials} from "./work-order-material-cases.mjs";
 import {testWorkshopPlazas} from "./work-order-plaza-cases.mjs";
 import {testWorkshopSecurity} from "./workshop-security-cases.mjs";
 import {createRequire} from "node:module";
@@ -820,8 +819,6 @@ try {
     owner, admin, technician, member, outsider, callable, expectCallableError, expectFirestoreDenied, runId: RUN_ID});
   await testServiceExecution({adminDb, businessId, otId, serviceId, owner, admin, technician, member,
     outsider, callable, expectCallableError, expectFirestoreDenied, runId: RUN_ID});
-  await testWorkOrderMaterials({adminDb, businessId, otId, owner, admin, technician, member, outsider,
-    anonymous, callable, expectCallableError, expectFirestoreDenied, runId: RUN_ID});
   await testWorkOrderClosure({adminDb, businessId, otId, serviceId, owner, admin, technician, member,
     outsider, anonymous, callable, expectCallableError, expectFirestoreDenied,
     reception: workOrderReception(), runId: RUN_ID});

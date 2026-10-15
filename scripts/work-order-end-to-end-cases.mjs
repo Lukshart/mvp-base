@@ -77,19 +77,6 @@ export async function testWorkOrderEndToEnd({adminDb, businessId, owner, technic
   await itemRef.update({precioInterno: 2000, nombre: "Filtro renombrado"});
   await call(technician, "iniciarServicioOT", {otId, servicioOtId, requestId: id(),
     expectedActualizadoEn: await revision(serviceRef)});
-  const outInput = {otId, servicioOtId, itemId: productItemId, cantidad: 2, requestId: id()};
-  const salida = await call(technician, "registrarSalidaMaterialOT", outInput);
-  assert.equal((await call(technician, "registrarSalidaMaterialOT", outInput)).movimientoId, salida.movimientoId);
-  const returnInput = {otId, servicioOtId, movimientoOrigenId: salida.movimientoId, cantidad: 1, requestId: id()};
-  const returned = await call(technician, "registrarDevolucionMaterialOT", returnInput);
-  assert.equal((await call(technician, "registrarDevolucionMaterialOT", returnInput)).movimientoId, returned.movimientoId);
-  assert.equal((await stock()).stock, 9);
-  assert.equal((await stock()).valorInventario, 900);
-  const movements = (await adminDb.collection(`${base}/movimientosInventario`).where("otId", "==", otId).get())
-    .docs.map((entry) => entry.data());
-  assert.equal(movements.length, 2);
-  assert.ok(movements.every((movement) => movement.servicioOtId === servicioOtId && movement.costoUnitario === 100));
-  assert.equal(movements.find((movement) => movement.tipo === "DEVOLUCION_TALLER").movimientoOrigenId, salida.movimientoId);
   assert.deepEqual((await serviceRef.get()).data().productos, frozen.productos);
   const salesBefore = (await adminDb.collection(`${base}/ventas`).get()).size;
   await call(technician, "completarServicioOT", {otId, servicioOtId, requestId: id(),
@@ -100,7 +87,9 @@ export async function testWorkOrderEndToEnd({adminDb, businessId, owner, technic
   assert.equal((await order()).estado, "cerrada");
   assert.equal((await order()).plazaId, null);
   assert.equal((await adminDb.doc(`${base}/plazaOccupancyKeys/${plazaId}`).get()).exists, false);
-  assert.equal((await stock()).stock, 9, "Entregar no duplica consumo");
+  assert.equal((await stock()).stock, 10, "Planificar, ejecutar y entregar no modifican stock");
+  assert.equal((await adminDb.collection(`${base}/movimientosInventario`).where("otId", "==", otId).get()).size, 0,
+    "Taller no genera movimientos físicos mientras espera el mecanismo único de Core");
   assert.equal((await adminDb.collection(`${base}/ventas`).get()).size, salesBefore);
   const listed = await getDocs(query(collection(technician.db, `${base}/ordenesTrabajo`),
     where("negocioId", "==", businessId), where("vehiculoId", "==", vehicle.vehiculoId)));
@@ -110,14 +99,14 @@ export async function testWorkOrderEndToEnd({adminDb, businessId, owner, technic
   const history = (await call(technician, "obtenerHistorialOT", {otId})).eventos;
   for (const type of ["ot_creada", "recepcion_registrada", "plaza_asignada", "diagnostico_creado",
     "diagnostico_completado", "servicio_ot_creado", "producto_ot_agregar", "ot_enviada_aprobacion", "ot_aprobada",
-    "servicio_ot_iniciado", "material_consumido", "material_devuelto", "servicio_ot_completado",
+    "servicio_ot_iniciado", "servicio_ot_completado",
     "reparacion_finalizada", "vehiculo_entregado"]) {
     assert.equal(history.filter((event) => event.tipo === type).length, 1, `Evento E2E: ${type}`);
   }
   assert.ok(history.every((event) => event.actorNombre && Number.isSafeInteger(event.fecha)));
   await expectCallableError("E2E cerrada no admite liberar Plaza", async () => call(owner, "liberarPlazaOT",
     {otId, expectedActualizadoEn: await revision(orderRef)}), ["failed-precondition"]);
-  console.log("WORK_ORDER_END_TO_END_OK: Cliente Core → Vehículo → OT → recepción → Plaza → diagnóstico → aprobación → materiales → entrega");
+  console.log("WORK_ORDER_END_TO_END_OK: Cliente Core → Vehículo → OT → recepción → Plaza → diagnóstico → aprobación → planificación → entrega");
 
   // Separate legacy fixtures prove that terminal records retaining a Plaza cannot be altered.
   for (const estado of ["cerrada", "cancelada"]) {

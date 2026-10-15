@@ -68,7 +68,7 @@ export async function testWorkOrderCancellation({adminDb, businessId, owner, tec
   assert.equal((await read(raceOrder.otId)).estado, "cancelada");
   assert.equal((await refFor(raceOrder.otId).collection("historial").where("tipo", "==", "ot_cancelada").get()).size, 1);
 
-  // Canonical orders are used; Admin only prepares states/economic residue that older data may contain.
+  // Canonical orders are used; Admin only prepares edge states for the transition matrix.
   for (const estado of ["esperando_aprobacion", "esperando_repuestos"]) {
     const candidate = await createOrder();
     await refFor(candidate.otId).update({estado, estadoAprobacion: estado === "esperando_repuestos" ? "aprobada" : "pendiente"});
@@ -87,19 +87,6 @@ export async function testWorkOrderCancellation({adminDb, businessId, owner, tec
     assert.equal((await read(candidate.otId)).estado, estado);
   }
 
-  const physical = await createOrder();
-  await refFor(physical.otId).update({estado: "esperando_repuestos"});
-  const balanceRef = adminDb.doc(`${base}/tallerMaterialBalances/${id()}`);
-  await balanceRef.set({negocioId: businessId, otId: physical.otId, servicioOtId: "legacy",
-    movimientoOrigenId: "legacy", itemId: "producto-core", cantidadSalida: 2, cantidadDevuelta: 1,
-    costoSalida: 200, costoDevuelto: 100});
-  await expectCallableError("consumo neto impide cancelar", async () => call(owner, "cancelarOT",
-    {otId: physical.otId, requestId: id(), expectedActualizadoEn: await revision(physical.otId)}),
-  ["failed-precondition"], /Devuelve o compensa/i);
-  await balanceRef.update({cantidadDevuelta: 2, costoDevuelto: 200});
-  await call(owner, "cancelarOT", await cancelInput(physical.otId));
-  assert.equal((await read(physical.otId)).estado, "cancelada");
-
   await expectCallableError("cancelación cross-business", () => call(outsider, "cancelarOT",
     {otId: entered.otId, requestId: id(), expectedActualizadoEn: cancelledStored.actualizadoEn.toMillis()}),
   ["permission-denied"]);
@@ -107,5 +94,5 @@ export async function testWorkOrderCancellation({adminDb, businessId, owner, tec
     getDoc(doc(owner.db, `${base}/otClosureRequests/${firstInput.requestId}`)));
   await expectFirestoreDenied("SDK no escribe request de cancelación", () =>
     setDoc(doc(owner.db, `${base}/otClosureRequests/cancel-directa`), {negocioId: businessId}));
-  console.log("WORK_ORDER_CANCELLATION_OK: estados, terminalidad, Plaza, efectos físicos, idempotencia, concurrencia y RBAC");
+  console.log("WORK_ORDER_CANCELLATION_OK: estados, terminalidad, Plaza, idempotencia, concurrencia y RBAC");
 }

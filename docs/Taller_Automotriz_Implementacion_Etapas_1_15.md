@@ -8,8 +8,7 @@ como referencia para revisión, mantenimiento y futuras etapas.
 
 El módulo cubre el flujo principal desde el registro de un vehículo hasta la
 entrega de la Orden de Trabajo (OT), incluyendo recepción, diagnóstico,
-planificación, aprobación, ejecución de servicios, consumo y devolución de
-materiales, plazas e historial. No sustituye la SPEC vigente: ante una
+planificación, aprobación, ejecución de servicios, plazas e historial. No sustituye la SPEC vigente: ante una
 contradicción, prevalecen `AGENTS.md`, la SPEC aplicable y los contratos Core.
 
 ## 2. Límites del módulo
@@ -20,7 +19,7 @@ contradicción, prevalecen `AGENTS.md`, la SPEC aplicable y los contratos Core.
 - Órdenes de Trabajo con numeración autoritativa y cliente histórico.
 - Recepción, diagnósticos, servicios y productos planificados.
 - Aprobación con snapshot de alcance y precios Core.
-- Ejecución de servicios, movimientos físicos de inventario y devoluciones.
+- Ejecución de servicios sin modificar físicamente el stock.
 - Administración y asignación exclusiva de plazas.
 - Finalización, entrega e historial de eventos persistidos.
 - Controles RBAC, validaciones de negocio y aislamiento multiempresa.
@@ -39,6 +38,8 @@ contradicción, prevalecen `AGENTS.md`, la SPEC aplicable y los contratos Core.
   Movimientos.
 - Horas-hombre y margen manuales en Taller. Estas reglas deben definirse por el
   Core antes de integrarse al flujo.
+- Consumo y devolución física de repuestos desde Taller. Esta integración queda
+  pendiente del mecanismo único de consumo de Inventario Core.
 
 ## 3. Arquitectura, datos y seguridad transversal
 
@@ -66,7 +67,6 @@ la interfaz nunca reemplaza la validación del backend.
 | Recepción | Registro 1:1 asociado a la OT | Condición observable de ingreso del vehículo. |
 | Plazas | `negocios/{businessId}/plazasTaller/{plazaId}` | Estado administrativo y nombre de Plaza. |
 | HistorialOT | Subcolección de la OT | Eventos persistidos de solo lectura. |
-| Movimientos de inventario | Colecciones Core de inventario | Salidas y devoluciones valorizadas vinculadas a OT y ServicioOT. |
 
 ### 3.3 Colecciones técnicas internas
 
@@ -74,9 +74,8 @@ Las llaves de unicidad, solicitudes idempotentes, contadores, balances y locks
 son detalles internos del backend. Entre ellas se encuentran
 `vehiclePlateKeys`, `vehicleVinKeys`, `vehicleCreateRequests`,
 `otCounters`, `otCreateRequests`, `otApprovalState`,
-`otApprovalRequests`, `otServiceExecutionRequests`,
-`otClosureRequests`, `tallerMaterialRequests`,
-`tallerMaterialBalances` y `plazaOccupancyKeys`.
+`otApprovalRequests`, `otServiceExecutionRequests`, `otClosureRequests` y
+`plazaOccupancyKeys`.
 
 Estas colecciones no se exponen por el SDK cliente. Firestore Rules permite
 lectura controlada de datos operacionales de Taller y bloquea las escrituras
@@ -86,8 +85,8 @@ directas sensibles, las cuales se realizan por Firebase Functions.
 
 - Clientes se reutilizan como propietarios actuales e históricos; Taller no crea
   una entidad paralela.
-- Inventario mantiene catálogo, tipos de ítem, stock, precio y kernel económico.
-  Taller solo referencia `itemId` y solicita operaciones autorizadas.
+- Inventario mantiene catálogo, tipos de ítem, stock y precio. Taller referencia
+  `itemId`, consulta disponibilidad y no ejecuta movimientos físicos en este PR.
 - Las rutas, navegación, layout, badges, tablas, formularios, estilos, permisos
   y mensajes reutilizan patrones existentes de ValoraCloud.
 - Los cambios compartidos fueron extensiones localizadas de rutas, RBAC,
@@ -346,36 +345,18 @@ aprobada.
 - Auditoría al iniciar y completar.
 - Acciones visuales contextuales y badges de estado.
 
-No se implementó consumo ni devolución como consecuencia automática de estas
-transiciones; ese comportamiento pertenece a la etapa 11.
+Iniciar o completar un servicio no consume stock ni genera movimientos.
 
-### Etapa 11 — Consumo y devolución autoritativa de Inventario
+### Etapa 11 — Retirada del PR
 
-**Objetivo.** Registrar movimientos físicos y valorizados reutilizando el kernel
-económico protegido de Inventario Core.
+La implementación de consumo y devolución física se conserva en la rama
+`backup/taller-etapa-11-materiales`, pero se retiró de
+`feature/taller-mecanico`. El descuento de stock debe esperar el mecanismo único
+de consumo definido por Inventario Core.
 
-**Salida de material.**
-
-- Solo un ProductoOT asociado a un ítem Core de tipo producto puede generar una
-  `SALIDA_TALLER`.
-- Se valida negocio, membresía, permiso, OT, ServicioOT, ítem, cantidad entera,
-  estado compatible y stock actual.
-- La operación actualiza stock y valor económico a través del mecanismo Core,
-  congela costo histórico y vincula el movimiento a `otId` y
-  `servicioOtId`.
-- Solicitudes idempotentes evitan duplicar una salida física por reintento.
-
-**Devolución.**
-
-- Genera `DEVOLUCION_TALLER` desde una salida real.
-- Referencia `movimientoOrigenId`, reutiliza su costo histórico y repone stock
-  y valor con ese costo.
-- El backend calcula el máximo devolvible neto y rechaza sobredevoluciones.
-- Las correcciones son compensatorias: no se modifica un movimiento histórico.
-
-**Experiencia.** La sección de servicio muestra planificado, consumido neto y
-stock actual. Costos internos se mantienen sujetos a capacidad de costos; el
-frontend no escribe stock ni movimientos directamente.
+ProductoOT permanece como planificación: referencia un Producto Core, conserva
+cantidad y snapshot de aprobación, pero no modifica stock, no genera movimientos
+y no ofrece acciones de consumo o devolución.
 
 ### Etapa 12 — Plazas del Taller
 
@@ -423,8 +404,7 @@ el estado presente.
 - Orden cronológico estable.
 - Fecha, actor, tipo de evento y detalle relevante.
 - Cobertura de creación de OT, recepción, Plaza, diagnósticos, planificación,
-  aprobación e invalidación, ejecución de servicio, salida/devolución de
-  materiales, finalización, entrega y cancelación cuando exista un evento
+  aprobación e invalidación, ejecución de servicio, finalización, entrega y cancelación cuando exista un evento
   persistido.
 - Compatibilidad para OTs históricas creadas antes de la incorporación completa
   del ledger: no se inventan eventos ausentes.
@@ -442,9 +422,9 @@ Rules y colecciones técnicas de Taller.
   negocio y capacidad; una revocación concurrente se rechaza.
 - La interfaz refleja permisos, pero no es la autoridad.
 - Se revisaron Vehículos, OT, Recepción, Diagnósticos, ServiciosOT, ProductosOT,
-  aprobación, materiales, Plazas, Historial y selectores auxiliares.
+  aprobación, Plazas, Historial y selectores auxiliares.
 - Las colecciones internas se bloquearon al SDK cliente.
-- Movimientos de Inventario no se escriben directamente desde frontend.
+- Taller no expone operaciones de movimientos físicos de Inventario.
 - DTOs y pantallas no exponen costos a usuarios sin capacidad de costos.
 
 **Decisión pendiente de Core.** La visibilidad de costos de Inventario para
@@ -466,7 +446,7 @@ Decisiones UX relevantes:
 - Acciones sensibles se presentan como botones explícitos y contextuales:
   completar diagnóstico, enviar/aprobar/rechazar, iniciar/completar servicio,
   finalizar orden de trabajo y registrar entrega.
-- Se diferencia estado operacional de aprobación, planificado de consumido,
+- Se diferencia estado operacional de aprobación, planificación de ProductoOT,
   estado persistido de Plaza de su ocupación derivada y recepción de diagnóstico.
 - Las pantallas de Vehículos, OTs, Servicios y Plazas se ajustaron para mantener
   espaciado, densidad, acciones y tablas coherentes con el resto del producto.
@@ -492,7 +472,7 @@ git diff --check
 ```
 
 Además se ejecutaron smokes y casos específicos de aprobación, ejecución de
-servicios, materiales, Plazas, cierre, entorno Firebase e interfaz.
+servicios, Plazas, cierre, entorno Firebase e interfaz.
 
 La matriz de seguridad cubrió 37 Functions con cinco escenarios negativos:
 sin sesión, negocio ajeno, membresía inactiva, perfil sin módulo Taller y usuario
@@ -658,18 +638,15 @@ integración y el comportamiento que debe mantenerse en futuras modificaciones.
 - **Regresión a evitar:** permitir `pendiente → completado` o exponer un
   selector libre para todos los estados.
 
-### Etapa 11 — Materiales
+### Etapa 11 — Retirada del PR
 
-- **Functions autoritativas:** registrar salida, registrar devolución y obtener
-  materiales de la OT.
-- **Kernel Core reutilizado:** validación de cantidad, cálculo de estado
-  económico, salida valorizada y delta económico se realizan mediante el
-  contrato de Inventario.
-- **Trazabilidad:** cada movimiento posee OT, ServicioOT, ítem y, en
-  devoluciones, salida origen.
-- **Regresión a evitar:** llamar `updateInventoryItem` para consumir,
-  editar movimientos históricos, sobredevolver o producir movimiento sin
-  solicitud idempotente.
+- **Estado:** implementación preservada en
+  `backup/taller-etapa-11-materiales` y retirada de la rama del PR.
+- **Contrato vigente:** ProductoOT es planificación y no cambia stock.
+- **Pendiente:** integrar Taller con la futura forma única de consumo de
+  Inventario Core, sin crear un mecanismo paralelo.
+- **Regresión a evitar:** reintroducir salidas/devoluciones propias de Taller o
+  descontar stock al planificar, ejecutar, finalizar o entregar una OT.
 
 ### Etapa 12 — Plazas
 
@@ -708,7 +685,7 @@ integración y el comportamiento que debe mantenerse en futuras modificaciones.
 - **Acceso centralizado:** `tallerAccess.js` concentra evaluación de
   capacidades y comprobación fresca de acceso.
 - **Superficie revisada:** Vehicles, OT, recepción, diagnósticos, servicios,
-  productos, aprobación, materiales, plazas, cierre, historial, selectores y
+  productos, aprobación, plazas, cierre, historial, selectores y
   rutas.
 - **Defensa en profundidad:** Firestore Rules limitan SDK; Functions validan
   autoridad e invariantes; UI solo representa acciones disponibles.
@@ -725,13 +702,9 @@ integración y el comportamiento que debe mantenerse en futuras modificaciones.
 - `functions/workOrderPersistence.js`: creación de OT, Recepción,
   Diagnósticos, ServiciosOT, ProductosOT, aprobación, ejecución, cierre e
   historial.
-- `functions/workOrderMaterials.js`: salidas, devoluciones, balances y
-  consulta de materiales.
 - `functions/workOrderPlazas.js`: administración y exclusividad de Plazas.
 - `functions/tallerAccess.js`: verificación central de capacidades y
   membresía para Taller.
-- `functions/inventoryAcquisition.js`: kernel económico Core reutilizado
-  para la valorización de movimientos de Taller.
 
 ### Frontend
 
@@ -740,7 +713,7 @@ integración y el comportamiento que debe mantenerse en futuras modificaciones.
 - `src/pages/WorkOrdersPage.jsx`, `NewWorkOrderPage.jsx` y
   `WorkOrderDetailPage.jsx`: listado, creación y ficha única de OT.
 - `src/features/workOrders/DiagnosisPanel.jsx`,
-  `ServicePlanningPanel.jsx`, `ServiceMaterialsPanel.jsx`,
+  `ServicePlanningPanel.jsx`,
   `ApprovalPanel.jsx` y `WorkOrderPlazaControl.jsx`: secciones
   especializadas de la ficha.
 - `src/pages/WorkshopPlazasPage.jsx`: administración y estado derivado de
@@ -794,27 +767,12 @@ Esta sección diferencia lo que Taller implementa de lo que reutiliza. El
 objetivo fue extender ValoraCloud sin copiar ni sustituir responsabilidades
 existentes.
 
-### 15.1 Núcleo económico de Inventario
+### 15.1 Integración con Inventario Core
 
-Taller **no implementa un motor económico propio**. Para consumos y devoluciones
-reutiliza los contratos protegidos de `functions/inventoryAcquisition.js`:
-
-- `assertCanonicalInventoryQuantity` y `normalizeInventoryQuantity`:
-  validan y normalizan cantidades bajo la convención de Inventario.
-- `resolveInventoryEconomicState`: obtiene el estado económico vigente del
-  producto antes del movimiento.
-- `applyInventoryCostedOutflow`: aplica la salida valorizada para
-  `SALIDA_TALLER`, con costo histórico congelado.
-- `applyInventoryEconomicDelta`: aplica la reposición económica para
-  `DEVOLUCION_TALLER`.
-- `inventoryEconomicFields`, `round` e
-  `INVENTORY_ECONOMIC_MODEL_VERSION`: conservan estructura, redondeo y
-  versión del modelo económico Core.
-
-La Function de Taller valida primero que el ítem corresponda al mismo negocio y
-que `tipoItem = producto`; después delega el cálculo y actualización al kernel
-Core. No utiliza `updateInventoryItem` como atajo, no modifica costos
-históricos y no llama endpoints de materiales de Proyectos.
+Taller reutiliza el catálogo, tipos, precios y stock visible de Inventario Core
+para planificar y aprobar el alcance. La rama del PR no llama el kernel económico,
+no descuenta ni repone stock y no crea movimientos. El consumo físico queda
+pendiente de la forma única que defina Inventario Core.
 
 ### 15.2 Clientes, identidad y negocio
 
@@ -880,10 +838,10 @@ históricos y no llama endpoints de materiales de Proyectos.
 
 ### 15.6 Separación respecto de otros dominios
 
-- `src/services/workService.js` se ajustó para que los movimientos de Taller
-  no se mezclen con los flujos de Trabajos de Proyectos.
-- `src/services/reportService.js` se ajustó para evitar que los reportes
-  Core interpreten Taller como una entidad de otro dominio.
+- `src/services/workService.js` conserva el contrato propio de materiales de
+  Proyectos, sin filtros ni conocimiento especial de movimientos de Taller.
+- `src/services/reportService.js` conserva el contrato general de Reportes Core,
+  sin exclusiones específicas para tipos de movimiento retirados de Taller.
 - No se reutilizaron endpoints de materiales de Proyectos.
 - No se creó una Venta, Compra, Pago, Cliente, Producto o Proveedor paralelo
   para resolver necesidades de Taller.
@@ -917,10 +875,9 @@ membresía activa y el negocio real del documento antes de actuar.
   corresponde, para informar conflictos concurrentes en vez de sobrescribir
   silenciosamente.
 
-### Aprobación, materiales, Plaza y cierre
+### Aprobación, Plaza y cierre
 
 - Enviar, aprobar, rechazar y revalidar alcance.
-- Registrar salida o devolución de material.
 - Crear, editar, activar/inactivar, asignar y liberar Plaza.
 - Finalizar reparación y registrar entrega.
 
@@ -935,14 +892,11 @@ Los tipos actualmente presentados por la interfaz incluyen:
 - Alta, edición, eliminación, inicio y término de ServiciosOT.
 - Alta, edición y eliminación de ProductosOT planificados.
 - Envío, aprobación, rechazo, invalidación y revalidación de disponibilidad.
-- Consumo y devolución de materiales.
 - Finalización de reparación y entrega de vehículo.
 
-Para materiales se muestra producto y cantidad; para recepción, los campos
-modificados; para aprobación, los estados anteriores/actuales y el motivo
+Para recepción se muestran los campos modificados; para aprobación, los estados anteriores/actuales y el motivo
 cuando existe. El detalle se mantiene acotado para no exponer información
 sensible innecesaria.
-+
 
 ## 18. Detalle verificable de cada implementación del MVP
 
@@ -1110,8 +1064,7 @@ ServicioOT porque el contrato no establece esa relación.
 
 ### 18.8 Etapa 8 — ServiciosOT y ProductosOT
 
-**Componentes.** `ServicePlanningPanel.jsx`,
-`ServiceMaterialsPanel.jsx` y operaciones de planificación en
+**Componentes.** `ServicePlanningPanel.jsx` y operaciones de planificación en
 `workOrderPersistence.js`.
 
 **ServicioOT.**
@@ -1175,32 +1128,21 @@ ServicioOT porque el contrato no establece esa relación.
 - Ambas transiciones escriben eventos de auditoría.
 - El panel muestra únicamente la acción permitida por el estado vigente.
 
-### 18.11 Etapa 11 — Materiales
+### 18.11 Etapa 11 — Retirada del PR
 
-**Componente y Functions.** `ServiceMaterialsPanel.jsx`,
-`registrarSalidaMaterialOT`, `registrarDevolucionMaterialOT` y
-`obtenerMaterialesOT`.
+La implementación original se conserva íntegra en la rama local
+`backup/taller-etapa-11-materiales`. Se retiraron de la rama del PR sus
+Functions, UI, servicios, pruebas, reglas, índices y colecciones técnicas.
 
-**Salida.**
+El comportamiento vigente es deliberadamente acotado:
 
-- Exige OT en reparación, aprobación vigente, ServicioOT en progreso,
-  ProductoOT planificado e ítem Core activo de tipo producto.
-- Verifica stock actual dentro de la operación; el valor mostrado por UI es
-  meramente informativo.
-- Registra `SALIDA_TALLER` con `otId`, `servicioOtId`, `itemId`,
-  cantidad, costo unitario y costo total históricos.
-- Actualiza stock y valor económico mediante el kernel Core y registra evento.
-
-**Devolución.**
-
-- Se inicia desde una salida de material concreta.
-- Exige que la salida, su balance, OT, ServicioOT e ítem correspondan al mismo
-  negocio.
-- Calcula cantidad neta aún devolvible; rechaza cero, negativos y excedentes.
-- Registra `DEVOLUCION_TALLER` con `movimientoOrigenId` y reutiliza el
-  costo congelado de la salida.
-- Las solicitudes idempotentes y balances internos evitan duplicidad y
-  sobredevolución.
+- ProductoOT mantiene `itemId`, cantidad planificada, precio y snapshot de
+  aprobación.
+- La validación de disponibilidad antes y después de aprobar sigue vigente.
+- Planificar, ejecutar, finalizar, entregar o cancelar no cambia stock.
+- Taller no registra salidas, devoluciones, balances ni costos históricos de
+  consumo.
+- La integración física queda pendiente del mecanismo único de Inventario Core.
 
 ### 18.12 Etapa 12 — Plazas
 
@@ -1255,8 +1197,8 @@ edición.
 
 - Ordena por la marca temporal persistida y conserva un criterio estable.
 - Convierte tipos de evento a etiquetas humanas.
-- Para recepción enumera campos modificados; para materiales muestra cantidad y
-  producto; para aprobación muestra estado previo/actual, aprobación y motivo.
+- Para recepción enumera campos modificados; para aprobación muestra estado
+  previo/actual, aprobación y motivo.
 - Muestra actor y fecha en modo solo lectura.
 
 **Compatibilidad.** Una OT cerrada antes del ledger puede no tener eventos
@@ -1300,7 +1242,7 @@ suspendido.
   migrar registros ni modificar contratos del Core.
 - **Cantidades:** la planificación admite números positivos con hasta tres
   decimales en backend (comportamiento cubierto por pruebas anteriores), mientras
-  la UI y los movimientos físicos usan enteros. No se cambia este contrato
+  la UI usa enteros. No se cambia este contrato
   silenciosamente en una revisión de integración; requiere una decisión de
   producto para su eventual alineación.
 - **Alcance de la evidencia:** los smokes de UI existentes son verificaciones de
@@ -1326,7 +1268,7 @@ El recorrido crea un Cliente mediante `crearCliente` y reutiliza
 `buildClientMutationPayload` del Core. El técnico registra un Vehículo sin VIN,
 crea la OT, registra Recepción sin Plaza, asigna una Plaza creada por OWNER,
 completa un Diagnóstico, planifica ServicioOT y ProductoOT, envía a aprobación,
-ejecuta el servicio y registra salida y devolución. OWNER aprueba; el técnico
+ejecuta el servicio sin modificar stock. OWNER aprueba; el técnico
 finaliza reparación y registra entrega. No se fuerzan estados de esa OT con
 Admin SDK. El catálogo Core es un fixture sintético; no se prueba aquí el alta
 del catálogo, que tiene sus propias pruebas.
@@ -1338,9 +1280,8 @@ Se implementó además la cancelación explícita de OT desde `ingresada`, `en_c
 `en_diagnostico`, `esperando_aprobacion` y `esperando_repuestos`. La acción usa
 la capacidad operacional existente, conserva `estadoAprobacion`, snapshots,
 Cliente, Vehículo y número OT; libera Plaza y lock en la misma transacción, crea
-el evento `ot_cancelada` y deja la OT terminal. Antes de cancelar revisa los
-balances protegidos de materiales y exige que toda salida esté completamente
-devuelta o compensada. No se agregó motivo obligatorio porque la SPEC no lo exige.
+el evento `ot_cancelada` y deja la OT terminal. No se agregó motivo obligatorio
+porque la SPEC no lo exige.
 
 ### 19.3 Verificado
 
@@ -1356,26 +1297,19 @@ devuelta o compensada. No se agregó motivo obligatorio porque la SPEC no lo exi
 | Aprobación | Diagnóstico requerido, snapshots y precios backend, rechazo, reenvío e invalidación al editar alcance. |
 | Stock antes/después de aprobar | Esperas correspondientes, aprobación independiente, revalidación y ausencia de reserva. |
 | ServicioOT | Secuencia explícita, permiso y responsable, OT habilitada, carreras y reintentos. |
-| Materiales | Stock insuficiente rechazado; costo origen; salidas/devoluciones parciales y múltiples; sobredevolución, idempotencia y concurrencia. |
 | Finalización/entrega | Todos los servicios completados, estados previos, terminalidad, auditoría y liberación de Plaza. |
-| Cancelación | Estados previos permitidos, rechazo desde reparación o estados posteriores, número conservado, Plaza liberada, consumo neto bloqueado, compensación admitida, idempotencia y carrera concurrente. |
+| Cancelación | Estados previos permitidos, rechazo desde reparación o estados posteriores, número conservado, Plaza liberada, idempotencia y carrera concurrente. |
 | Historial | Eventos persistidos, actor/fecha, orden estable, sin costos en DTO y OT cerrada consultable por Vehículo. |
-| Aislamiento/RBAC | 38 Functions por cinco escenarios negativos: sin sesión, negocio ajeno, membresía inactiva, perfil sin Taller y usuario suspendido. |
-| Colecciones internas | 13 rutas internas sometidas a denegación de get/list/create/update/delete incluso para OWNER. |
+| Aislamiento/RBAC | 35 Functions por cinco escenarios negativos: sin sesión, negocio ajeno, membresía inactiva, perfil sin Taller y usuario suspendido. |
+| Colecciones internas | 11 rutas internas sometidas a denegación de get/list/create/update/delete incluso para OWNER. |
 
-**Consistencia económica del recorrido nuevo:** stock inicial 10, costo unitario
-100 CLP; planificar/aprobar 2 mantiene stock 10. Salida de 2 y devolución de 1
-dejan stock 9 y valor de inventario 900 CLP. Reintentar ambas operaciones mantiene
-exactamente dos movimientos vinculados a la misma OT y ServicioOT; la devolución
-apunta a la salida. Cambiar nombre/precio del catálogo no reescribe el snapshot.
-Completar y entregar no descuentan otra vez y no crean Venta.
+**Ausencia de efecto físico:** planificar y aprobar dos unidades mantiene el stock
+inicial. Iniciar/completar el ServicioOT, finalizar y entregar tampoco cambian
+stock ni crean movimientos asociados a la OT. Cambiar nombre/precio del catálogo
+no reescribe el snapshot y el cierre no crea una Venta.
 
 **Reutilización Core inspeccionada, sin modificarla en esta etapa:**
 
-- `functions/inventoryAcquisition.js`: resolución del estado económico,
-  `applyInventoryCostedOutflow`, `applyInventoryEconomicDelta`,
-  `inventoryEconomicFields` y normalización/redondeo. Taller no invoca endpoints
-  de materiales de Proyectos ni `updateInventoryItem` para consumo.
 - `functions/businessOnboarding.js`: guard de acceso operacional, aplicado por
   las dependencias de las Functions.
 - `functions/businessOperations.js` y `businessJurisdiction.js`: habilitación
@@ -1387,8 +1321,8 @@ Completar y entregar no descuentan otra vez y no crean Venta.
 - Layout, navegación y primitivas existentes (`Button`, `StatusBadge`,
   `ResponsiveDialog`): inspección estática de rutas, estados, formularios y acciones.
 
-No se detectaron escrituras SDK autoritativas de stock, movimientos, aprobación,
-estado OT ni snapshots en los servicios frontend revisados de Taller. Las
+No se detectaron escrituras SDK autoritativas de stock, aprobación, estado OT ni
+snapshots en los servicios frontend revisados de Taller. Las
 mutaciones pasan por Functions; las Rules niegan escrituras directas de Taller.
 
 ### 19.4 Correcciones realizadas y archivos
@@ -1403,8 +1337,8 @@ mutaciones pasan por Functions; las Rules niegan escrituras directas de Taller.
    de la matriz de seguridad existente.
 4. Este documento consolidado: evidencia, diferencias y pendientes de etapa 16.
 5. `functions/workOrderPersistence.js` y `functions/index.js`: transición
-   transaccional `cancelarOT`, idempotencia compartida con cierres, validación de
-   efectos físicos, liberación de Plaza, evento y exportación callable.
+   transaccional `cancelarOT`, idempotencia compartida con cierres, liberación de
+   Plaza, evento y exportación callable.
 6. `src/services/workOrderService.js`, `src/pages/WorkOrderDetailPage.jsx` y
    `src/domain/workOrderHistoryModel.mjs`: llamada controlada, acción contextual,
    confirmación destructiva y lectura del evento en Historial.
@@ -1462,13 +1396,10 @@ cerrarlo. No se detuvieron procesos ajenos ni se borraron exports.
 ### 19.7 Deuda técnica detectada
 
 - Alinear explícitamente cantidad planificada decimal backend frente a controles
-  enteros de UI y movimientos. Mientras tanto no se afirma que backend restrinja
+  enteros de UI. Mientras tanto no se afirma que backend restrinja
   toda planificación a enteros.
 - Los listados e historial cargan colecciones completas; revisar volumen y
   paginación en una tarea autorizada, sin introducirlos aquí.
-- El ledger conserva vínculos de servicio/movimiento/origen más ricos que el DTO
-  resumido del Historial. La trazabilidad detallada de devoluciones está en el
-  panel de movimientos; evitar interpretar el resumen textual como ledger completo.
 - Completar automatización de navegador; los smokes con expresiones sobre código
   no reemplazan pruebas de interacción.
 - Warning de bundle superior a 500 kB. Se conserva el diseño de empaquetado actual;
@@ -1476,7 +1407,7 @@ cerrarlo. No se detuvieron procesos ajenos ni se borraron exports.
 
 ### 19.8 Funcionalidades fuera de alcance confirmadas
 
-Esta revisión no implementa Pago, Venta automática, reservas, fotografías, HH,
+Esta revisión no implementa consumo/devolución física de Taller, Pago, Venta automática, reservas, fotografías, HH,
 agenda, capacidad/equipamiento de Plaza, reapertura de OT ni entidades paralelas
 de Clientes/Inventario/Proyectos. El recorrido comprueba ausencia de Venta
 automática y de descuento de stock adicional al cierre. Esto se refiere a Taller:
@@ -1489,3 +1420,54 @@ automatizadas pasan. Permanece pendiente una validación interactiva/visual de
 navegador, la ejecución con Node 22 y las observaciones técnicas indicadas. No se
 han identificado en las pruebas ejecutadas fallos críticos/altos sin documentar;
 esto no constituye garantía de ausencia de defectos fuera de su cobertura.
+
+## 20. Retiro de la etapa 11 del PR
+
+El 15-10-2026 se retiró de `feature/taller-mecanico` la implementación de
+consumo y devolución física de Inventario. Antes de modificar la rama se creó
+`backup/taller-etapa-11-materiales` apuntando al commit
+`736e4f526a26b49542fb561a0e3b91d813d15b7d`, que conserva el trabajo completo.
+
+### 20.1 Implementación retirada
+
+- Functions y servicios cliente para registrar salidas, registrar devoluciones
+  y consultar materiales consumidos por una OT.
+- Tipos `SALIDA_TALLER` y `DEVOLUCION_TALLER`, balances, solicitudes
+  idempotentes y costo histórico propios de esos movimientos.
+- Panel de consumo, devolución, stock consumido y movimientos físicos dentro de
+  ServicioOT.
+- Pruebas, estilos, eventos de Historial y documentación exclusivos de ese flujo.
+- Reglas e índices agregados para consultar movimientos físicos de Taller.
+- Filtros especiales que Reportes y Proyectos necesitaban únicamente para
+  distinguir los movimientos retirados.
+
+No se eliminó ni modificó el kernel económico protegido de Inventario Core ni
+los contratos de materiales propios de Proyectos.
+
+### 20.2 Funcionalidad conservada
+
+- ProductoOT continúa referenciando un `itemId` de Inventario Core con
+  `tipoItem=producto` y cantidad planificada.
+- Agregar, modificar o eliminar planificación no cambia stock.
+- Enviar y aprobar una OT revalida stock y congela nombres, precios y cantidades
+  en snapshots autoritativos; esto no constituye una reserva ni un movimiento.
+- Las transiciones de ServicioOT, finalización, entrega, cancelación, Plaza,
+  Historial y RBAC permanecen operativas sin presuponer consumos físicos.
+- El frontend no muestra acciones para consumir o devolver materiales.
+
+### 20.3 Verificación del retiro
+
+| Verificación | Código de salida | Resultado |
+| --- | ---: | --- |
+| `npm run test:rules` | 0 | `RULES_SMOKE_OK` |
+| `npm run test:vehicles-integrated` | 0 | `VEHICLES_INTEGRATED_LOCAL_OK` |
+| `npm run test:work-orders-integrated` | 0 | Suite integrada y seguridad correctas sin movimientos físicos de Taller. |
+| `git diff --check` | 0 | Sin errores de whitespace; solo advertencias LF/CRLF. |
+| `npm --prefix functions run lint` | 0 | Sin errores. |
+| `npm run build` | 0 | Compilación correcta; permanece la advertencia conocida de bundle grande. |
+| `npm run test:reports` | 0 | Regresión de Reportes correcta. |
+| `npm run test:works-model` | 0 | Regresión de Proyectos y su kernel de materiales correcta. |
+
+La integración física de Taller queda pendiente de la futura forma única de
+consumo de Inventario Core. No se implementó descuento alternativo, reserva,
+Venta, Pago ni horas-hombre como reemplazo.

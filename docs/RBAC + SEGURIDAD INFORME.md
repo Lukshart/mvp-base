@@ -3,7 +3,7 @@
 ## Alcance y precedencia
 
 Revisión de Vehículos, OT, Recepción, Diagnósticos, Servicios/Productos,
-aprobación, materiales, Plazas, Historial y selectores. AGENTS.md prevalece;
+aprobación, Plazas, Historial y selectores. AGENTS.md prevalece;
 se conserva el contrato Core de membresías y módulos. La SPEC definitiva MVP
 (VIN opcional, checklist definida) es la utilizada, no la propuesta histórica
 de actualización que aún exigía VIN y dejaba checklist pendiente.
@@ -17,8 +17,8 @@ de actualización que aún exigía VIN y dejaba checklist pendiente.
    frontend recibe solo rol, perdiendo el contexto de perfil personalizado.
    Se explicitarán capacidades preservando la operación ya implementada para
    MEMBER con perfil Taller, como el precedente WORKS_OPERATE del Core.
-3. El reintento de materiales devuelve el resultado interno previamente guardado
-   por expansión de objeto. Un recibo legacy que incluya costos puede filtrarlos.
+3. La implementación de movimientos físicos de Taller fue retirada posteriormente
+   del PR y quedó preservada en `backup/taller-etapa-11-materiales`.
 4. El selector de Clientes permite que clienteId almacenado reemplace la identidad
    de documento al construir su DTO. Debe omitir referencias inconsistentes.
 
@@ -63,21 +63,19 @@ Ejecutada el 13-10-2026, sobre emuladores sin importar ni exportar datos locales
 | `npm run test:work-orders-model` | OK |
 | `npm run test:work-orders-ui` | OK (smoke de código, no recorrido manual de navegador) |
 | `npm run test:vehicles-integrated` | `VEHICLES_INTEGRATED_LOCAL_OK`, salida 0 |
-| `npm run test:work-orders-integrated` | Salida 0: OT, Recepción, Diagnósticos, planificación, Plazas, aprobación, ejecución, materiales, cierre e Historial |
+| `npm run test:work-orders-integrated` | Salida 0: OT, Recepción, Diagnósticos, planificación, Plazas, aprobación, ejecución, cierre e Historial |
 | `npm run test:rules` | `RULES_SMOKE_OK`, salida 0 |
 | `npm --prefix functions run lint` | OK |
 | `npm run build` | OK; advertencia de chunks mayores a 500 kB |
 | `git diff --check` | OK |
 
-La nueva matriz integrada cubre 37 Functions × 5 escenarios (185 rechazos):
+La matriz integrada actual cubre 35 Functions × 5 escenarios (175 rechazos):
 sin sesión, usuario de otro negocio, membresía inactiva, perfil sin Taller y
-usuario suspendido. Además verifica 65 denegaciones SDK sobre las 13 colecciones
+usuario suspendido. Además verifica 55 denegaciones SDK sobre las 11 colecciones
 internas (get/list/create/update/delete), incluyendo OWNER.
 
 Se comprobó revocación entre la autorización inicial y la transacción: se rechaza
-la creación sin persistir Vehículo ni recibo de idempotencia. Se inyectó costo
-sintético en un recibo legacy y se verificó que el reintento de materiales no lo
-expone. Las suites existentes verifican además estados inválidos, referencias
+la creación sin persistir Vehículo ni recibo de idempotencia. Las suites existentes verifican además estados inválidos, referencias
 ajenas, permisos de aprobación/Plazas, costos, concurrencia e idempotencia.
 
 La primera ejecución integrada detectó una capacidad denegada serializada como
@@ -100,14 +98,12 @@ deploy ni acceso a datos productivos.
 - `functions/tallerAccess.js` centraliza capacidades de Taller sin reemplazar
   la autorización Core. Reutiliza `requireOperationalBusinessAccess`,
   `assertBusinessCanOperate` y `resolveBaseTaxSettings`.
-- Vehículos, OT, Recepción, Diagnósticos, planificación, ejecución, materiales,
+- Vehículos, OT, Recepción, Diagnósticos, planificación, ejecución,
   aprobación, cierre y Plazas releen membresía, perfil, usuario, negocio y
   configuración de impuestos dentro de la transacción. La lectura participa
   en la detección de cambios concurrentes; no se usa negocioActivoId como permiso.
 - Se conserva la comprobación específica de aprobación y los permisos
   administrativos de Plazas y modificación de Vehículos.
-- Materiales devuelve una lista explícita de campos también en reintentos;
-  un resultado legacy con costos no se propaga al DTO de operación.
 - El selector de Clientes omite identidades inconsistentes; sus respuestas,
   catálogo, responsables e Historial siguen acotadas sin costos internos.
 - Las páginas reciben el contexto completo de acceso, incluido perfil y módulos,
@@ -124,7 +120,6 @@ deploy ni acceso a datos productivos.
 | Referencias | Documentos bajo negocio autorizado; validación de negocio/identidad de OT, Vehículo, Cliente, Servicio, Producto y Plaza |
 | Mutaciones sensibles | Capacidades backend y revalidación transaccional de autoridad, además de invariantes y estados existentes |
 | Aprobación y Plazas | Aprobación separada de operación; administración de Plazas reservada a OWNER/ADMIN |
-| Materiales | Escritura económica exclusiva del backend; DTO de movimientos con costos según capacidad; reintentos acotados |
 | Historial | Eventos inmutables por SDK, lectura mediante DTO sin costo; sin reconstrucción artificial de eventos |
 | Rutas y botones | Protección Core y capacidades coherentes con membresía/perfil; sin autorización basada solo en UI |
 | Colecciones internas | Reglas explícitas o denegación final; sin lectura/escritura SDK incluso para OWNER |
@@ -132,18 +127,18 @@ deploy ni acceso a datos productivos.
 Colecciones internas cubiertas por pruebas de get/list/create/update/delete:
 `vehiclePlateKeys`, `vehicleVinKeys`, `vehicleCreateRequests`, `otCounters`,
 `otCreateRequests`, `otApprovalState`, `otApprovalRequests`,
-`otServiceExecutionRequests`, `otClosureRequests`, `tallerMaterialRequests`,
-`tallerMaterialBalances`, `plazaOccupancyKeys` y la subcolección `historial` de OT.
+`otServiceExecutionRequests`, `otClosureRequests`, `plazaOccupancyKeys` y la
+subcolección `historial` de OT.
 
 ## Archivos de esta etapa
 
 - Backend: `functions/tallerAccess.js`, `vehiclePersistence.js`,
-  `workOrderPersistence.js`, `workOrderMaterials.js`, `workOrderPlazas.js`;
+  `workOrderPersistence.js`, `workOrderPlazas.js`;
   `functions/package.json` incorpora el helper al lint.
 - Frontend: `src/domain/rbac.mjs`, `workshopPlazaModel.mjs`, `src/app/App.jsx`,
   páginas de Vehículos/OT, `DiagnosisPanel.jsx` y `ServicePlanningPanel.jsx`.
 - Pruebas: `scripts/workshop-security-cases.mjs`, `rbac-smoke.mjs`,
-  `work-orders-integrated-local.mjs`, `work-order-material-cases.mjs`,
+  `work-orders-integrated-local.mjs`,
   `work-order-model-smoke.mjs`, `work-order-ui-smoke.mjs`, `vehicle-ui-smoke.mjs`.
 
 El diff de trabajo también contiene cambios previos de Historial y persistencia

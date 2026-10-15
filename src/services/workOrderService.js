@@ -201,20 +201,6 @@ export function iniciarServicioOT(businessId, otId, servicioOtId, expectedActual
   });
 }
 
-export function obtenerMaterialesOT(businessId, otId) {
-  return diagnosisCall("obtenerMaterialesOT", "consultar consumos de la OT", businessId, otId, {});
-}
-
-export function registrarSalidaMaterialOT(businessId, otId, servicioOtId, itemId, cantidad, requestId) {
-  return diagnosisCall("registrarSalidaMaterialOT", "registrar consumo", businessId, otId,
-    {servicioOtId, itemId, cantidad, requestId});
-}
-
-export function registrarDevolucionMaterialOT(businessId, otId, servicioOtId, movimientoOrigenId, cantidad, requestId) {
-  return diagnosisCall("registrarDevolucionMaterialOT", "registrar devolución", businessId, otId,
-    {servicioOtId, movimientoOrigenId, cantidad, requestId});
-}
-
 export function completarServicioOT(businessId, otId, servicioOtId, expectedActualizadoEn, requestId) {
   return diagnosisCall("completarServicioOT", "completar un servicio de la OT", businessId, otId, {
     servicioOtId: requireIdentifier(servicioOtId, "El servicio de la OT"), expectedActualizadoEn,
