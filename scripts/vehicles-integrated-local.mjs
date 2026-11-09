@@ -145,11 +145,24 @@ try {
   });
   const outsiderBusinessId = outsiderBusiness.data.business.id;
 
+  await expectCallableError(
+    "Function Vehículos con módulo Taller deshabilitado",
+    () => callable(owner, "crearVehiculo")({
+      businessId,
+      requestId: `vehicle-disabled-${RUN_ID}`,
+      vehiculo: vehiclePayload(),
+    }),
+    ["failed-precondition"],
+    /Este módulo no está habilitado para tu empresa\./
+  );
+
   await Promise.all([
     adminDb.doc(`negocios/${businessId}`).update({
+      modulosHabilitados: ["taller"],
       verificacionEmpresa: {estado: "VERIFICADA"},
     }),
     adminDb.doc(`negocios/${outsiderBusinessId}`).update({
+      modulosHabilitados: ["taller"],
       verificacionEmpresa: {estado: "VERIFICADA"},
     }),
     adminDb.doc(`membresias/${businessId}__${admin.uid}`).set({

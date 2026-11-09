@@ -142,9 +142,11 @@ assert.doesNotMatch(planningPanel, /ServiceMaterialsPanel|obtenerMaterialesOT|Re
 assert.doesNotMatch(workOrderService, /registrarSalidaMaterialOT|registrarDevolucionMaterialOT|obtenerMaterialesOT/);
 assert.match(approvalPanel, /work-order-approval-table/);
 assert.match(approvalPanel, /work-order-approval-actions/);
+const tallerStyles = fs.readFileSync("src/features/taller/taller.css", "utf8");
 const interiorStyles = fs.readFileSync("src/styles/interior.css", "utf8");
-assert.match(interiorStyles, /\.work-order-products-table__quantity/);
-assert.doesNotMatch(interiorStyles, /\.work-order-material-history/);
+assert.match(tallerStyles, /\.work-order-products-table__quantity/);
+assert.doesNotMatch(tallerStyles, /\.work-order-material-history/);
+assert.doesNotMatch(interiorStyles, /\.work-order-products-table__quantity/);
 assert.doesNotMatch(detail, /value=\{order\.estado\}/);
 console.log("OK UI OT: rutas, listado real, selección por patente y reutilización de Vehículos");
 console.log("WORK_ORDER_UI_SMOKE_OK");
