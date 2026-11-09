@@ -1,6 +1,11 @@
 "use strict";
 
-const {TALLER_CREATION_ROLES, TALLER_MANAGEMENT_ROLES, TALLER_OPERATION_ROLES} = require("./rbac");
+const {
+  INVENTORY_COSTS_READ_ROLES,
+  TALLER_CREATION_ROLES,
+  TALLER_MANAGEMENT_ROLES,
+  TALLER_OPERATION_ROLES,
+} = require("./rbac");
 const {assertBusinessCanOperate} = require("./businessOperations");
 const {resolveBaseTaxSettings} = require("./businessJurisdiction");
 
@@ -14,7 +19,7 @@ function hasTallerCapability(membership, capability) {
   if (["read", "operate"].includes(capability)) return true;
   if (capability === "create") return TALLER_CREATION_ROLES.includes(membership.rol);
   if (["approve", "manage"].includes(capability)) return TALLER_MANAGEMENT_ROLES.includes(membership.rol);
-  if (capability === "costs") return ["OWNER", "ADMIN", "MEMBER"].includes(membership.rol);
+  if (capability === "costs") return INVENTORY_COSTS_READ_ROLES.includes(membership.rol);
   return false;
 }
 

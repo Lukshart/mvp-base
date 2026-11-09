@@ -29,14 +29,27 @@ assert.deepEqual(backendRbac.TALLER_CREATION_ROLES, ["OWNER", "ADMIN", "TECNICO"
 console.log("OK RBAC: perfiles predefinidos compatibles y Colaborador asignable");
 
 const P = BUSINESS_PERMISSIONS;
+assert.deepEqual(
+  backendRbac.INVENTORY_COSTS_READ_ROLES,
+  BUSINESS_ROLES.filter((role) => hasBusinessPermission(role, P.INVENTORY_COSTS_READ))
+);
+assert.deepEqual(
+  backendRbac.PRICING_READ_ROLES,
+  BUSINESS_ROLES.filter((role) => hasBusinessPermission(role, P.PRICING_READ))
+);
 const {hasTallerCapability, requireTallerAccess} = require("../functions/tallerAccess.js");
 const workshopCapabilities = {read: P.TALLER_READ, operate: P.TALLER_OPERATE,
-  create: P.TALLER_CREATE, approve: P.TALLER_APPROVE, manage: P.TALLER_MANAGE, costs: P.TALLER_COSTS_READ};
+  create: P.TALLER_CREATE, approve: P.TALLER_APPROVE, manage: P.TALLER_MANAGE};
 for (const role of BUSINESS_ROLES) {
   for (const [capability, permission] of Object.entries(workshopCapabilities)) {
     assert.equal(hasTallerCapability({rol: role}, capability), hasBusinessPermission(role, permission),
       `${role}: ${capability} debe coincidir entre UI y backend`);
   }
+  assert.equal(
+    hasTallerCapability({rol: role}, "costs"),
+    hasBusinessPermission(role, P.TALLER_READ) && hasBusinessPermission(role, P.INVENTORY_COSTS_READ),
+    `${role}: costs debe derivar de INVENTORY_COSTS_READ para roles con acceso a Taller`
+  );
 }
 assert.equal(hasBusinessPermission("VENTAS", P.SALES_WRITE), true);
 assert.equal(hasBusinessPermission("VENTAS", P.PURCHASES_READ), false);

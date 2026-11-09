@@ -5,10 +5,17 @@ const {normalizeBusinessVerificationState} = require("./businessOperations");
 const {hasTallerCapability, requireTallerAccess, assertFreshTallerAccess} = require("./tallerAccess");
 const {
   ASSIGNABLE_BUSINESS_ROLES,
+  PRICING_READ_ROLES,
   TALLER_CREATION_ROLES,
   TALLER_MANAGEMENT_ROLES,
   TALLER_OPERATION_ROLES,
 } = require("./rbac");
+
+function canReadCorePricing(membership) {
+  if (!PRICING_READ_ROLES.includes(membership?.rol)) return false;
+  if (!membership.profileId) return true;
+  return Boolean(membership.rol === "MEMBER" && membership.modules?.includes("cotizaciones"));
+}
 
 const WORK_ORDER_INPUT_FIELDS = new Set(["vehiculoId"]);
 const RECEPTION_INPUT_FIELDS = new Set([
@@ -377,6 +384,7 @@ function appendPlanningEvent(transaction, orderRef, {businessId, actorUid, actor
 
 async function listarCatalogoTallerHandler(request, dependencies) {
   const context = await requireTallerAccess(request, dependencies, "read");
+  const canReadPrices = canReadCorePricing(context.membership);
   const snapshot = await context.businessRef.collection("inventario")
     .where("tipoItem", "in", ["servicio", "producto"]).get();
   const items = snapshot.docs.flatMap((document) => {
@@ -391,7 +399,7 @@ async function listarCatalogoTallerHandler(request, dependencies) {
       codigoInterno: String(item.codigoInterno || item.sku || "").trim(),
       stock: item.tipoItem === "producto" && Number.isFinite(Number(item.stock))
         ? Number(item.stock) : null,
-      precioEfectivo: price !== null && Number.isFinite(price) && price >= 0
+      precioEfectivo: canReadPrices && price !== null && Number.isFinite(price) && price >= 0
         ? Math.round(price) : null,
     }];
   });

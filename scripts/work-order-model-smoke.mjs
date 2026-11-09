@@ -87,21 +87,28 @@ assert.throws(() => normalizeServiceInput({itemId: "service-1", responsableUid: 
   (error) => error.code === "invalid-argument");
 assert.equal(plannedQuantity(1.25, TestHttpsError), 1.25);
 assert.throws(() => plannedQuantity(0, TestHttpsError), (error) => error.code === "invalid-argument");
-const catalog = await listarCatalogoTallerHandler({data: {businessId: "business-1"}}, {
+const catalogDocuments = [
+  {id: "service-1", data: () => ({negocioId: "business-1", tipoItem: "servicio", estado: "activo", nombre: "Servicio", precioInterno: 25000, costoBase: 10000})},
+  {id: "foreign", data: () => ({negocioId: "business-2", tipoItem: "producto", estado: "activo", nombre: "Ajeno"})},
+];
+const catalogFor = (membership) => listarCatalogoTallerHandler({data: {businessId: "business-1"}}, {
   db: {}, HttpsError: TestHttpsError,
   requireBusinessAccess: async (request, dependencies, options) => {
     assert.equal(request.data.businessId, "business-1");
-    assert.equal(options.moduleId, "taller");
-    return {membership: {rol: "TECNICO"}, businessId: "business-1", businessRef: {collection: () => ({where: () => ({get: async () => ({docs: [
-      {id: "service-1", data: () => ({negocioId: "business-1", tipoItem: "servicio", estado: "activo", nombre: "Servicio", precioInterno: 25000, costoBase: 10000})},
-      {id: "foreign", data: () => ({negocioId: "business-2", tipoItem: "producto", estado: "activo", nombre: "Ajeno"})},
-    ]})})})}};
+    assert.equal(options.requiredVerticalModule, "taller");
+    assert.equal(Object.hasOwn(options, "moduleId"), false);
+    return {membership, businessId: "business-1", businessRef: {collection: () => ({where: () => ({get: async () => ({docs: catalogDocuments})})})}};
   },
 });
-assert.deepEqual(catalog.items, [{
+const technicianCatalog = await catalogFor({rol: "TECNICO"});
+assert.deepEqual(technicianCatalog.items, [{
   itemId: "service-1", tipoItem: "servicio", estado: "activo", nombre: "Servicio",
-  codigoInterno: "", stock: null, precioEfectivo: 25000,
+  codigoInterno: "", stock: null, precioEfectivo: null,
 }]);
+assert.equal((await catalogFor({rol: "OWNER"})).items[0].precioEfectivo, 25000);
+assert.equal((await catalogFor({rol: "MEMBER"})).items[0].precioEfectivo, 25000);
+assert.equal((await catalogFor({rol: "MEMBER", profileId: "profile", modules: ["taller"]})).items[0].precioEfectivo, null);
+assert.equal((await catalogFor({rol: "MEMBER", profileId: "profile", modules: ["taller", "cotizaciones"]})).items[0].precioEfectivo, 25000);
 assert.equal(
   profileIdentityName({nombres: "Matías", apellidos: "Pérez"}, {email: "matias@bagner.cl", displayName: "matias@bagner.cl"}),
   "Matías Pérez"
