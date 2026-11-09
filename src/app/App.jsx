@@ -7,6 +7,8 @@ import {
   useLocation,
 } from "react-router-dom";
 
+import "../features/taller/taller.css";
+
 import AppLayout from "../layout/AppLayout";
 import EnvironmentNotice from "../components/EnvironmentNotice";
 import LoadingScreen from "../components/LoadingScreen";
