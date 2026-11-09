@@ -29,7 +29,7 @@ async function requireTallerAccess(request, dependencies, capability = "read") {
     ["approve", "manage"].includes(capability) ? TALLER_MANAGEMENT_ROLES : TALLER_OPERATION_ROLES;
   const context = await dependencies.requireBusinessAccess(request,
     {db: dependencies.db, HttpsError: dependencies.HttpsError},
-    {roles, requiresVerifiedBusiness: true, moduleId: "taller"});
+    {roles, requiresVerifiedBusiness: true, requiredVerticalModule: "taller"});
   assertTallerCapability(context.membership, capability, dependencies.HttpsError);
   return context;
 }

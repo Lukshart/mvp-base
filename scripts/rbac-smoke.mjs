@@ -29,7 +29,7 @@ assert.deepEqual(backendRbac.TALLER_CREATION_ROLES, ["OWNER", "ADMIN", "TECNICO"
 console.log("OK RBAC: perfiles predefinidos compatibles y Colaborador asignable");
 
 const P = BUSINESS_PERMISSIONS;
-const {hasTallerCapability} = require("../functions/tallerAccess.js");
+const {hasTallerCapability, requireTallerAccess} = require("../functions/tallerAccess.js");
 const workshopCapabilities = {read: P.TALLER_READ, operate: P.TALLER_OPERATE,
   create: P.TALLER_CREATE, approve: P.TALLER_APPROVE, manage: P.TALLER_MANAGE, costs: P.TALLER_COSTS_READ};
 for (const role of BUSINESS_ROLES) {
@@ -77,6 +77,25 @@ assert.equal(hasBusinessPermission("FINANZAS", P.PROFITABILITY_READ), true);
 assert.equal(hasBusinessPermission("FINANZAS", P.COMPANY_WRITE), false);
 assert.equal(hasBusinessPermission("MEMBER", P.CLIENTS_READ), true);
 assert.equal(hasBusinessPermission("MEMBER", P.CLIENTS_WRITE), false);
+
+let tallerAccessOptions;
+const tallerContext = {membership: {rol: "OWNER"}};
+const resolvedTallerContext = await requireTallerAccess(
+  {auth: {uid: "owner"}, data: {businessId: "business"}},
+  {
+    db: {},
+    HttpsError: class HttpsError extends Error {},
+    requireBusinessAccess: async (_request, _dependencies, options) => {
+      tallerAccessOptions = options;
+      return tallerContext;
+    },
+  },
+  "read"
+);
+assert.equal(resolvedTallerContext, tallerContext);
+assert.equal(tallerAccessOptions.requiredVerticalModule, "taller");
+assert.equal(tallerAccessOptions.requiresVerifiedBusiness, true);
+assert.equal(Object.hasOwn(tallerAccessOptions, "moduleId"), false);
 console.log("OK RBAC: matriz mínima por dominio y compatibilidad MEMBER");
 
 assert.equal(canAccessBusinessPath("VENTAS", "/ventas/nueva"), true);
