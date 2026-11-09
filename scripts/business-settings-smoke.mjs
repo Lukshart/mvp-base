@@ -27,13 +27,13 @@ function rejectsWithCode(callback, code) {
 const quickBusiness = validateBusinessCreationInput(
   {
     nombreComercial: "Mauricio SPA",
-    rubroCodigo: "SOFTWARE_SOLUCIONES_DIGITALES",
+    rubroCodigo: "TECNOLOGIA_INFORMATICA",
     regionCodigo: "01",
   },
   TestHttpsError
 );
 assert.equal(quickBusiness.nombreComercial, "Mauricio SPA");
-assert.equal(quickBusiness.rubroCodigo, "SOFTWARE_SOLUCIONES_DIGITALES");
+assert.equal(quickBusiness.rubroCodigo, "TECNOLOGIA_INFORMATICA");
 assert.equal(quickBusiness.regionNombre, "Tarapacá");
 assert.equal(quickBusiness.paisCodigo, "CL");
 assert.equal(quickBusiness.monedaCodigo, "CLP");
@@ -160,7 +160,7 @@ rejectsWithCode(
 const profileWithoutOptionals = validateBusinessProfileInput(
   {
     nombreComercial: "Mauricio SPA",
-    rubroCodigo: "SOFTWARE_SOLUCIONES_DIGITALES",
+    rubroCodigo: "TECNOLOGIA_INFORMATICA",
     regionCodigo: "01",
     comunaCodigo: "",
   },
@@ -172,7 +172,7 @@ assert.equal(profileWithoutOptionals.rut, "");
 const profileWithRut = validateBusinessProfileInput(
   {
     nombreComercial: "Mauricio SPA",
-    rubroCodigo: "SOFTWARE_SOLUCIONES_DIGITALES",
+    rubroCodigo: "TECNOLOGIA_INFORMATICA",
     regionCodigo: "01",
     rut: "1.000.005-k",
   },
@@ -184,7 +184,7 @@ rejectsWithCode(
     validateBusinessProfileInput(
       {
         nombreComercial: "Mauricio SPA",
-        rubroCodigo: "SOFTWARE_SOLUCIONES_DIGITALES",
+        rubroCodigo: "TECNOLOGIA_INFORMATICA",
         regionCodigo: "01",
         rut: "12.345.678-9",
       },

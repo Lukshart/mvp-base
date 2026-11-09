@@ -2,6 +2,7 @@ import React, {useEffect, useMemo, useRef, useState} from "react";
 import {useLocation, useNavigate, useParams} from "react-router-dom";
 import {sileo} from "sileo";
 import Button from "../components/ui/Button";
+import LoadingState from "../components/ui/LoadingState";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
 import SupplyTrace from "../components/ui/SupplyTrace";
 import {
@@ -247,7 +248,8 @@ export default function NewPurchaseOrderPage({businessId, role}) {
       throw new Error("Producto no encontrado para este código.");
     }
     addItem(product);
-    sileo.success({title: "Producto agregado", description: product.nombre});
+    // El cuadro de escaneo continuo muestra la confirmación y la lista de la sesión.
+    return {key: product.id, label: product.nombre};
   };
 
   const persistDraft = async () => {
@@ -368,8 +370,9 @@ export default function NewPurchaseOrderPage({businessId, role}) {
       );
       conversionRequestIdRef.current = "";
       navigate(`/recepciones/${result.recepcion.id}/editar`);
-    } catch (error) {
-      setMessage(error.message);
+    } catch {
+      // sileo.promise() ya mostró el toast de error (misma
+      // description: error.message) — nada más que hacer aquí.
     } finally {
       setSaving(false);
     }
@@ -420,7 +423,6 @@ export default function NewPurchaseOrderPage({businessId, role}) {
         sileo.success({title: result.resent ? "Orden de compra reenviada" : "Correo enviado", description: `${saved.numero} fue enviada a ${emailProveedor}.`});
       }
     } catch (error) {
-      setMessage(error.message);
       sileo.error({title: "No se pudo enviar la orden", description: error.message});
     } finally {
       setSaving(false);
@@ -447,7 +449,6 @@ export default function NewPurchaseOrderPage({businessId, role}) {
     } catch (error) {
       targetWindow.close();
       if (error?.name !== "AbortError") {
-        setMessage(error.message);
         sileo.error({title: "No se pudo preparar WhatsApp", description: error.message});
       }
     } finally {
@@ -467,7 +468,6 @@ export default function NewPurchaseOrderPage({businessId, role}) {
       setActionDialog("");
       sileo.success({title: "Orden de compra emitida", description: `${emitted.numero} fue registrada como enviada por WhatsApp.`});
     } catch (error) {
-      setMessage(error.message);
       sileo.error({title: "No se pudo registrar el envío", description: error.message});
     } finally {
       setSaving(false);
@@ -487,7 +487,7 @@ export default function NewPurchaseOrderPage({businessId, role}) {
     }
   };
 
-  if (loading) return <p className="muted">Cargando orden de compra...</p>;
+  if (loading) return <LoadingState variant="page" label="Cargando orden de compra..." />;
 
   return (
     <main className="po-workspace">
@@ -620,10 +620,10 @@ export default function NewPurchaseOrderPage({businessId, role}) {
         open={catalogOpen}
       />
       <SendPurchaseOrderEmailDialog companyProfile={company} open={emailOpen} onClose={() => setEmailOpen(false)} onSend={sendEmail} order={order} processing={saving} />
-      <ResponsiveDialog open={actionDialog === "supplier"} onClose={() => !saving && setActionDialog("")} eyebrow="Confirmación del proveedor" title="Registrar confirmación" description="Registra aquí la respuesta recibida por correo, teléfono o WhatsApp. Una confirmación rechazada mantiene el bloqueo vigente para nuevas recepciones." size="small" footer={<><Button type="button" variant="secondary" disabled={saving} onClick={() => setActionDialog("")}>Volver</Button><Button type="button" disabled={saving} onClick={saveSupplierAnswer}>{saving ? "Guardando..." : "Guardar confirmación"}</Button></>}><div className="po-fields"><label>Estado<select value={supplierAnswer.estado} onChange={(event) => setSupplierAnswer({...supplierAnswer, estado: event.target.value})}><option value="pendiente">Pendiente</option><option value="confirmada">Confirmada</option><option value="rechazada">Rechazada</option><option value="confirmada_con_observaciones">Confirmada con observaciones</option></select></label><label>Observación{supplierAnswer.estado === "confirmada_con_observaciones" ? " *" : " (opcional)"}<textarea required={supplierAnswer.estado === "confirmada_con_observaciones"} maxLength={2000} placeholder="Ej. Confirma cantidades y solicita ajustar la fecha de entrega." value={supplierAnswer.comentario} onChange={(event) => setSupplierAnswer({...supplierAnswer, comentario: event.target.value})} /></label></div></ResponsiveDialog>
-      <ResponsiveDialog open={actionDialog === "whatsapp"} onClose={() => !saving && setActionDialog("")} eyebrow="WhatsApp" title="¿Enviaste la orden de compra?" description="Abrir WhatsApp no confirma que el proveedor haya recibido la orden." size="small" footer={<><Button type="button" variant="secondary" disabled={saving} onClick={() => setActionDialog("")}>Mantener pendiente</Button><Button type="button" disabled={saving} onClick={confirmWhatsApp}>{saving ? "Registrando..." : "Sí, fue enviada"}</Button></>}><p>ValoraCloud registrará la emisión por WhatsApp, sin afirmar entrega ni lectura.</p></ResponsiveDialog>
-      <ResponsiveDialog open={actionDialog === "manual"} onClose={() => !saving && setActionDialog("")} eyebrow="Emisión" title="Marcar emisión manual" description="Usa esta opción solo si la orden ya fue entregada al proveedor por otro medio." size="small" footer={<><Button type="button" variant="secondary" disabled={saving} onClick={() => setActionDialog("")}>Volver</Button><Button type="button" disabled={saving} onClick={emitManual}>{saving ? "Registrando..." : "Marcar como emitida"}</Button></>}><p>Se guardará fecha, canal y usuario de la emisión.</p></ResponsiveDialog>
-      <ResponsiveDialog open={actionDialog === "cancel"} onClose={() => !saving && setActionDialog("")} eyebrow="Acción de orden" title="Cancelar orden de compra" description={cancellationDescription} size="small" footer={<><Button type="button" variant="secondary" disabled={saving} onClick={() => setActionDialog("")}>Volver</Button><Button type="button" variant="danger" disabled={saving} onClick={cancel}>{saving ? "Cancelando..." : "Cancelar orden"}</Button></>}>{hasConfirmedReceptions ? <p>La cancelación no revierte inventario ni compras ya generadas.</p> : null}</ResponsiveDialog>
+      <ResponsiveDialog open={actionDialog === "supplier"} onClose={() => !saving && setActionDialog("")} eyebrow="Confirmación del proveedor" title="Registrar confirmación" description="Registra aquí la respuesta recibida por correo, teléfono o WhatsApp. Una confirmación rechazada mantiene el bloqueo vigente para nuevas recepciones." size="small" footer={<><Button type="button" variant="secondary" disabled={saving} onClick={() => setActionDialog("")}>Volver</Button><Button type="button" loading={saving} onClick={saveSupplierAnswer}>{saving ? "Guardando..." : "Guardar confirmación"}</Button></>}><div className="po-fields"><label>Estado<select value={supplierAnswer.estado} onChange={(event) => setSupplierAnswer({...supplierAnswer, estado: event.target.value})}><option value="pendiente">Pendiente</option><option value="confirmada">Confirmada</option><option value="rechazada">Rechazada</option><option value="confirmada_con_observaciones">Confirmada con observaciones</option></select></label><label>Observación{supplierAnswer.estado === "confirmada_con_observaciones" ? " *" : " (opcional)"}<textarea required={supplierAnswer.estado === "confirmada_con_observaciones"} maxLength={2000} placeholder="Ej. Confirma cantidades y solicita ajustar la fecha de entrega." value={supplierAnswer.comentario} onChange={(event) => setSupplierAnswer({...supplierAnswer, comentario: event.target.value})} /></label></div></ResponsiveDialog>
+      <ResponsiveDialog open={actionDialog === "whatsapp"} onClose={() => !saving && setActionDialog("")} eyebrow="WhatsApp" title="¿Enviaste la orden de compra?" description="Abrir WhatsApp no confirma que el proveedor haya recibido la orden." size="small" footer={<><Button type="button" variant="secondary" disabled={saving} onClick={() => setActionDialog("")}>Mantener pendiente</Button><Button type="button" loading={saving} onClick={confirmWhatsApp}>{saving ? "Registrando..." : "Sí, fue enviada"}</Button></>}><p>ValoraCloud registrará la emisión por WhatsApp, sin afirmar entrega ni lectura.</p></ResponsiveDialog>
+      <ResponsiveDialog open={actionDialog === "manual"} onClose={() => !saving && setActionDialog("")} eyebrow="Emisión" title="Marcar emisión manual" description="Usa esta opción solo si la orden ya fue entregada al proveedor por otro medio." size="small" footer={<><Button type="button" variant="secondary" disabled={saving} onClick={() => setActionDialog("")}>Volver</Button><Button type="button" loading={saving} onClick={emitManual}>{saving ? "Registrando..." : "Marcar como emitida"}</Button></>}><p>Se guardará fecha, canal y usuario de la emisión.</p></ResponsiveDialog>
+      <ResponsiveDialog open={actionDialog === "cancel"} onClose={() => !saving && setActionDialog("")} eyebrow="Acción de orden" title="Cancelar orden de compra" description={cancellationDescription} size="small" footer={<><Button type="button" variant="secondary" disabled={saving} onClick={() => setActionDialog("")}>Volver</Button><Button type="button" variant="danger" loading={saving} onClick={cancel}>{saving ? "Cancelando..." : "Cancelar orden"}</Button></>}>{hasConfirmedReceptions ? <p>La cancelación no revierte inventario ni compras ya generadas.</p> : null}</ResponsiveDialog>
     </main>
   );
 }

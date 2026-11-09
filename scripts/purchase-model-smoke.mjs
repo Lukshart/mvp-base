@@ -13,11 +13,13 @@ import {
   matchesPurchaseSearch,
   PURCHASE_MODEL_VERSION,
   PURCHASE_STATUSES,
+  resolvePurchaseVatTreatment,
   shouldReconcilePurchaseConfirmation,
 } from "../src/domain/purchaseModel.mjs";
 
 const require = createRequire(import.meta.url);
-const {normalizePurchaseInput} = require("../functions/purchasePersistence.js");
+const {calculatePurchaseTotals: calculateBackendPurchaseTotals, normalizePurchaseInput} = require("../functions/purchasePersistence.js");
+const {resolvePurchaseVatTreatment: resolveBackendPurchaseVatTreatment} = require("../functions/inventoryAcquisition.js");
 class TestHttpsError extends Error {
   constructor(code, message) { super(message); this.code = code; }
 }
@@ -50,6 +52,80 @@ assert.throws(() => calculatePurchaseLine(line({costoUnitario: Number.MAX_VALUE}
 assert.throws(() => calculatePurchaseLine(line({cantidad: Number.MAX_VALUE, costoUnitario: 2})), /máximo permitido/);
 assert.throws(() => calculatePurchaseTotals([line({cantidad: 1, costoUnitario: Number.MAX_SAFE_INTEGER})]), /máximo permitido/);
 console.log("OK compras modelo: líneas, descuentos, IVA, totales y overflow");
+
+// SPEC 023 §5.1-§5.2: tratamiento de IVA por línea y totales con boleta/exento.
+assert.equal(resolvePurchaseVatTreatment({tipoDocumento: "factura"}), "credito_fiscal");
+assert.equal(resolvePurchaseVatTreatment({tipoDocumento: "boleta"}), "boleta");
+assert.equal(resolvePurchaseVatTreatment({tipoDocumento: "boleta", impuestoId: "IVA_EXENTO"}), "boleta");
+assert.equal(resolvePurchaseVatTreatment({tipoDocumento: "factura", impuestoId: "IVA_EXENTO"}), "exento");
+assert.equal(resolvePurchaseVatTreatment({tipoDocumento: "factura", impuestoId: "SIN_IMPUESTO"}), "exento");
+assert.equal(resolvePurchaseVatTreatment({tipoDocumento: "factura", impuestoId: "IVA_GENERAL"}), "credito_fiscal");
+assert.equal(resolvePurchaseVatTreatment({tipoDocumento: "otro"}), "credito_fiscal");
+assert.equal(resolvePurchaseVatTreatment({tipoDocumento: "sin_documento"}), "credito_fiscal");
+assert.equal(resolvePurchaseVatTreatment(), "credito_fiscal");
+for (const tipoDocumento of ["factura", "boleta", "otro", "sin_documento", undefined]) {
+  for (const impuestoId of ["IVA_GENERAL", "IVA_EXENTO", "SIN_IMPUESTO", "iva_exento", undefined]) {
+    assert.equal(
+      resolveBackendPurchaseVatTreatment({tipoDocumento, impuestoId}),
+      resolvePurchaseVatTreatment({tipoDocumento, impuestoId}),
+      `espejo de tratamiento: ${tipoDocumento}/${impuestoId}`
+    );
+  }
+}
+
+const cable = line({lineaId: "cable", itemId: "cable", cantidad: 10, costoUnitario: 10000, descuentoPct: 0, impuestoId: "IVA_GENERAL"});
+const exempt = line({lineaId: "exento", itemId: "exento", cantidad: 5, costoUnitario: 4000, descuentoPct: 0, impuestoId: "IVA_EXENTO"});
+const pvc = line({lineaId: "pvc", itemId: "pvc", cantidad: 2, costoUnitario: 4165, descuentoPct: 0});
+const vatCases = [
+  ["factura (Ejemplo A)", [cable], "factura", {subtotal: 100000, descuentoTotal: 0, neto: 100000, montoExento: 0, iva: 19000, total: 119000}],
+  ["boleta (Ejemplo B)", [pvc], "boleta", {subtotal: 8330, descuentoTotal: 0, neto: 8330, montoExento: 0, iva: 0, total: 8330}],
+  ["exento en factura (Ejemplo C)", [exempt], "factura", {subtotal: 20000, descuentoTotal: 0, neto: 20000, montoExento: 20000, iva: 0, total: 20000}],
+  ["factura mixta (Ejemplo D)", [cable, exempt], "factura", {subtotal: 120000, descuentoTotal: 0, neto: 120000, montoExento: 20000, iva: 19000, total: 139000}],
+  ["boleta con línea exenta", [pvc, exempt], "boleta", {subtotal: 28330, descuentoTotal: 0, neto: 28330, montoExento: 0, iva: 0, total: 28330}],
+  ["otro documento", [cable], "otro", {subtotal: 100000, descuentoTotal: 0, neto: 100000, montoExento: 0, iva: 19000, total: 119000}],
+  ["sin documento", [cable], "sin_documento", {subtotal: 100000, descuentoTotal: 0, neto: 100000, montoExento: 0, iva: 19000, total: 119000}],
+  ["factura con descuento", [line({impuestoId: "IVA_GENERAL"})], "factura", {subtotal: 2000, descuentoTotal: 200, neto: 1800, montoExento: 0, iva: 342, total: 2142}],
+  ["boleta con descuento", [line()], "boleta", {subtotal: 2000, descuentoTotal: 200, neto: 1800, montoExento: 0, iva: 0, total: 1800}],
+  ["exento con descuento", [line({impuestoId: "IVA_EXENTO"})], "factura", {subtotal: 2000, descuentoTotal: 200, neto: 1800, montoExento: 1800, iva: 0, total: 1800}],
+];
+const backendLines = (items) => items.map((item) => ({...item, ...calculatePurchaseLine(item)}));
+for (const [label, items, tipoDocumento, expected] of vatCases) {
+  assert.deepEqual(calculatePurchaseTotals(items, {tasaIva: 0.19, tipoDocumento}), expected, `frontend: ${label}`);
+  assert.deepEqual(calculateBackendPurchaseTotals(backendLines(items), TestHttpsError, 0.19, {tipoDocumento}), expected, `backend: ${label}`);
+}
+// Sin tipoDocumento ambos lados conservan el cálculo legacy: así se leen las
+// compras guardadas antes de SPEC 023 (sin modeloIvaCompraVersion).
+const legacyBoleta = {subtotal: 8330, descuentoTotal: 0, neto: 8330, iva: 1583, total: 9913};
+assert.deepEqual(calculatePurchaseTotals([pvc], {tasaIva: 0.19}), legacyBoleta);
+assert.deepEqual(calculateBackendPurchaseTotals(backendLines([pvc]), TestHttpsError, 0.19), legacyBoleta);
+assert.deepEqual(calculatePurchaseTotals([exempt], {tasaIva: 0.19}), {subtotal: 20000, descuentoTotal: 0, neto: 20000, iva: 3800, total: 23800});
+const halfMaxLine = (lineaId) => line({lineaId, itemId: lineaId, cantidad: 1, costoUnitario: Math.ceil(Number.MAX_SAFE_INTEGER / 2), descuentoPct: 0});
+assert.throws(() => calculatePurchaseTotals([halfMaxLine("a"), halfMaxLine("b")], {tipoDocumento: "boleta"}), /máximo permitido/);
+assert.throws(() => calculateBackendPurchaseTotals(backendLines([halfMaxLine("a"), halfMaxLine("b")]), TestHttpsError, 0.19, {tipoDocumento: "boleta"}), /máximo permitido/);
+console.log("OK compras modelo SPEC 023: factura, boleta, exento, mixta, descuentos, legacy y espejo frontend/backend");
+
+// SPEC 023 etapa 3: adaptStoredPurchase activa §5.2 solo con
+// modeloIvaCompraVersion 1; una compra anterior se lee con su cálculo.
+const storedVatLine = (overrides) => ({lineaId: "l1", itemId: "p1", tipoItem: "producto", nombre: "Tubo PVC", unidad: "unidad", cantidad: 2, costoUnitario: 4165, descuentoPct: 0, ...overrides});
+const legacyStoredBoleta = adaptStoredPurchase({tipoDocumento: "boleta", tasaIva: 0.19, items: [storedVatLine()]});
+assert.deepEqual([legacyStoredBoleta.iva, legacyStoredBoleta.total], [1583, 9913], "una boleta anterior conserva el IVA con el que se guardó");
+const newStoredBoleta = adaptStoredPurchase({modeloIvaCompraVersion: 1, tipoDocumento: "boleta", tasaIva: 0.19, items: [storedVatLine()]});
+assert.deepEqual([newStoredBoleta.neto, newStoredBoleta.montoExento, newStoredBoleta.iva, newStoredBoleta.total], [8330, 0, 0, 8330]);
+const newStoredMixed = adaptStoredPurchase({
+  modeloIvaCompraVersion: 1,
+  tipoDocumento: "factura",
+  tasaIva: 0.19,
+  items: [
+    storedVatLine({lineaId: "cable", cantidad: 10, costoUnitario: 10000, impuestoId: "IVA_GENERAL"}),
+    storedVatLine({lineaId: "exento", cantidad: 5, costoUnitario: 4000, impuestoId: "iva_exento"}),
+  ],
+});
+assert.deepEqual([newStoredMixed.neto, newStoredMixed.montoExento, newStoredMixed.iva, newStoredMixed.total], [120000, 20000, 19000, 139000], "Ejemplo D");
+assert.equal(newStoredMixed.items[1].impuestoId, "IVA_EXENTO", "la línea conserva la copia de la marca");
+const legacyStoredMixed = adaptStoredPurchase({tipoDocumento: "factura", tasaIva: 0.19, items: newStoredMixed.items});
+assert.deepEqual([legacyStoredMixed.iva, legacyStoredMixed.total], [22800, 142800], "sin marca de versión la línea exenta no cambia el cálculo");
+assert.equal(adaptStoredPurchase({modeloIvaCompraVersion: 1, items: []}).montoExento, 0);
+console.log("OK compras modelo SPEC 023: adaptStoredPurchase solo recalcula con modeloIvaCompraVersion 1");
 
 const payload = buildPurchaseMutationPayload({
   proveedorId: "provider-1",
@@ -158,6 +234,13 @@ assert.match(backend, /stockAplicado/);
 assert.match(backend, /purchaseReversalRequests/);
 assert.match(backend, /salida_reversion_compra/);
 assert.doesNotMatch(backend, /cost[oe]Base\s*:/i);
+// SPEC 023 §5.3 y §8.1: lo que entra y sale de Q/V es el costo de inventario.
+assert.match(backend, /modeloIvaCompraVersion: PURCHASE_VAT_MODEL_VERSION/);
+assert.match(backend, /tratamientoIvaCompra: resolvePurchaseVatTreatment\(\{tipoDocumento: purchase\.tipoDocumento, impuestoId: line\.impuestoId\}\)/);
+assert.match(backend, /costoUnitarioAplicado: amounts\.costoInventarioUnitario, costoTotal: amounts\.costoInventarioTotal/);
+assert.match(backend, /acquisition\.costoInventarioTotal \?\? acquisition\.costoPagadoTotal/);
+assert.match(purchaseDetail, /tipoDocumento: draft\.tipoDocumento/);
+assert.match(purchaseDetail, /if \(readOnly && purchase\)/);
 assert.match(purchasesPage, /Revertir compra/);
 assert.match(purchasesPage, /Motivo de reversión \*/);
 assert.match(purchasesPage, /getPurchaseStockSemantics/);

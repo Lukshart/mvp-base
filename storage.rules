@@ -45,18 +45,98 @@ service firebase.storage {
         && activeBusiness(businessId).data.estado == "activo";
     }
 
+    // Variante de canAccessBusiness para rutas que deben quedar dentro del
+    // presupuesto de Storage Rules (máximo 2 documentos de Firestore por
+    // petición): sólo membresía y negocio, sin usuarios/{uid}. A cambio no
+    // comprueba la suspensión de plataforma: una cuenta suspendida queda sin
+    // acceso porque Auth la deshabilita y revoca sus refresh tokens, pero un
+    // ID token ya emitido sigue siendo válido hasta 1 hora. Riesgo aceptado
+    // sólo para el logo de empresa (imagen de hasta 2 MB, OWNER/ADMIN). Las
+    // rutas de verificación y gastos conservan su propia comprobación.
+    function isActiveBusinessMember(businessId) {
+      return request.auth != null
+        && hasBusinessMembership(businessId)
+        && hasActiveBusinessDocument(businessId)
+        && businessMembership(businessId).data.uid == request.auth.uid
+        && businessMembership(businessId).data.negocioId == businessId
+        && businessMembership(businessId).data.estado == "activo"
+        && activeBusiness(businessId).data.estado == "activo";
+    }
+
     function canManageBusiness(businessId) {
-      return canAccessBusiness(businessId)
+      return isActiveBusinessMember(businessId)
         && businessMembership(businessId).data.rol in ["OWNER", "ADMIN"];
     }
 
     function canAccessBusinessVerificationEvidence(businessId, ownerUid) {
+      // creadoPorUid puede estar ausente en un negocio legacy (ver el mismo
+      // fallback ya reconocido en functions/businessOnboarding.js:
+      // business.creadoPorUid || business.ownerUid || business.uidUsuario).
+      // Este gate exige específicamente que el solicitante sea el creador
+      // registrado del negocio (más estricto que canManageBusiness, que
+      // acepta cualquier OWNER/ADMIN) — no se amplía esa política aquí. Un
+      // negocio sin creadoPorUid no puede demostrar esa autoría, así que
+      // el acceso se deniega de forma limpia y explícita en vez de
+      // producir un error de evaluación por campo ausente.
       return request.auth != null
         && request.auth.uid == ownerUid
         && platformUserIsActive(ownerUid)
         && hasActiveBusinessDocument(businessId)
         && activeBusiness(businessId).data.estado == "activo"
-        && activeBusiness(businessId).data.creadoPorUid == request.auth.uid;
+        && activeBusiness(businessId).data.get("creadoPorUid", null) == request.auth.uid;
+    }
+
+    // SPEC 020 (evidencia de gastos): la evidencia es un adjunto de un gasto
+    // ya existente, nunca un modelo contable nuevo. Estas funciones replican,
+    // para Storage, exactamente el mismo criterio de autorización que ya usan
+    // Functions/Firestore Rules para gastos (WORK_OPERATION_ROLES para operar,
+    // autoatribución para TECNICO/MEMBER, canReadWorkCosts para lectura) —
+    // ningún rol ni permiso nuevo.
+    function workExpensePath(businessId, workId, expenseId) {
+      return /databases/(default)/documents/negocios/$(businessId)/trabajos/$(workId)/gastos/$(expenseId);
+    }
+
+    function workExpenseBelongsToWork(businessId, workId, expenseId) {
+      return firestore.exists(workExpensePath(businessId, workId, expenseId))
+        && firestore.get(workExpensePath(businessId, workId, expenseId)).data.negocioId == businessId
+        && firestore.get(workExpensePath(businessId, workId, expenseId)).data.trabajoId == workId;
+    }
+
+    function isWorkExpenseSelfAttributed(businessId, workId, expenseId) {
+      let expense = firestore.get(workExpensePath(businessId, workId, expenseId)).data;
+      return expense.get("registradoPorUid", "") == request.auth.uid
+        || expense.get("responsableDelGastoUid", "") == request.auth.uid;
+    }
+
+    // Lectura: mismo criterio que canReadWorkCosts (Firestore) — OWNER/ADMIN/
+    // FINANZAS/MEMBER sin restricción adicional, TECNICO sólo sobre un gasto
+    // propio (registrado por él o del que es responsable).
+    function canReadWorkExpenseEvidence(businessId, workId, expenseId) {
+      return canAccessBusiness(businessId)
+        && workExpenseBelongsToWork(businessId, workId, expenseId)
+        && (
+          businessMembership(businessId).data.rol in ["OWNER", "ADMIN", "FINANZAS", "MEMBER"]
+          || (
+            businessMembership(businessId).data.rol == "TECNICO"
+            && isWorkExpenseSelfAttributed(businessId, workId, expenseId)
+          )
+        );
+    }
+
+    // Creación: mismo criterio que registrarGastoTrabajo — OWNER/ADMIN sin
+    // restricción, TECNICO/MEMBER sólo sobre un gasto propio; el gasto debe
+    // seguir vigente (un gasto anulado no admite evidencia nueva).
+    function canCreateWorkExpenseEvidence(businessId, workId, expenseId) {
+      return canAccessBusiness(businessId)
+        && workExpenseBelongsToWork(businessId, workId, expenseId)
+        && firestore.get(workExpensePath(businessId, workId, expenseId)).data.estado == "vigente"
+        && (
+          businessMembership(businessId).data.rol in ["OWNER", "ADMIN"]
+          || (
+            businessMembership(businessId).data.rol in ["TECNICO", "MEMBER"]
+            && isWorkExpenseSelfAttributed(businessId, workId, expenseId)
+          )
+        );
     }
 
     function canRollbackBusinessVerificationEvidence(
@@ -93,7 +173,7 @@ service firebase.storage {
     }
 
     match /negocios/{businessId}/empresa/logo/{fileName} {
-      allow read: if canAccessBusiness(businessId);
+      allow read: if isActiveBusinessMember(businessId);
 
       allow create, update: if canManageBusiness(businessId)
         && request.resource.size <= 2 * 1024 * 1024
@@ -127,6 +207,29 @@ service firebase.storage {
           ownerUid,
           requestId
         );
+    }
+
+    match /negocios/{businessId}/trabajos/{workId}/gastos/{expenseId}/{fileName} {
+      allow read: if canReadWorkExpenseEvidence(businessId, workId, expenseId);
+
+      allow create: if resource == null
+        && request.resource != null
+        && canCreateWorkExpenseEvidence(businessId, workId, expenseId)
+        && request.resource.size > 0
+        && request.resource.size <= 5 * 1024 * 1024
+        && request.resource.contentType.matches(
+          'application/pdf|image/(jpeg|png)'
+        );
+
+      // Sin reemplazo (create-only, ya garantizado por "resource == null"
+      // arriba) y sin borrado físico: la evidencia asociada a un gasto es
+      // inmutable una vez subida, igual que el invariante de AGENTS.md de no
+      // eliminar registros referenciados. A diferencia de la evidencia de
+      // verificación empresarial, aquí no existe ventana de rollback: el
+      // gasto ya existe antes de subir el archivo (el registro en Firestore
+      // es previo a la evidencia, no posterior).
+      allow update: if false;
+      allow delete: if false;
     }
   }
 }

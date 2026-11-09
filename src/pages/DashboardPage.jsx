@@ -17,6 +17,7 @@ import DashboardDonutChart from "../components/DashboardDonutChart";
 import FinancialPeriodSelector from "../components/finance/FinancialPeriodSelector";
 import OperationalComparisonChart from "../components/reports/OperationalComparisonChart";
 import Button from "../components/ui/Button";
+import Skeleton, {SkeletonRegion} from "../components/ui/Skeleton";
 import {
   getFinancialPeriodRange,
   getSantiagoDateKey,
@@ -34,20 +35,32 @@ import {
 import {getQuoteStatusLabel} from "../domain/quoteModel.mjs";
 import {BUSINESS_PERMISSIONS, hasBusinessPermission} from "../domain/rbac.mjs";
 import useFinancialMovements from "../hooks/useFinancialMovements";
+import usePrefersDarkMode from "../hooks/usePrefersDarkMode";
 import {
+  DEFAULT_INVENTORY_SETTINGS,
+  getBusinessSettings,
   getCompanyProfile,
   getCompanyProfileCompletion,
 } from "../services/companyService";
 import {loadReportData} from "../services/reportService";
-import {formatCLP, formatDate, formatMoney, formatPercent} from "../utils/formatters";
+import useBusinessFormat, {useBusinessMoney} from "../hooks/useBusinessFormat";
+import {formatDate, formatMoney, formatPercent} from "../utils/formatters";
 
-const QUOTE_CHART = [
-  ["borrador", getQuoteStatusLabel("borrador"), "#94a3b8"],
-  ["emitida", "Emitida", "#38bdf8"],
-  ["aceptada", "Aceptada", "#0f766e"],
-  ["rechazada", "Rechazada", "#dc2626"],
-  ["vencida", "Vencida", "#d97706"],
-  ["archivada", "Archivada", "#64748b"],
+// Refleja a mano --color-quote-status-draft/issued/accepted/expired/
+// archived y --color-danger-600 de tokens.css (etapa 5, paso 7) —
+// Chart.js no puede leer var(). "rechazada" usa --color-danger-600
+// directo (semántica real: rechazado = peligro), sin token propio,
+// mismo criterio que --color-data-* usa --color-brand-600 para
+// "ingreso". "aceptada"/"archivada" se subieron en oscuro (fallaban
+// 3:1 contra el panel); "borrador"/"emitida"/"vencida" sin cambio (ya
+// pasaban bien).
+const QUOTE_STATUS = [
+  ["borrador", getQuoteStatusLabel("borrador"), {light: "#94a3b8", dark: "#94a3b8"}],
+  ["emitida", "Emitida", {light: "#38bdf8", dark: "#38bdf8"}],
+  ["aceptada", "Aceptada", {light: "#0f766e", dark: "#45b8a8"}],
+  ["rechazada", "Rechazada", {light: "#dc2626", dark: "#f2685f"}],
+  ["vencida", "Vencida", {light: "#d97706", dark: "#d97706"}],
+  ["archivada", "Archivada", {light: "#64748b", dark: "#93a3ac"}],
 ];
 
 const EMPTY_REPORT_DATA = {
@@ -57,6 +70,27 @@ const EMPTY_REPORT_DATA = {
   inventory: [],
   inventoryMovements: [],
 };
+
+const METRIC_SKELETON_TONES = ["income", "expense", "neutral", "neutral", "net"];
+
+// Mismo markup y padding que DashboardCountCard, con bloques en lugar de
+// texto, para que la tarjeta mida lo mismo antes y después de cargar.
+function DashboardMetricSkeleton({tone}) {
+  return (
+    <article className={`financial-metric-card financial-metric-card--${tone}`}>
+      <div className="financial-metric-card__heading">
+        <Skeleton variant="block" width={30} height={30} />
+        <Skeleton width="55%" />
+      </div>
+      <strong className="financial-metric-card__value">
+        <Skeleton variant="block" width="70%" height="calc(var(--line-height-tight) * 1em)" />
+      </strong>
+      <span className="financial-metric-card__note">
+        <Skeleton variant="block" width="85%" height="calc(1.35 * 1em)" />
+      </span>
+    </article>
+  );
+}
 
 function DashboardCountCard({icon, label, note, tone = "neutral", value}) {
   return (
@@ -97,6 +131,7 @@ function QuickActions({actions, navigate}) {
 }
 
 function RecentActivity({items, navigate}) {
+  const { locale: businessLocale } = useBusinessFormat();
   return (
     <section className="erp-panel dashboard-v2-secondary-panel" aria-labelledby="dashboard-activity-title">
       <div className="erp-panel-header dashboard-v2-panel-header">
@@ -116,7 +151,7 @@ function RecentActivity({items, navigate}) {
                 <strong>{item.number}</strong>
                 <span>{formatDate(item.date)} · {item.counterparty}</span>
               </div>
-              <strong className="dashboard-activity-v2-amount">{formatMoney(item.amount, item.currency)}</strong>
+              <strong className="dashboard-activity-v2-amount">{formatMoney(item.amount, item.currency, businessLocale)}</strong>
               <button type="button" onClick={() => navigate(item.route)}>Ver</button>
             </article>
           ))}
@@ -160,14 +195,17 @@ function RequiredAttention({companyProfilePending, lowStockProducts, navigate}) 
   );
 }
 
-function formatCurrencyGroups(groups, fallbackCurrency) {
+function formatCurrencyGroups(groups, fallbackCurrency, businessLocale) {
   return groups.length
-    ? groups.map((group) => formatMoney(group.total, group.currency)).join(" · ")
-    : formatMoney(0, fallbackCurrency);
+    ? groups.map((group) => formatMoney(group.total, group.currency, businessLocale)).join(" · ")
+    : formatMoney(0, fallbackCurrency, businessLocale);
 }
 
 export default function DashboardPage({businessId, currencyCode = "CLP", role}) {
+  const { locale: businessLocale } = useBusinessFormat();
   const navigate = useNavigate();
+  const isDarkMode = usePrefersDarkMode();
+  const formatBusinessAmount = useBusinessMoney();
   const today = getSantiagoDateKey();
   const [period, setPeriod] = useState("month");
   const [customPeriod, setCustomPeriod] = useState(() => {
@@ -180,6 +218,7 @@ export default function DashboardPage({businessId, currencyCode = "CLP", role}) 
     error: "",
   });
   const [companyProfilePending, setCompanyProfilePending] = useState(false);
+  const [inventorySettings, setInventorySettings] = useState(DEFAULT_INVENTORY_SETTINGS);
   const range = useMemo(
     () => getFinancialPeriodRange(period, customPeriod, today),
     [customPeriod, period, today]
@@ -227,11 +266,23 @@ export default function DashboardPage({businessId, currencyCode = "CLP", role}) 
     return () => { active = false; };
   }, [businessId, role]);
 
+  // Umbral general de stock bajo: mismo patrón que InventoryManager. Si la
+  // carga falla se quedan los valores por defecto, en silencio.
+  useEffect(() => {
+    let active = true;
+    setInventorySettings(DEFAULT_INVENTORY_SETTINGS);
+    if (!businessId || !hasBusinessPermission(role, BUSINESS_PERMISSIONS.INVENTORY_READ)) return undefined;
+    getBusinessSettings(businessId, "inventario")
+      .then((value) => active && setInventorySettings(value))
+      .catch(() => {});
+    return () => { active = false; };
+  }, [businessId, role]);
+
   const {sales, purchases, quotes, inventory} = reportState.data;
   const salesMetrics = useMemo(() => getSalesMetrics(sales, range, {fallbackCurrency: currencyCode}), [currencyCode, range, sales]);
   const purchaseMetrics = useMemo(() => getPurchaseMetrics(purchases, range, {fallbackCurrency: currencyCode}), [currencyCode, purchases, range]);
   const quoteMetrics = useMemo(() => getQuoteMetrics(quotes, range, {fallbackCurrency: currencyCode}), [currencyCode, quotes, range]);
-  const inventoryMetrics = useMemo(() => getInventoryMetrics(inventory, {fallbackCurrency: currencyCode}), [currencyCode, inventory]);
+  const inventoryMetrics = useMemo(() => getInventoryMetrics(inventory, {fallbackCurrency: currencyCode, lowStockSettings: inventorySettings}), [currencyCode, inventory, inventorySettings]);
   const recentActivity = useMemo(
     () => getRecentOperationalActivity(sales, purchases, range, 5),
     [purchases, range, sales]
@@ -249,9 +300,9 @@ export default function DashboardPage({businessId, currencyCode = "CLP", role}) 
     [purchaseTimeline, salesTimeline]
   );
   const operationalCurrencies = [...new Set(operationalTimeline.map((item) => item.currency))];
-  const quoteChartItems = QUOTE_CHART.map(([id, label, color]) => ({
+  const quoteChartItems = QUOTE_STATUS.map(([id, label, color]) => ({
     label,
-    color,
+    color: isDarkMode ? color.dark : color.light,
     value: quoteMetrics.counts[id],
   }));
   const reportParams = new URLSearchParams();
@@ -289,18 +340,25 @@ export default function DashboardPage({businessId, currencyCode = "CLP", role}) 
       </div>
 
       {reportState.error && <div className="financial-feedback financial-feedback--error" role="alert">{reportState.error}</div>}
-      {reportState.loading && <div className="financial-inline-loading" role="status">Cargando estado operacional del negocio activo...</div>}
 
       <QuickActions actions={quickActions} navigate={navigate} />
+
+      {reportState.loading && (
+        <SkeletonRegion label="Cargando estado operacional del negocio activo...">
+          <section className="financial-metric-grid dashboard-v2-metrics">
+            {METRIC_SKELETON_TONES.map((tone, index) => <DashboardMetricSkeleton key={index} tone={tone} />)}
+          </section>
+        </SkeletonRegion>
+      )}
 
       {!reportState.loading && !reportState.error && (
         <>
           <section className="financial-metric-grid dashboard-v2-metrics" aria-label="Indicadores principales">
-            <DashboardCountCard icon={ShoppingCart} label="Total vendido" value={formatCurrencyGroups(salesMetrics.totalsByCurrency, currencyCode)} tone="income" note={`${salesMetrics.count} ventas confirmadas`} />
-            <DashboardCountCard icon={Truck} label="Total comprado" value={formatCurrencyGroups(purchaseMetrics.totalsByCurrency, currencyCode)} tone="expense" note={`${purchaseMetrics.count} compras confirmadas`} />
+            <DashboardCountCard icon={ShoppingCart} label="Total vendido (sin IVA)" value={formatCurrencyGroups(salesMetrics.totalsByCurrency, currencyCode, businessLocale)} tone="income" note={`${salesMetrics.count} ventas confirmadas`} />
+            <DashboardCountCard icon={Truck} label="Total comprado (sin IVA)" value={formatCurrencyGroups(purchaseMetrics.totalsByCurrency, currencyCode, businessLocale)} tone="expense" note={`${purchaseMetrics.count} compras confirmadas`} />
             <DashboardCountCard icon={ReceiptText} label="Cotizaciones" value={quoteMetrics.count.toLocaleString("es-CL")} note={`${quoteMetrics.counts.aceptada} aceptadas · ${quoteMetrics.conversion === null ? "Sin base de conversión" : formatPercent(quoteMetrics.conversion)}`} />
             <DashboardCountCard icon={Boxes} label="Inventario actual" value={inventoryMetrics.activeProducts.length.toLocaleString("es-CL")} tone={inventoryMetrics.lowStockProducts.length ? "pending" : "neutral"} note={`Estado actual · ${inventoryMetrics.lowStockProducts.length} productos con stock bajo`} />
-            <DashboardCountCard icon={WalletCards} label="Saldo financiero registrado" value={financial.loading || financial.error ? "—" : formatCLP(financial.summary.netResult)} tone="net" note={financial.error ? "Finanzas no disponible" : financial.loading ? "Actualizando movimientos registrados" : `Por cobrar ${formatCLP(financial.summary.receivable)} · Por pagar ${formatCLP(financial.summary.payable)}`} />
+            <DashboardCountCard icon={WalletCards} label="Saldo financiero registrado" value={financial.loading || financial.error ? "—" : formatBusinessAmount(financial.summary.netResult)} tone="net" note={financial.error ? "Finanzas no disponible" : financial.loading ? "Actualizando movimientos registrados" : `Por cobrar ${formatBusinessAmount(financial.summary.receivable)} · Por pagar ${formatBusinessAmount(financial.summary.payable)}`} />
           </section>
 
           {canReadFinance && <div className="dashboard-v2-financial-note">
@@ -310,7 +368,7 @@ export default function DashboardPage({businessId, currencyCode = "CLP", role}) 
 
           <div className="dashboard-v2-visual-grid">
             <section className="erp-panel financial-chart-panel">
-              <div className="financial-chart-panel__header"><h2>Evolución operacional</h2><p>Ventas y compras confirmadas según su fecha comercial.</p></div>
+              <div className="financial-chart-panel__header"><h2>Evolución operacional (sin IVA)</h2><p>Ventas y compras confirmadas, sin IVA, según su fecha comercial.</p></div>
               {operationalCurrencies.length ? operationalCurrencies.map((currency) => <OperationalComparisonChart currency={currency} items={operationalTimeline.filter((item) => item.currency === currency)} key={currency} />) : <OperationalComparisonChart items={[]} />}
             </section>
             <section className="erp-panel financial-chart-panel">

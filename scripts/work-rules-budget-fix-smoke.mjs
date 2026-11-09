@@ -99,6 +99,10 @@ await Promise.all([
     negocioId: businessId, trabajoId: workId, horas: 4,
     tecnicoUid: tecnicoOk.uid, estado: "vigente",
   }),
+  adminDb.doc(`negocios/${businessId}/trabajos/${workId}/adicionales/adicional-1`).set({
+    negocioId: businessId, trabajoId: workId, itemId: "item-1", cantidad: 1,
+    precioUnitario: 100, estado: "PENDIENTE_COBRO", registradoPorUid: tecnicoOk.uid,
+  }),
   adminDb.doc(`negocios/${businessId}/movimientosInventario/mov-1`).set({
     negocioId: businessId, trabajoId: workId, tipo: "SALIDA_PROYECTO",
   }),
@@ -120,6 +124,7 @@ const workPath = `negocios/${businessId}/trabajos/${workId}`;
 const taskPath = `${workPath}/tareas/${taskId}`;
 const gastoPath = `${workPath}/gastos/gasto-1`;
 const hhPath = `${workPath}/horasHombre/hh-1`;
+const adicionalPath = `${workPath}/adicionales/adicional-1`;
 
 // ================================================================
 // CASOS POSITIVOS
@@ -152,9 +157,10 @@ if (!(await getDoc(doc(tecnicoOk.db, `negocios/${businessId}/movimientosInventar
 }
 console.log("OK caso 8: TECNICO asignado lee movimiento de materiales de su Proyecto (canReadWork)");
 
-// Caso 9 (adicionales SPEC 020) omitido en esta rama: esa subcolección no
-// tiene regla propia en student-baseline-20260901 todavía (SPEC020 no está
-// mergeado aquí), así que no aplica hasta que se porte ese módulo.
+// 9. Adicionales mantienen lectura prevista.
+if (!(await getDoc(doc(owner.db, adicionalPath))).exists()) throw new Error("OWNER no leyó el adicional");
+if (!(await getDoc(doc(tecnicoOk.db, adicionalPath))).exists()) throw new Error("TECNICO autor no leyó su adicional");
+console.log("OK caso 9: adicionales SPEC 020 mantienen exactamente la misma lectura (canReadWorkCosts sin cambios de política)");
 
 // 10. Proyecto "legacy" válido (MEMBER sin perfil personalizado, acceso pleno histórico).
 await adminDb.doc(`membresias/${businessId}__${finanzas.uid}`).set({negocioId: businessId, uid: finanzas.uid, rol: "MEMBER", estado: "activo"});

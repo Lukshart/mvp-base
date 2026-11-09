@@ -112,10 +112,18 @@ assert.match(inventoryDialog, /const SPREADSHEET_ACCEPT = "\.csv,\.xls,\.xlsx"/)
 assert.doesNotMatch(inventoryDialog, /onPurchaseDocument|readInventorySourceFile|PDF|JPG|PNG|WEBP/);
 assert.match(inventoryManager, /navigate\("\/compras\/nueva", \{state: \{openPurchaseImport: true\}\}\)/);
 assert.match(inventoryManager, /BUSINESS_PERMISSIONS\.PURCHASES_WRITE/);
-assert.match(inventoryManager, /canStartPurchase && <button[^>]*>[\s\S]*?Importar factura/);
+// "Importar factura" solo con permiso de compras: como opción del menú "Importar"
+// o, si es el único permiso, como botón directo.
+assert.match(inventoryManager, /canStartPurchase && \{ label: "Factura de compra \(PDF o imagen\)", onSelect: \(\) => navigate\("\/compras\/nueva", \{state: \{openPurchaseImport: true\}\}\) \}/);
+assert.match(inventoryManager, /: canStartPurchase \? \(\s*<button[^>]*>[\s\S]*?Importar factura/);
 assert.match(service, /\["reception", "purchase"\]\.includes\(context\)/);
 assert.match(backend, /lineasSinResolver/);
-assert.match(backend, /tipoOrigen: isV3DirectPurchase \? "compra_directa"/);
+// tipoOrigen del movimiento entrada_compra es un literal fijo, no condicional
+// a isV3DirectPurchase: toda Compra V3 directa confirmada es, por definición,
+// stockManagedBy === "compra_directa" (ver isV3DirectPurchase más arriba en
+// este mismo archivo) — intencional, SPEC 006 línea 144 ("... crea movimientos
+// deterministas entrada_compra con tipoOrigen: compra_directa").
+assert.match(backend, /tipoOrigen: "compra_directa"/);
 console.log("OK importador compra: pipeline reutilizado, borrador explícito y confirmación separada");
 
 console.log("Smoke del importador documental de Compras completado.");

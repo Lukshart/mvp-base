@@ -4,7 +4,9 @@ import {useNavigate} from "react-router-dom";
 import {sileo} from "sileo";
 import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
+import EmptyStateIllustration from "../components/ui/EmptyStateIllustration";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
+import {SkeletonCards, SkeletonRegion, SkeletonTable} from "../components/ui/Skeleton";
 import {formatMoney} from "../utils/formatters";
 import {canManagePurchases, getPurchaseDocumentTypeLabel, getPurchaseStockSemantics, getPurchaseStatusLabel, matchesPurchaseSearch} from "../domain/purchaseModel.mjs";
 import {cancelarCompraBorrador, confirmarCompra, createPurchaseRequestId, listarCompras, revertirCompra} from "../services/purchaseService";
@@ -32,10 +34,12 @@ export default function PurchasesPage({businessId, role}) {
   const reversalIds = useRef(new Map());
   const [items, setItems] = useState([]); const [search, setSearch] = useState(""); const [status, setStatus] = useState("todos"); const [origin, setOrigin] = useState("todos"); const [message, setMessage] = useState(""); const [loading, setLoading] = useState(true); const [processing, setProcessing] = useState("");
   const [pendingAction, setPendingAction] = useState(null);
+  // Falló la CARGA de la lista (`message` también lleva errores de acciones).
+  const [loadFailed, setLoadFailed] = useState(false);
   const [reversalReason, setReversalReason] = useState("");
   const canManage = canManagePurchases(role);
-  const load = async () => { setLoading(true); try { setItems(await listarCompras(businessId)); } catch (error) { setMessage(error.message); } finally { setLoading(false); } };
-  useEffect(() => { let active = true; setLoading(true); listarCompras(businessId).then((values) => { if (active) setItems(values); }).catch((error) => { if (active) setMessage(error.message); }).finally(() => { if (active) setLoading(false); }); return () => { active = false; }; }, [businessId]);
+  const load = async () => { setLoading(true); try { setItems(await listarCompras(businessId)); setLoadFailed(false); } catch (error) { setMessage(error.message); setLoadFailed(true); } finally { setLoading(false); } };
+  useEffect(() => { let active = true; setLoading(true); listarCompras(businessId).then((values) => { if (active) { setItems(values); setLoadFailed(false); } }).catch((error) => { if (active) { setMessage(error.message); setLoadFailed(true); } }).finally(() => { if (active) setLoading(false); }); return () => { active = false; }; }, [businessId]);
   const filtered = useMemo(() => items.filter((item) => (status === "todos" || item.estado === status) && (origin === "todos" || (origin === "oc" ? item.ordenCompraId : !item.ordenCompraId)) && matchesPurchaseSearch(item, search)), [items, origin, search, status]);
   const action = (purchase, type) => { setReversalReason(""); setPendingAction({purchase, type}); };
   const executeAction = async () => {
@@ -80,14 +84,13 @@ export default function PurchasesPage({businessId, role}) {
   const open = (purchase) => navigate(purchase.estado === "borrador" && canManage ? `/compras/${purchase.id}/editar` : `/compras/${purchase.id}`);
   return (
     <main className="erp-page po-history">
-      <div className="erp-module-intro">
-        <div className="erp-page-intro">
-          <p>Registra compras directas y documentos económicos derivados de Recepciones. Confirmar una Compra V3 directa incrementa stock; una Compra de Recepción no lo duplica.</p>
+      {canManage && (
+        <div className="erp-module-intro">
+          <Button type="button" icon={Plus} onClick={() => navigate("/compras/nueva")}>Nueva compra</Button>
         </div>
-        {canManage && <Button type="button" icon={Plus} onClick={() => navigate("/compras/nueva")}>Nueva compra</Button>}
-      </div>
+      )}
 
-      {message && <p className="po-message">{message}</p>}
+      {message && <p className="po-message" role={loadFailed ? "alert" : undefined}>{message}</p>}
 
       <section className="erp-panel erp-history-panel" aria-labelledby="purchases-list-title">
         <div className="erp-panel-header">
@@ -125,7 +128,29 @@ export default function PurchasesPage({businessId, role}) {
           </label>
         </div>
 
-        {loading ? <div className="erp-empty-state" role="status">Cargando compras...</div> : (
+        {loading && items.length === 0 ? (
+          <SkeletonRegion label="Cargando compras...">
+            <SkeletonTable className="po-history__desktop" columns={7} twoLine />
+            <SkeletonCards className="po-history__cards" />
+          </SkeletonRegion>
+        ) : loadFailed && items.length === 0 ? null : filtered.length === 0 ? (
+          <div className="erp-empty-state ui-empty-state">
+            <EmptyStateIllustration variant={items.length ? "no-results" : "empty-list"} />
+            <h3>{items.length ? "No hay compras coincidentes" : "Aún no hay compras"}</h3>
+            <p>
+              {items.length
+                ? "Prueba con otra búsqueda, estado u origen."
+                : canManage
+                  ? "Registra tu primera compra directa. Las compras derivadas de Recepciones también aparecerán aquí."
+                  : "Tu perfil es de solo lectura; los perfiles autorizados registran las compras."}
+            </p>
+            {!items.length && canManage && (
+              <div className="ui-empty-state__actions">
+                <Button type="button" icon={Plus} onClick={() => navigate("/compras/nueva")}>Nueva compra</Button>
+              </div>
+            )}
+          </div>
+        ) : (
           <>
           <section className="erp-table-region po-history__desktop">
             <table className="erp-table po-history__table">
@@ -142,7 +167,6 @@ export default function PurchasesPage({businessId, role}) {
                     <td><Actions canManage={canManage} onAction={action} processing={processing === purchase.id} purchase={purchase} /></td>
                   </tr>
                 ))}
-                {!filtered.length && <tr><td colSpan="7" className="po-history__empty">No hay compras coincidentes.</td></tr>}
               </tbody>
             </table>
           </section>
@@ -155,12 +179,11 @@ export default function PurchasesPage({businessId, role}) {
                 <Actions canManage={canManage} onAction={action} processing={processing === purchase.id} purchase={purchase} />
               </article>
             ))}
-            {!filtered.length && <div className="po-history__cards-empty">No hay compras coincidentes.</div>}
           </section>
           </>
         )}
       </section>
-      <ResponsiveDialog open={Boolean(pendingAction)} onClose={() => !processing && setPendingAction(null)} eyebrow={pendingAction?.type === "confirmar" ? "Compra preparada" : "Más acciones"} title={pendingAction?.type === "confirmar" ? "Confirmar compra" : pendingAction?.type === "revertir" ? "Revertir compra" : "Cancelar compra"} description={pendingAction?.type === "confirmar" ? "Revisa el efecto físico de este documento antes de confirmar." : pendingAction?.type === "revertir" ? "Esta acción revertirá los movimientos de inventario asociados y conservará el registro histórico." : "La compra preparada quedará cancelada sin modificar stock."} size="small" footer={<><Button type="button" variant="secondary" disabled={Boolean(processing)} onClick={() => setPendingAction(null)}>Volver</Button><Button type="button" variant={pendingAction?.type === "confirmar" ? "primary" : "danger"} disabled={Boolean(processing) || (pendingAction?.type === "revertir" && !reversalReason.trim())} onClick={executeAction}>{processing ? "Procesando..." : pendingAction?.type === "confirmar" ? "Confirmar compra" : pendingAction?.type === "revertir" ? "Revertir compra" : "Cancelar compra"}</Button></>}>{pendingAction?.type === "revertir" ? <label className="purchase-field-wide">Motivo de reversión *<textarea value={reversalReason} onChange={(event) => setReversalReason(event.target.value)} /></label> : <p>{pendingAction?.type === "confirmar" ? getPurchaseStockSemantics(pendingAction.purchase).confirmationMessage : "Esta acción no se puede deshacer."}</p>}</ResponsiveDialog>
+      <ResponsiveDialog open={Boolean(pendingAction)} onClose={() => !processing && setPendingAction(null)} eyebrow={pendingAction?.type === "confirmar" ? "Compra preparada" : "Más acciones"} title={pendingAction?.type === "confirmar" ? "Confirmar compra" : pendingAction?.type === "revertir" ? "Revertir compra" : "Cancelar compra"} description={pendingAction?.type === "confirmar" ? "Revisa el efecto físico de este documento antes de confirmar." : pendingAction?.type === "revertir" ? "Esta acción revertirá los movimientos de inventario asociados y conservará el registro histórico." : "La compra preparada quedará cancelada sin modificar stock."} size="small" footer={<><Button type="button" variant="secondary" disabled={Boolean(processing)} onClick={() => setPendingAction(null)}>Volver</Button><Button type="button" variant={pendingAction?.type === "confirmar" ? "primary" : "danger"} loading={Boolean(processing)} disabled={pendingAction?.type === "revertir" && !reversalReason.trim()} onClick={executeAction}>{processing ? "Procesando..." : pendingAction?.type === "confirmar" ? "Confirmar compra" : pendingAction?.type === "revertir" ? "Revertir compra" : "Cancelar compra"}</Button></>}>{pendingAction?.type === "revertir" ? <label className="purchase-field-wide">Motivo de reversión *<textarea value={reversalReason} onChange={(event) => setReversalReason(event.target.value)} /></label> : <p>{pendingAction?.type === "confirmar" ? getPurchaseStockSemantics(pendingAction.purchase).confirmationMessage : "Esta acción no se puede deshacer."}</p>}</ResponsiveDialog>
     </main>
   );
 }

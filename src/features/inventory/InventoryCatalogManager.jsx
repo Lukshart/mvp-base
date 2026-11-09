@@ -1,5 +1,6 @@
 import React, {useEffect, useMemo, useRef, useState} from "react";
 import Button from "../../components/ui/Button";
+import LoadingState from "../../components/ui/LoadingState";
 import {isDuplicateAreaName, isDuplicateCategoryName} from "../../domain/inventoryCatalog.mjs";
 import {saveInventoryArea, saveInventoryCategory} from "../../services/inventoryService";
 
@@ -115,7 +116,7 @@ function InventoryCatalogManager({areas, businessId, categories, loadErrors, loa
     }
   };
 
-  if (loading) return <p className="inventory-catalog-loading" role="status">Cargando áreas y categorías...</p>;
+  if (loading) return <LoadingState variant="section" label="Cargando áreas y categorías..." />;
   if (loadErrors?.areas || loadErrors?.categories) {
     return <div className="inventory-catalog-load-error" role="alert"><strong>No fue posible cargar el catálogo.</strong>{loadErrors.areas && <span>Áreas: {loadErrors.areas}</span>}{loadErrors.categories && <span>Categorías: {loadErrors.categories}</span>}<Button type="button" variant="secondary" onClick={onRetry}>Reintentar carga</Button></div>;
   }
@@ -143,11 +144,11 @@ function InventoryCatalogManager({areas, businessId, categories, loadErrors, loa
 }
 
 function AreaForm({form, inputRef, onCancel, onChange, onSubmit, saving}) {
-  return <form className="inventory-catalog-inline-form" onSubmit={onSubmit}><label><span>Nombre del área</span><input ref={inputRef} className="erp-control" required maxLength={80} value={form.nombre} onChange={(event) => onChange({...form, nombre: event.target.value})} /></label><div><Button type="button" variant="secondary" onClick={onCancel}>Cancelar</Button><Button type="submit" disabled={saving}>{saving ? "Guardando..." : form.id ? "Actualizar" : "Crear área"}</Button></div></form>;
+  return <form className="inventory-catalog-inline-form" onSubmit={onSubmit}><label><span>Nombre del área</span><input ref={inputRef} className="erp-control" required maxLength={80} value={form.nombre} onChange={(event) => onChange({...form, nombre: event.target.value})} /></label><div><Button type="button" variant="secondary" onClick={onCancel}>Cancelar</Button><Button type="submit" loading={saving}>{saving ? "Guardando..." : form.id ? "Actualizar" : "Crear área"}</Button></div></form>;
 }
 
 function CategoryForm({areaName, form, inputRef, onCancel, onChange, onSubmit, saving}) {
-  return <form className="inventory-catalog-inline-form" onSubmit={onSubmit}><p>Área: <strong>{areaName}</strong></p><label><span>Nombre de la categoría</span><input ref={inputRef} className="erp-control" required maxLength={80} value={form.nombre} onChange={(event) => onChange({...form, nombre: event.target.value})} /></label><div><Button type="button" variant="secondary" onClick={onCancel}>Cancelar</Button><Button type="submit" disabled={saving}>{saving ? "Guardando..." : form.id ? "Actualizar" : "Crear categoría"}</Button></div></form>;
+  return <form className="inventory-catalog-inline-form" onSubmit={onSubmit}><p>Área: <strong>{areaName}</strong></p><label><span>Nombre de la categoría</span><input ref={inputRef} className="erp-control" required maxLength={80} value={form.nombre} onChange={(event) => onChange({...form, nombre: event.target.value})} /></label><div><Button type="button" variant="secondary" onClick={onCancel}>Cancelar</Button><Button type="submit" loading={saving}>{saving ? "Guardando..." : form.id ? "Actualizar" : "Crear categoría"}</Button></div></form>;
 }
 
 export default InventoryCatalogManager;

@@ -9,6 +9,7 @@ import {
   getReceptionPurchaseAction,
   getReceptionStatusLabel,
   getSupplierResponseLabel,
+  resolveReceptionScan,
   shouldReconcileReceptionConfirmation,
 } from "../src/domain/receptionModel.mjs";
 import {buildSupplyTrace, getSupplyDocumentRoute} from "../src/domain/supplyTrace.mjs";
@@ -142,5 +143,18 @@ assert.match(receptionDetailSource, /Confirmar prestación/);
 assert.match(receptionDetailSource, /SupplyTrace/);
 assert.match(receptionDetailSource, /Recepción completada correctamente/);
 assert.doesNotMatch(receptionDetailSource, /Inventario y compra registrados|Ver compra/);
+
+const scanItems = [
+  {lineaId: "l1", itemId: "p1", tipoItem: "producto", nombre: "Cable", cantidadSolicitada: 5, cantidadRecibidaAnterior: 3, cantidad: 0},
+  {lineaId: "l2", itemId: "s1", tipoItem: "servicio", nombre: "Instalación", cantidadSolicitada: 1, cantidadRecibidaAnterior: 0, cantidad: 0},
+];
+assert.deepEqual(
+  {...resolveReceptionScan(scanItems, "p1"), line: undefined},
+  {status: "added", cantidad: 1, line: undefined},
+);
+assert.equal(resolveReceptionScan(scanItems, "p1").line.lineaId, "l1");
+assert.equal(resolveReceptionScan([{...scanItems[0], cantidad: 2}], "p1").status, "completed");
+assert.equal(resolveReceptionScan(scanItems, "p9").status, "not_in_reception");
+assert.equal(resolveReceptionScan(scanItems, "s1").status, "not_in_reception");
 
 console.log("Reception model smoke: OK");

@@ -30,6 +30,12 @@ const {deleteApp: deleteAdminApp, initializeApp: initializeAdminApp} = requireFr
 const {getAuth: getAdminAuth} = requireFromFunctions("firebase-admin/auth");
 const {getFirestore: getAdminFirestore} = requireFromFunctions("firebase-admin/firestore");
 const {getStorage: getAdminStorage} = requireFromFunctions("firebase-admin/storage");
+const {FieldPath, FieldValue} = requireFromFunctions("firebase-admin/firestore");
+const {HttpsError} = requireFromFunctions("firebase-functions/v2/https");
+const {
+  cambiarModulosEmpresaPlataformaHandler,
+  obtenerEmpresaPlataformaHandler,
+} = requireFromFunctions("./platformAdmin");
 
 function client(name) {
   const app = initializeApp({apiKey: "demo", authDomain: `${PROJECT_ID}.firebaseapp.com`, projectId: PROJECT_ID, appId: `platform-${name}-${RUN_ID}`}, `platform-${name}-${RUN_ID}`);
@@ -210,6 +216,79 @@ try {
   assert.equal((await call(platform, "obtenerEmpresaPlataforma")({businessId: firstId})).data.propietario.uid, owner.uid);
   assert.ok((await call(platform, "obtenerUsuarioPlataforma")({uid: owner.uid})).data.membresias.some((item) => item.negocioId === firstId));
 
+  // Interruptor de modulos por negocio (Function cambiarModulosEmpresaPlataforma).
+  // El registro real nace vacio, asi que por el emulador solo se prueban los
+  // rechazos y el caso vacio; habilitar y deshabilitar se prueba invocando el
+  // handler real con un registro de prueba inyectado por dependencias.
+  const modulesReason = "Activacion acordada con el cliente";
+  await rejected("usuario normal no cambia modulos", () => call(owner, "cambiarModulosEmpresaPlataforma")({businessId: secondId, modulos: [], motivo: modulesReason, requestId: requestId("modules_normal")}), ["permission-denied"]);
+  await rejected("modulo desconocido contra el registro real vacio", () => call(platform, "cambiarModulosEmpresaPlataforma")({businessId: secondId, modulos: ["taller"], motivo: modulesReason, requestId: requestId("modules_unknown")}), ["invalid-argument"]);
+  const emptyModulesId = requestId("modules_empty");
+  const emptyModules = await call(platform, "cambiarModulosEmpresaPlataforma")({businessId: secondId, modulos: [], motivo: modulesReason, requestId: emptyModulesId});
+  assert.deepEqual(emptyModules.data.modulosHabilitados, []); assert.equal(emptyModules.data.idempotent, false);
+  assert.equal((await call(platform, "cambiarModulosEmpresaPlataforma")({businessId: secondId, modulos: [], motivo: modulesReason, requestId: emptyModulesId})).data.idempotent, true);
+  assert.equal((await adminDb.collection(`negocios/${secondId}/eventosPlataforma`).get()).size, 0);
+  const secondDetail = (await call(platform, "obtenerEmpresaPlataforma")({businessId: secondId})).data;
+  assert.deepEqual(secondDetail.empresa.modulosHabilitados, []); assert.deepEqual(secondDetail.modulosDisponibles, []);
+
+  const testRegistry = Object.freeze([
+    {id: "taller", label: "Taller", basePath: "/taller"},
+    {id: "veterinaria", label: "Clinica veterinaria", basePath: "/clinica-veterinaria"},
+  ]);
+  const handlerDeps = {auth: adminAuth, db: adminDb, FieldPath, FieldValue, HttpsError, verticalModules: testRegistry};
+  const asRequest = (uid, platformRole, data) => ({auth: {uid, token: platformRole ? {platformRole} : {}}, data});
+  const superRequest = (data) => asRequest(platform.uid, "PLATFORM_SUPERADMIN", data);
+  const modulesEvents = () => adminDb.collection(`negocios/${secondId}/eventosPlataforma`).get();
+  const enableId = requestId("modules_enable");
+  const enableData = {businessId: secondId, modulos: ["veterinaria", "taller", "taller"], motivo: modulesReason, requestId: enableId};
+  const enabled = await cambiarModulosEmpresaPlataformaHandler(superRequest(enableData), handlerDeps);
+  assert.deepEqual(enabled.modulosHabilitados, ["taller", "veterinaria"]); assert.equal(enabled.idempotent, false);
+  assert.deepEqual((await adminDb.doc(`negocios/${secondId}`).get()).data().modulosHabilitados, ["taller", "veterinaria"]);
+  let moduleEvents = await modulesEvents();
+  assert.equal(moduleEvents.size, 1);
+  const enableEvent = moduleEvents.docs[0].data();
+  assert.equal(enableEvent.tipo, "modulos_actualizados"); assert.deepEqual(enableEvent.modulosAnteriores, []);
+  assert.deepEqual(enableEvent.modulosResultantes, ["taller", "veterinaria"]); assert.equal(enableEvent.motivo, modulesReason);
+  assert.equal(enableEvent.creadoPorUid, platform.uid); assert.ok(enableEvent.creadoEn);
+  assert.equal((await adminDb.doc(`negocios/${secondId}/platformModulesRequests/${enableId}`).get()).exists, true);
+  const enableRetry = await cambiarModulosEmpresaPlataformaHandler(superRequest(enableData), handlerDeps);
+  assert.equal(enableRetry.idempotent, true); assert.deepEqual(enableRetry.modulosHabilitados, ["taller", "veterinaria"]);
+  assert.equal((await modulesEvents()).size, 1);
+  await rejected("requestId de modulos reutilizado con otros datos", () => cambiarModulosEmpresaPlataformaHandler(superRequest({...enableData, modulos: ["taller"]}), handlerDeps), ["already-exists"]);
+  await rejected("modulo desconocido en el registro de prueba", () => cambiarModulosEmpresaPlataformaHandler(superRequest({...enableData, modulos: ["taller", "inexistente"], requestId: requestId("modules_bad")}), handlerDeps), ["invalid-argument"]);
+  await rejected("modulos sin motivo", () => cambiarModulosEmpresaPlataformaHandler(superRequest({...enableData, motivo: "  ", requestId: requestId("modules_noreason")}), handlerDeps), ["invalid-argument"]);
+  await rejected("modulos que no son una lista", () => cambiarModulosEmpresaPlataformaHandler(superRequest({...enableData, modulos: "taller", requestId: requestId("modules_notlist")}), handlerDeps), ["invalid-argument"]);
+  await rejected("handler de modulos sin claim de plataforma", () => cambiarModulosEmpresaPlataformaHandler(asRequest(owner.uid, null, {...enableData, requestId: requestId("modules_noclaim")}), handlerDeps), ["permission-denied"]);
+  assert.equal((await modulesEvents()).size, 1);
+  const registryDetail = await obtenerEmpresaPlataformaHandler(superRequest({businessId: secondId}), handlerDeps);
+  assert.deepEqual(registryDetail.empresa.modulosHabilitados, ["taller", "veterinaria"]);
+  assert.deepEqual(registryDetail.modulosDisponibles, testRegistry.map((item) => ({...item})));
+  const moduleEvent = registryDetail.eventos.find((item) => item.tipo === "modulos_actualizados");
+  assert.deepEqual(moduleEvent.modulosResultantes, ["taller", "veterinaria"]);
+  const disabled = await cambiarModulosEmpresaPlataformaHandler(superRequest({businessId: secondId, modulos: ["veterinaria"], motivo: "Fin de la prueba de Taller", requestId: requestId("modules_disable")}), handlerDeps);
+  assert.deepEqual(disabled.modulosHabilitados, ["veterinaria"]);
+  moduleEvents = await modulesEvents();
+  assert.equal(moduleEvents.size, 2);
+  assert.ok(moduleEvents.docs.some((item) => JSON.stringify(item.data().modulosAnteriores) === JSON.stringify(["taller", "veterinaria"]) && JSON.stringify(item.data().modulosResultantes) === JSON.stringify(["veterinaria"])));
+  await cambiarModulosEmpresaPlataformaHandler(superRequest({businessId: secondId, modulos: [], motivo: "Limpieza", requestId: requestId("modules_clear")}), handlerDeps);
+  await cambiarModulosEmpresaPlataformaHandler(superRequest({businessId: secondId, modulos: [], motivo: "Sin cambios", requestId: requestId("modules_nochange")}), handlerDeps);
+  assert.equal((await modulesEvents()).size, 3);
+  assert.deepEqual((await adminDb.doc(`negocios/${secondId}`).get()).data().modulosHabilitados, []);
+  await rejected("SDK cliente no escribe modulosHabilitados", () => updateDoc(doc(secondOwner.db, "negocios", secondId), {modulosHabilitados: ["taller"]}), ["permission-denied"]);
+
+  // Regresion: las actualizaciones existentes del negocio no tocan modulosHabilitados.
+  await cambiarModulosEmpresaPlataformaHandler(superRequest({businessId: secondId, modulos: ["taller", "veterinaria"], motivo: "Prueba de regresion", requestId: requestId("modules_regression")}), handlerDeps);
+  const enabledModulesNow = async () => (await adminDb.doc(`negocios/${secondId}`).get()).data().modulosHabilitados;
+  assert.deepEqual(await enabledModulesNow(), ["taller", "veterinaria"]);
+  const regressionProfile = {...editableProfile(secondProfile), telefono: "+56 9 8765 4321"};
+  await call(secondOwner, "updateBusinessProfile")({businessId: secondId, profile: regressionProfile});
+  assert.deepEqual(await enabledModulesNow(), ["taller", "veterinaria"]);
+  await call(secondOwner, "updateBusinessInformation")({businessId: secondId, profile: regressionProfile});
+  assert.deepEqual(await enabledModulesNow(), ["taller", "veterinaria"]);
+  console.log("OK regresion: updateBusinessProfile y updateBusinessInformation conservan modulosHabilitados");
+  await cambiarModulosEmpresaPlataformaHandler(superRequest({businessId: secondId, modulos: [], motivo: "Fin de la regresion", requestId: requestId("modules_regression_clear")}), handlerDeps);
+  assert.deepEqual(await enabledModulesNow(), []);
+
   await rejected("claim no abre SDK global", () => getDocs(collection(platform.db, "negocios")), ["permission-denied"]);
   await rejected("platform no falsea estado por SDK", () => updateDoc(doc(platform.db, "negocios", firstId), {estado: "suspendida"}), ["permission-denied"]);
   await rejected("usuario normal no abre evidencia", () => call(owner, "obtenerDocumentoVerificacionPlataforma")({businessId: firstId, solicitudId: firstRequest.data.solicitudId}), ["permission-denied"]);
@@ -233,6 +312,17 @@ try {
   assert.equal((await adminDb.collection(`negocios/${firstId}/eventosPlataforma`).get()).size, 1);
   await call(platform, "cambiarEstadoEmpresaPlataforma")({businessId: firstId, estado: "activo", motivo: "", requestId: requestId("reactivate_business")});
   assert.equal((await call(owner, "getBusinessSession")({})).data.accessState, "active");
+
+  // Regresion de updateBusinessSettings: exige empresa verificada, por eso va con firstId.
+  await cambiarModulosEmpresaPlataformaHandler(superRequest({businessId: firstId, modulos: ["taller"], motivo: "Regresion de configuracion", requestId: requestId("modules_settings_on")}), handlerDeps);
+  const firstModulesNow = async () => (await adminDb.doc(`negocios/${firstId}`).get()).data().modulosHabilitados;
+  assert.deepEqual(await firstModulesNow(), ["taller"]);
+  await call(owner, "updateBusinessSettings")({businessId: firstId, section: "inventario", settings: {alertasStockBajo: true, umbralStockBajo: 3, permitirStockNegativo: false}});
+  assert.deepEqual(await firstModulesNow(), ["taller"]);
+  await call(owner, "updateBusinessSettings")({businessId: firstId, section: "cotizaciones", settings: {validezCotizacionDias: 20}});
+  assert.deepEqual(await firstModulesNow(), ["taller"]);
+  console.log("OK regresion: updateBusinessSettings conserva modulosHabilitados");
+  await cambiarModulosEmpresaPlataformaHandler(superRequest({businessId: firstId, modulos: [], motivo: "Fin de la regresion", requestId: requestId("modules_settings_off")}), handlerDeps);
 
   const suspendUserId = requestId("suspend_user");
   await call(platform, "cambiarEstadoUsuarioPlataforma")({uid: owner.uid, estado: "suspendido", motivo: "Revision de cuenta", requestId: suspendUserId});

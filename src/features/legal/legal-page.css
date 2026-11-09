@@ -1,0 +1,149 @@
+.legal-page {
+  background: var(--color-surface-canvas);
+  color: var(--color-text-default);
+  display: grid;
+  gap: var(--space-5);
+  min-height: 100vh;
+  padding: var(--space-5) max(var(--space-4), calc((100vw - 52rem) / 2));
+}
+
+.legal-page__header,
+.legal-page__document,
+.legal-page__footer {
+  margin-inline: auto;
+  max-width: 52rem;
+  width: 100%;
+}
+
+.legal-page__header {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  justify-content: space-between;
+}
+
+.legal-page__document {
+  background: var(--color-surface-panel);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--space-8);
+}
+
+.legal-page__notice {
+  background: var(--color-warning-50);
+  border: 1px solid var(--color-warning-300);
+  border-radius: var(--radius-md);
+  color: var(--color-warning-800);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-default);
+  margin: 0 0 var(--space-6);
+  padding: var(--space-3) var(--space-4);
+}
+
+.legal-page__title {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-2xl);
+  line-height: var(--line-height-tight);
+  margin: 0;
+}
+
+.legal-page__version {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  margin: var(--space-1) 0 var(--space-6);
+}
+
+.legal-page__section {
+  margin-top: var(--space-6);
+}
+
+.legal-page__section h2 {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-lg);
+  line-height: var(--line-height-tight);
+  margin: 0 0 var(--space-2);
+}
+
+.legal-page__section p,
+.legal-page__list {
+  font-size: var(--font-size-md);
+  line-height: var(--line-height-default);
+  margin: 0 0 var(--space-3);
+  overflow-wrap: anywhere;
+}
+
+.legal-page__list {
+  display: grid;
+  gap: var(--space-2);
+  padding-left: var(--space-6);
+}
+
+.legal-page__footer {
+  display: flex;
+  justify-content: center;
+}
+
+.legal-page__footer a {
+  color: var(--color-text-brand);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+@media (max-width: 640px) {
+  .legal-page__document {
+    padding: var(--space-5);
+  }
+}
+
+/* Tarjeta centrada y angosta: la regla posterior de .onboarding-card
+   (max-width: 100%) pisaba el ancho de --message, por eso se refuerza aquí con
+   más especificidad sin tocar las otras pantallas que usan esas clases. */
+.onboarding-card.legal-acceptance {
+  margin-inline: auto;
+  max-width: 560px;
+  text-align: center;
+}
+
+.legal-acceptance > p {
+  margin-inline: auto;
+  text-align: center;
+}
+
+.legal-acceptance__links {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: center;
+  list-style: none;
+  margin: var(--space-5) 0 0;
+  padding: 0;
+}
+
+.legal-acceptance__links a {
+  color: var(--color-text-brand);
+  font-weight: var(--font-weight-semibold);
+}
+
+.legal-acceptance__error {
+  margin-top: var(--space-5);
+  text-align: left;
+}
+
+.legal-acceptance__actions {
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+/* En móvil la tarjeta queda centrada también en vertical y los dos botones se
+   apilan, centrados y a todo el ancho. */
+@media (max-width: 680px) {
+  .onboarding-screen.legal-acceptance-screen {
+    align-items: center;
+  }
+
+  .legal-acceptance__actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

@@ -4,7 +4,7 @@ Vincular cotizaciones con clientes registrados sin perder el carácter históric
 
 # Alcance implementado
 
-En una cotización nueva, “Escanear producto” resuelve por consulta exacta el `barcode` de un producto activo dentro del negocio. Agrega la línea usando la valorización vigente o incrementa su cantidad si ya existe; un código inexistente no crea inventario.
+En una cotización nueva, “Escanear producto” resuelve por consulta exacta el `barcode` de un producto activo dentro del negocio; un UPC-A de 12 dígitos y el mismo código como EAN-13 con 0 inicial se buscan como equivalentes (ver `003-inventario-mvp.md`). Agrega la línea usando la valorización vigente o incrementa su cantidad si ya existe; un código inexistente no crea inventario. El escaneo es continuo: el cuadro queda abierto, cada lectura agrega o suma, muestra la lista de lo escaneado en la sesión y se cierra con “Terminar”; un código inexistente muestra el error sin detener la cámara.
 
 - Las cotizaciones nuevas requieren un cliente activo del negocio actual.
 - El selector consulta `negocios/{businessId}/clientes`, filtra por `negocioId` y muestra únicamente clientes activos.

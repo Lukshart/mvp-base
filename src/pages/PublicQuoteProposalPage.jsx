@@ -1,11 +1,13 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Download, XCircle } from "lucide-react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { sileo } from "sileo";
 import BrandLogo from "../components/BrandLogo";
+import Spinner from "../components/ui/Spinner";
 import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
+import { LEGAL_DOCUMENTS } from "../domain/legalDocuments.mjs";
 import QuotePrintView from "../features/quotes/QuotePrintView";
 import "../features/quotes/public-quote.css";
 import {
@@ -14,6 +16,25 @@ import {
 } from "../services/publicQuoteService";
 import { formatDate, formatMoney } from "../utils/formatters";
 import { downloadQuotePdf } from "../utils/quotePdf";
+
+const LEGAL_LINKS = [LEGAL_DOCUMENTS.privacidad, LEGAL_DOCUMENTS.terminos];
+
+function PublicLegalLinks() {
+  return (
+    <nav className="public-proposal__legal" aria-label="Documentos legales">
+      {LEGAL_LINKS.map((document) => (
+        <Link
+          key={document.key}
+          to={document.path}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          {document.title}
+        </Link>
+      ))}
+    </nav>
+  );
+}
 
 const REJECTION_OPTIONS = [
   ["precio", "Precio"],
@@ -86,7 +107,7 @@ function PublicQuoteProposalPage() {
       });
     } catch (error) {
       sileo.error({
-        title: "No pudimos registrar tu respuesta",
+        title: "No se pudo registrar tu respuesta",
         description: error.message || "Recarga la página e inténtalo nuevamente.",
       });
     } finally {
@@ -113,7 +134,8 @@ function PublicQuoteProposalPage() {
     return (
       <main className="public-proposal public-proposal--centered">
         <BrandLogo variant="auth" subtitle="Propuesta comercial" />
-        <section className="public-proposal__message" aria-live="polite">
+        <section className="public-proposal__message" role="status">
+          <Spinner />
           <h1>Cargando propuesta</h1>
           <p>Estamos preparando la información comercial.</p>
         </section>
@@ -129,6 +151,7 @@ function PublicQuoteProposalPage() {
           <h1>Propuesta no disponible</h1>
           <p>{state.error}</p>
         </section>
+        <PublicLegalLinks />
       </main>
     );
   }
@@ -203,7 +226,7 @@ function PublicQuoteProposalPage() {
           variant="secondary"
           icon={Download}
           onClick={handleDownload}
-          disabled={downloading}
+          loading={downloading}
         >
           {downloading ? "Preparando PDF..." : "Descargar PDF"}
         </Button>
@@ -233,7 +256,8 @@ function PublicQuoteProposalPage() {
       )}
 
       <footer className="public-proposal__footer">
-        Propuesta gestionada de forma segura con ValoraCloud.
+        <span>Propuesta gestionada de forma segura con ValoraCloud.</span>
+        <PublicLegalLinks />
       </footer>
 
       <ResponsiveDialog
@@ -254,7 +278,7 @@ function PublicQuoteProposalPage() {
             </Button>
             <Button
               type="button"
-              disabled={responding}
+              loading={responding}
               onClick={() => handleResponse("accept")}
             >
               {responding ? "Registrando..." : "Confirmar aceptación"}
@@ -286,7 +310,7 @@ function PublicQuoteProposalPage() {
             <Button
               type="button"
               variant="danger"
-              disabled={responding}
+              loading={responding}
               onClick={() => handleResponse("reject")}
             >
               {responding ? "Registrando..." : "Confirmar rechazo"}

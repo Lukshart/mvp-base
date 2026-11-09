@@ -16,6 +16,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import BusinessCategoryPicker from "../../components/BusinessCategoryPicker";
 import AppIcon from "../../components/ui/AppIcon";
 import Button from "../../components/ui/Button";
+import LoadingState from "../../components/ui/LoadingState";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
 import {
   CHILE_REGIONS,
@@ -108,6 +109,7 @@ function messageForError(error, fallback) {
   if (code.includes("permission-denied")) {
     return "No tienes permisos para acceder a esta sección.";
   }
+  if (code.includes("storage/unauthorized")) return error?.message || fallback;
   if (code.includes("invalid-argument")) return error?.message || fallback;
   if (code.includes("failed-precondition") || code.includes("already-exists")) {
     return error?.message || fallback;
@@ -415,7 +417,7 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
     }
   };
 
-  if (loading) return <p className="settings-loading" role="status">Cargando información...</p>;
+  if (loading) return <LoadingState variant="section" label="Cargando información..." />;
 
   return (
     <SectionFrame
@@ -594,12 +596,12 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
                     {form.logoUrl ? "Reemplazar" : "Seleccionar"}
                   </Button>
                   {logoFile && (
-                    <Button type="button" onClick={uploadLogo} disabled={uploading}>
+                    <Button type="button" onClick={uploadLogo} loading={uploading}>
                       {uploading ? "Subiendo..." : "Subir logo"}
                     </Button>
                   )}
                   {form.logoUrl && (
-                    <Button type="button" variant="ghost-danger" icon={Trash2} onClick={removeLogo} disabled={deletingLogo || uploading}>
+                    <Button type="button" variant="ghost-danger" icon={Trash2} onClick={removeLogo} loading={deletingLogo} disabled={uploading}>
                       {deletingLogo ? "Eliminando..." : "Eliminar"}
                     </Button>
                   )}
@@ -672,7 +674,7 @@ function BusinessInformationSection({ businessId, canEdit, focusTarget, onBusine
         <SectionStatus error={error} success={success} />
         <div className="settings-save-row">
           {!canEdit && <p>Tu rol permite consultar estos datos, pero no editarlos.</p>}
-          {canEdit && <Button type="submit" icon={Save} disabled={saving}>{saving ? "Guardando..." : "Guardar información"}</Button>}
+          {canEdit && <Button type="submit" icon={Save} loading={saving}>{saving ? "Guardando..." : "Guardar información"}</Button>}
         </div>
       </form>
     </SectionFrame>
@@ -841,7 +843,7 @@ function BusinessVerificationSection({
     }
   };
 
-  if (loading) return <p className="settings-loading">Cargando verificación...</p>;
+  if (loading) return <LoadingState variant="section" label="Cargando verificación..." />;
 
   return <SectionFrame title="Verificación empresarial" description="Solicita la revisión para activar los módulos operativos de ValoraCloud.">
     <div className={`settings-card settings-verification-card is-${verification.estado.toLowerCase()}`}>
@@ -878,7 +880,7 @@ function BusinessVerificationSection({
       <Button
         type="submit"
         form="business-verification-form"
-        disabled={submitting}
+        loading={submitting}
       >
         {submitting ? "Enviando..." : "Solicitar verificación"}
       </Button>
@@ -1037,7 +1039,7 @@ function TaxSection({ businessId }) {
   }, [businessId]);
   return (
     <SectionFrame title="Configuración tributaria" description="Estos valores se utilizan por defecto en los documentos comerciales del negocio.">
-      {loading ? <p className="settings-loading">Cargando impuestos...</p> : (
+      {loading ? <LoadingState variant="section" label="Cargando impuestos..." /> : (
         <div className="settings-card settings-protected-summary">
           <div className="settings-protected-summary__header">
             <span className="settings-protected-summary__icon" aria-hidden="true">
@@ -1107,7 +1109,7 @@ function InventorySection({ businessId, canEdit }) {
   };
   return (
     <SectionFrame title="Inventario" description="Controla alertas y el comportamiento del stock del negocio activo.">
-      {loading ? <p className="settings-loading">Cargando preferencias...</p> : (
+      {loading ? <LoadingState variant="section" label="Cargando preferencias..." /> : (
         <form onSubmit={submit}>
           <fieldset className="settings-fieldset settings-card settings-toggle-list" disabled={!canEdit || saving}>
             <legend className="sr-only">Preferencias de inventario</legend>
@@ -1124,7 +1126,7 @@ function InventorySection({ businessId, canEdit }) {
             </label>
           </fieldset>
           <SectionStatus error={error} success={success} />
-          <div className="settings-save-row">{canEdit ? <Button type="submit" icon={Save} disabled={saving}>{saving ? "Guardando..." : "Guardar inventario"}</Button> : <p>Configuración de solo lectura para tu rol.</p>}</div>
+          <div className="settings-save-row">{canEdit ? <Button type="submit" icon={Save} loading={saving}>{saving ? "Guardando..." : "Guardar inventario"}</Button> : <p>Configuración de solo lectura para tu rol.</p>}</div>
         </form>
       )}
     </SectionFrame>
@@ -1165,7 +1167,7 @@ function QuoteSection({ businessId, canEdit }) {
   };
   return (
     <SectionFrame title="Valores predeterminados para nuevas cotizaciones" description="Se aplican al crear una cotización. Los cambios realizados dentro de una cotización afectan sólo a ese documento y no modifican estos valores de Empresa.">
-      {loading ? <p className="settings-loading">Cargando valores predeterminados...</p> : (
+      {loading ? <LoadingState variant="section" label="Cargando valores predeterminados..." /> : (
         <form onSubmit={submit}>
           <fieldset className="settings-fieldset" disabled={!canEdit || saving}>
             <legend className="sr-only">Valores predeterminados de cotización</legend>
@@ -1214,7 +1216,7 @@ function QuoteSection({ businessId, canEdit }) {
             </div>
           </fieldset>
           <SectionStatus error={error} success={success} />
-          <div className="settings-save-row">{canEdit ? <Button type="submit" icon={Save} disabled={saving}>{saving ? "Guardando..." : "Guardar cotizaciones"}</Button> : <p>Configuración de solo lectura para tu rol.</p>}</div>
+          <div className="settings-save-row">{canEdit ? <Button type="submit" icon={Save} loading={saving}>{saving ? "Guardando..." : "Guardar cotizaciones"}</Button> : <p>Configuración de solo lectura para tu rol.</p>}</div>
         </form>
       )}
     </SectionFrame>
@@ -1305,7 +1307,7 @@ function BusinessDeletionSection({
               variant="danger"
               icon={Trash2}
               onClick={confirmDeletion}
-              disabled={!confirmationMatches || deleting}
+              loading={deleting} disabled={!confirmationMatches}
             >
               {deleting ? "Desactivando..." : "Desactivar para todos"}
             </Button>
@@ -1340,6 +1342,7 @@ function BusinessDeletionSection({
 
 function CompanyConfig({
   businessId,
+  businessCompletionError,
   businessCompletionStatus,
   businessName,
   businessVerified,
@@ -1435,6 +1438,7 @@ function CompanyConfig({
       )}
       {canEdit && businessCompletionStatus && (
         <BusinessCompletionCard
+          error={businessCompletionError}
           status={businessCompletionStatus}
           canActOnItem={canActOnCompletionItem}
           onAction={handleCompletionAction}

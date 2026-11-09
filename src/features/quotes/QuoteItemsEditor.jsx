@@ -1,6 +1,6 @@
 import React from "react";
 import BarcodeInput from "../../components/barcode/BarcodeInput";
-import { formatCLP } from "../../utils/formatters";
+import { useBusinessMoney } from "../../hooks/useBusinessFormat";
 
 const TYPE_LABELS = {
   producto: "Producto",
@@ -20,6 +20,7 @@ function QuoteItemsEditor({
   subtotal,
   validationError,
 }) {
+  const formatBusinessAmount = useBusinessMoney();
   return (
     <section className="quote-workspace__panel quote-items no-print">
       <header className="quote-workspace__panel-header">
@@ -29,11 +30,11 @@ function QuoteItemsEditor({
           <p>
             {items.length === 0
               ? "Sin ítems agregados"
-              : `${items.length} ítem${items.length === 1 ? "" : "s"} · Subtotal ${formatCLP(subtotal)}`}
+              : `${items.length} ítem${items.length === 1 ? "" : "s"} · Subtotal ${formatBusinessAmount(subtotal)}`}
           </p>
         </div>
         <div className="quote-workspace__inline-actions">
-          <BarcodeInput actionOnly actionLabel="Escanear producto" onSubmit={onScanProduct} />
+          <BarcodeInput actionOnly continuous actionLabel="Escanear producto" onSubmit={onScanProduct} />
           <button type="button" className="quote-workspace__button quote-workspace__button--primary" onClick={onOpenCatalog}>
             Agregar desde catálogo
           </button>
@@ -46,9 +47,6 @@ function QuoteItemsEditor({
         <div className="quote-workspace__empty quote-workspace__empty--items">
           <strong>Agrega el detalle de la cotización</strong>
           <span>Agrega productos, servicios o actividades para construir la cotización.</span>
-          <button type="button" className="quote-workspace__button quote-workspace__button--primary" onClick={onOpenCatalog}>
-            Abrir catálogo
-          </button>
         </div>
       ) : (
         <div className="quote-items__list">
@@ -81,7 +79,7 @@ function QuoteItemsEditor({
                 </label>
                 <div className="quote-item__total">
                   <span>Total</span>
-                  <strong>{formatCLP(item.totalLinea)}</strong>
+                  <strong>{formatBusinessAmount(item.totalLinea)}</strong>
                 </div>
                 <div className="quote-item__actions">
                   <button type="button" aria-label={`Subir ${item.nombre}`} disabled={index === 0} onClick={() => onMove(index, -1)}>↑</button>
@@ -89,14 +87,17 @@ function QuoteItemsEditor({
                   <button type="button" className="quote-item__remove" onClick={() => onRemove(lineId)}>Quitar</button>
                 </div>
                 <details className="quote-item__details">
-                  <summary>Editar descripción y unidad</summary>
+                  <summary>Personalizar ítem</summary>
                   <div>
                     <label>
-                      <span>Descripción comercial</span>
+                      <span>Descripción para esta cotización</span>
                       <textarea rows="2" value={item.descripcionComercial ?? item.descripcion ?? ""} onChange={(event) => onUpdate(lineId, "descripcionComercial", event.target.value)} />
                     </label>
+                    <p className="quote-item__details-help">
+                      Personaliza cómo aparecerá este ítem en la propuesta. No modifica el producto del catálogo.
+                    </p>
                     <label>
-                      <span>Unidad</span>
+                      <span>Unidad de cobro</span>
                       <input value={item.unidad || ""} onChange={(event) => onUpdate(lineId, "unidad", event.target.value)} />
                     </label>
                   </div>

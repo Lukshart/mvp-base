@@ -26,7 +26,7 @@
   color: var(--color-text-inverse);
 }
 
-.ui-button--primary:hover:not(:disabled) {
+.ui-button--primary:hover:not(:disabled):not(.ui-button--loading) {
   background: var(--color-brand-700);
 }
 
@@ -36,7 +36,7 @@
   color: var(--color-text-default);
 }
 
-.ui-button--secondary:hover:not(:disabled) {
+.ui-button--secondary:hover:not(:disabled):not(.ui-button--loading) {
   background: var(--color-surface-subtle);
   border-color: var(--color-text-muted);
 }
@@ -46,8 +46,8 @@
   color: var(--color-brand-700);
 }
 
-.ui-button--ghost:hover:not(:disabled) {
-  background: var(--color-brand-50);
+.ui-button--ghost:hover:not(:disabled):not(.ui-button--loading) {
+  background: var(--color-surface-brand);
 }
 
 .ui-button--danger {
@@ -55,7 +55,7 @@
   color: var(--color-text-inverse);
 }
 
-.ui-button--danger:hover:not(:disabled) {
+.ui-button--danger:hover:not(:disabled):not(.ui-button--loading) {
   background: var(--color-danger-700);
 }
 
@@ -65,7 +65,7 @@
   color: var(--color-danger-700);
 }
 
-.ui-button--ghost-danger:hover:not(:disabled) {
+.ui-button--ghost-danger:hover:not(:disabled):not(.ui-button--loading) {
   background: var(--color-danger-50);
   border-color: var(--color-danger-700);
 }
@@ -73,6 +73,260 @@
 .ui-button:disabled {
   cursor: not-allowed;
   opacity: 0.62;
+}
+
+/* En carga el botón no está disabled (conserva el foco): sin reducción de
+   opacidad y sin hover, active ni elevación; el focus-visible se mantiene. */
+.ui-button--loading {
+  cursor: progress;
+}
+
+/* Menú de acciones secundarias (MoreActionsMenu): botón en estilo secundario,
+   con rótulo o solo ícono (cuadrado de 38px en filas de tablas), y lista de
+   opciones en portal, por sobre los diálogos y bajo los avisos (toasts). */
+.ui-more-actions {
+  align-items: center;
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border-control);
+  border-radius: var(--radius-xs);
+  color: var(--color-text-default);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+  gap: var(--space-2);
+  min-height: 38px;
+  padding: var(--space-2) var(--space-3);
+}
+
+.ui-more-actions--icon {
+  justify-content: center;
+  padding: 0;
+  width: 38px;
+}
+
+.ui-more-actions__menu {
+  background: var(--color-surface-panel);
+  border: 1px solid var(--color-border-control);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  position: fixed;
+  width: 224px;
+  z-index: calc(var(--z-dialog) + 5);
+}
+
+.ui-more-actions__item {
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-xs);
+  color: var(--color-text-default);
+  cursor: pointer;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+  min-height: 40px;
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  width: 100%;
+}
+
+.ui-more-actions__item:hover:not(:disabled),
+.ui-more-actions__item:focus-visible {
+  background: var(--color-surface-hover);
+}
+
+.ui-spinner {
+  animation: ui-spin var(--motion-spin-duration) linear infinite;
+  border: 3px solid color-mix(in srgb, currentColor 25%, transparent);
+  border-radius: 50%;
+  border-top-color: currentColor;
+  color: var(--color-brand-600);
+  display: block;
+  flex: 0 0 auto;
+}
+
+.ui-spinner--sm {
+  border-width: 2px;
+  height: 16px;
+  width: 16px;
+}
+
+.ui-spinner--md {
+  height: 28px;
+  width: 28px;
+}
+
+/* Dentro de un botón: hereda el color del texto en lugar del acento. */
+.ui-spinner--inherit {
+  color: inherit;
+}
+
+@keyframes ui-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.ui-loading-state {
+  align-items: center;
+  color: var(--color-text-muted);
+  display: flex;
+  font-size: var(--font-size-sm);
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.ui-loading-state--inline {
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+}
+
+.ui-loading-state--section {
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  justify-content: center;
+  padding: var(--space-5);
+}
+
+.ui-loading-state--page {
+  justify-content: center;
+  padding: var(--space-10) var(--space-4);
+}
+
+/* Retraso de aparición: el elemento ocupa su lugar desde el inicio y solo se
+   hace visible pasado --motion-reveal-delay, para no mostrar un loader en
+   cargas muy cortas. El fill-mode `both` es OBLIGATORIO: con reduced motion,
+   globals.css deja la duración en 0.01ms pero no toca el delay, y sin
+   fill-mode el elemento volvería a opacity 0 y quedaría invisible. */
+.ui-reveal-delay {
+  animation: ui-reveal var(--motion-reveal-duration) ease-out
+    var(--motion-reveal-delay) both;
+}
+
+@keyframes ui-reveal {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.brand-loader {
+  background: var(--color-surface-canvas);
+  display: grid;
+  justify-items: center;
+  min-height: 100vh;
+  min-height: 100dvh;
+  place-content: center;
+}
+
+.brand-loader__content {
+  display: grid;
+  gap: var(--space-6);
+  justify-items: center;
+}
+
+/* Marca grande (64 px de símbolo) apilada sobre el nombre, con más aire. */
+.brand-loader .brand-logo--auth {
+  flex-direction: column;
+  gap: var(--space-5);
+  text-align: center;
+}
+
+.brand-loader .brand-logo--auth .brand-logo__icon {
+  border-radius: calc(var(--radius-md) * 3);
+  box-shadow: var(--shadow-md);
+  height: 6rem;
+  width: 6rem;
+}
+
+.brand-loader .brand-logo__text {
+  align-items: center;
+}
+
+.brand-loader .brand-logo--auth .brand-logo__name {
+  font-size: 1.5rem;
+}
+
+.brand-loader .ui-loading-state--page {
+  padding: 0 var(--space-4);
+}
+
+/* Skeleton — el gradiente queda plano en base en ambos extremos del
+   recorrido, así que con reduced motion (globals.css deja un único ciclo de
+   0.01ms) el bloque se ve como base plana. No usar animation-fill-mode. */
+.ui-skeleton {
+  animation: ui-shimmer var(--motion-shimmer-duration) linear infinite;
+  background-image: linear-gradient(
+    90deg,
+    var(--color-skeleton-base) 0%,
+    var(--color-skeleton-base) 40%,
+    var(--color-skeleton-highlight) 50%,
+    var(--color-skeleton-base) 60%,
+    var(--color-skeleton-base) 100%
+  );
+  background-size: 300% 100%;
+  border-radius: var(--radius-sm);
+  display: block;
+  max-width: 100%;
+}
+
+/* La línea ocupa el alto de una línea de texto del contenedor, para que una
+   fila de skeleton mida lo mismo que una fila real de una línea. */
+.ui-skeleton--line {
+  height: 1em;
+  margin: calc((var(--line-height-default) * 1em - 1em) / 2) 0;
+  width: 100%;
+}
+
+.ui-skeleton--block {
+  height: var(--space-8);
+  width: 100%;
+}
+
+@keyframes ui-shimmer {
+  from {
+    background-position: 0 0;
+  }
+
+  to {
+    background-position: 100% 0;
+  }
+}
+
+.ui-skeleton-region {
+  position: relative;
+}
+
+/* :where() deja la especificidad en 0: la clase responsiva de la página
+   (erp-card-list, po-history__cards) decide cuándo se muestra, sin importar
+   el orden de las hojas. */
+:where(.ui-skeleton-cards) {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.ui-skeleton-card {
+  background: var(--color-surface-panel);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-3);
+}
+
+.ui-skeleton-card__header {
+  align-items: flex-start;
+  display: flex;
+  gap: var(--space-3);
+  justify-content: space-between;
 }
 
 .ui-status-badge {
@@ -91,19 +345,173 @@
 
 .ui-status-badge--success {
   background: var(--color-success-50);
-  border-color: #86d5b2;
+  border-color: var(--color-success-300);
   color: var(--color-success-700);
 }
 
 .ui-status-badge--warning {
   background: var(--color-warning-50);
-  border-color: #e7bd55;
+  border-color: var(--color-warning-300);
   color: var(--color-warning-800);
+}
+
+/* Borde -200: el par borde/fondo de peligro auditado en modo oscuro
+   (contrast-smoke); --color-danger-300 no tiene valor oscuro. */
+.ui-status-badge--danger {
+  background: var(--color-danger-50);
+  border-color: var(--color-danger-200);
+  color: var(--color-danger-700);
 }
 
 .ui-status-badge--neutral {
   background: var(--color-surface-subtle);
   color: var(--color-text-default);
+}
+
+/* Estado vacío: contenedor de <EmptyStateIllustration> + título +
+   descripción + acciones. Se combina con .erp-empty-state (fondo, borde
+   punteado, padding), que sigue siendo la "caja"; esto solo ordena el
+   contenido en columna centrada. */
+.ui-empty-state {
+  align-items: center;
+  display: grid;
+  gap: var(--space-2);
+  justify-items: center;
+}
+
+.ui-empty-state > h3,
+.ui-empty-state > p {
+  margin: 0;
+}
+
+.ui-empty-state > h3 {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-md);
+}
+
+.ui-empty-state > p {
+  max-width: 46ch;
+}
+
+.ui-empty-state__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: center;
+  margin-top: var(--space-2);
+}
+
+/* Ilustración de estado vacío (<EmptyStateIllustration>). Todo el color
+   sale de tokens que ya tienen valor oscuro, así que el dibujo cambia de
+   tema sin ningún hook. Las dos propiedades locales son alias de tokens
+   (no una paleta propia): acento + tinte del fondo circular, que cambian
+   solo en las variantes con semántica de estado (all-done, error). El
+   trazo sobre el acento usa --color-surface-panel: los acentos se aclaran
+   en oscuro y el panel se oscurece, así que el par se mantiene legible en
+   ambos temas. */
+.ui-empty-illustration {
+  --ui-empty-illustration-accent: var(--color-brand-500);
+  --ui-empty-illustration-tint: var(--color-surface-selected);
+  display: block;
+  flex: 0 0 auto;
+  height: auto;
+  max-width: 100%;
+  width: 8.5rem;
+}
+
+.ui-empty-illustration--all-done {
+  --ui-empty-illustration-accent: var(--color-success-700);
+  --ui-empty-illustration-tint: var(--color-success-50);
+}
+
+.ui-empty-illustration--error {
+  --ui-empty-illustration-accent: var(--color-danger-600);
+  --ui-empty-illustration-tint: var(--color-danger-50);
+}
+
+.ui-empty-illustration__backdrop {
+  fill: var(--ui-empty-illustration-tint);
+}
+
+.ui-empty-illustration__card {
+  fill: var(--color-surface-panel);
+  stroke: var(--color-border-control);
+  stroke-width: 2;
+}
+
+.ui-empty-illustration__line {
+  fill: var(--color-border-default);
+}
+
+.ui-empty-illustration__accent {
+  fill: var(--ui-empty-illustration-accent);
+}
+
+.ui-empty-illustration__accent-shape {
+  fill: var(--ui-empty-illustration-accent);
+  stroke: var(--ui-empty-illustration-accent);
+  stroke-linejoin: round;
+  stroke-width: 6;
+}
+
+.ui-empty-illustration__accent-line,
+.ui-empty-illustration__accent-line-thin {
+  fill: none;
+  stroke: var(--ui-empty-illustration-accent);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 6;
+}
+
+.ui-empty-illustration__accent-line-thin {
+  stroke-width: 3;
+}
+
+.ui-empty-illustration__lens,
+.ui-empty-illustration__lens-small {
+  fill: var(--color-surface-panel);
+  stroke: var(--ui-empty-illustration-accent);
+  stroke-width: 4;
+}
+
+.ui-empty-illustration__lens-small {
+  stroke-width: 3;
+}
+
+.ui-empty-illustration__glyph {
+  fill: none;
+  stroke: var(--color-surface-panel);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3;
+}
+
+.ui-empty-illustration__glyph-dot {
+  fill: var(--color-surface-panel);
+}
+
+/* Contador pequeño superpuesto sobre un ícono (ej. la campana de
+   notificaciones). Genérico a propósito, sin nombre de feature: el
+   padre debe posicionarse (position: relative) y darle position:
+   absolute a este elemento en su propio CSS.
+   height/min-width/font-size quedan literales a propósito: no hay una
+   escala de tamaño de ícono/badge en tokens.css (--font-size-xs, el
+   paso más chico, ya es 13px, demasiado grande para esta burbuja de
+   16px) y crear una escala nueva para un solo uso sería una paleta
+   local, justo lo que tokens.css pide evitar. */
+.ui-badge-count {
+  align-items: center;
+  background: var(--color-danger-700);
+  border-radius: var(--radius-pill);
+  color: var(--color-text-inverse);
+  display: inline-flex;
+  font-size: 10px;
+  font-weight: var(--font-weight-bold);
+  height: 16px;
+  justify-content: center;
+  line-height: 1;
+  min-width: 16px;
+  padding: 0 var(--space-1);
 }
 
 .ui-page-header {
@@ -152,7 +560,7 @@
 .ai-availability--provider_error,
 .ai-availability--status_error {
   background: var(--color-danger-50);
-  border-color: #fecaca;
+  border-color: var(--color-danger-200);
   color: var(--color-danger-700);
 }
 
@@ -164,96 +572,6 @@
   min-height: 100dvh;
   overflow: hidden;
   width: 100%;
-}
-
-.auth-screen > .muted:only-child {
-  left: 50%;
-  margin: 0;
-  position: fixed;
-  top: 50%;
-  transform: translate(-50%, -50%);
-}
-
-.auth-visual {
-  background: #062746;
-  isolation: isolate;
-  min-height: 0;
-  min-width: 0;
-  overflow: hidden;
-  position: relative;
-}
-
-.auth-visual::before,
-.auth-visual::after {
-  background: radial-gradient(
-    circle,
-    rgb(30 218 211 / 0.34) 0%,
-    rgb(30 218 211 / 0.09) 42%,
-    transparent 70%
-  );
-  border-radius: 50%;
-  content: "";
-  filter: blur(18px);
-  pointer-events: none;
-  position: absolute;
-  z-index: 1;
-}
-
-.auth-visual::before {
-  animation: auth-glow-drift-one 21s ease-in-out infinite alternate;
-  height: 34%;
-  left: 3%;
-  opacity: 0.24;
-  top: 14%;
-  width: 36%;
-}
-
-.auth-visual::after {
-  animation: auth-glow-drift-two 24s ease-in-out infinite alternate;
-  bottom: 8%;
-  height: 30%;
-  opacity: 0.18;
-  right: 7%;
-  width: 32%;
-}
-
-.auth-visual__image {
-  animation: auth-image-breathe 22s ease-in-out infinite alternate;
-  height: 100%;
-  inset: 0;
-  max-width: none;
-  object-fit: cover;
-  object-position: 14% center;
-  position: absolute;
-  transform-origin: 38% 50%;
-  will-change: transform;
-  width: 100%;
-  z-index: 0;
-}
-
-.auth-visual__overlay {
-  background:
-    linear-gradient(90deg, transparent 66%, rgb(2 20 39 / 0.3) 100%),
-    linear-gradient(0deg, rgb(2 20 39 / 0.76) 0%, transparent 37%);
-  inset: 0;
-  pointer-events: none;
-  position: absolute;
-  z-index: 2;
-}
-
-.auth-visual__message {
-  bottom: clamp(2rem, 5vw, 4.75rem);
-  color: #ffffff;
-  font-size: clamp(1.15rem, 1.55vw, 1.55rem);
-  font-weight: var(--font-weight-semibold);
-  left: clamp(2rem, 5vw, 5rem);
-  letter-spacing: -0.015em;
-  line-height: 1.35;
-  margin: 0;
-  max-width: 430px;
-  position: absolute;
-  text-shadow: 0 2px 18px rgb(2 20 39 / 0.72);
-  z-index: 3;
 }
 
 .auth-panel {
@@ -290,7 +608,7 @@
 .auth-card {
   animation: auth-card-enter 540ms cubic-bezier(0.22, 0.72, 0.28, 1) both;
   margin: auto;
-  max-width: 448px;
+  max-width: 400px;
   position: relative;
   width: 100%;
   z-index: 1;
@@ -302,7 +620,7 @@
 
 .auth-card .brand-logo--auth .brand-logo__icon {
   border-radius: calc(var(--radius-md) * 2.5);
-  box-shadow: 0 8px 22px rgb(15 118 110 / 0.13);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--color-brand-600) 13%, transparent);
   height: 56px;
   width: 56px;
 }
@@ -323,7 +641,7 @@
 }
 
 .auth-card__header {
-  margin-bottom: clamp(1.75rem, 4vh, 2.5rem);
+  margin-bottom: var(--space-6);
 }
 
 .auth-card__title {
@@ -373,7 +691,7 @@
 .auth-input {
   background: var(--color-surface-panel);
   border: 1px solid var(--color-border-control);
-  border-radius: calc(var(--radius-md) * 2);
+  border-radius: var(--radius-md);
   color: var(--color-text-strong);
   font-size: 1rem;
   min-height: 48px;
@@ -457,8 +775,8 @@
 }
 
 .auth-submit {
-  border-radius: calc(var(--radius-md) * 2);
-  box-shadow: 0 8px 18px rgb(15 118 110 / 0.2);
+  border-radius: var(--radius-pill);
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--color-brand-600) 20%, transparent);
   font-size: var(--font-size-md);
   margin-top: var(--space-1);
   min-height: 48px;
@@ -469,15 +787,15 @@
   width: 100%;
 }
 
-.auth-submit:hover:not(:disabled) {
+.auth-submit:hover:not(:disabled):not(.ui-button--loading) {
   box-shadow:
-    0 11px 24px rgb(15 118 110 / 0.24),
+    0 11px 24px color-mix(in srgb, var(--color-brand-600) 24%, transparent),
     0 0 0 1px rgb(19 135 126 / 0.08);
   transform: translateY(-2px);
 }
 
-.auth-submit:active:not(:disabled) {
-  box-shadow: 0 5px 12px rgb(15 118 110 / 0.18);
+.auth-submit:active:not(:disabled):not(.ui-button--loading) {
+  box-shadow: 0 5px 12px color-mix(in srgb, var(--color-brand-600) 18%, transparent);
   transform: translateY(0) scale(0.995);
 }
 
@@ -510,6 +828,59 @@
 
 .auth-link .ui-button__label {
   text-decoration: none;
+}
+
+.auth-legal {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  justify-content: center;
+  margin-top: var(--space-3);
+}
+
+.auth-legal__link,
+.ui-checkbox__label a {
+  color: var(--color-text-brand);
+  font-weight: var(--font-weight-semibold);
+}
+
+.auth-legal__link {
+  font-size: var(--font-size-xs);
+}
+
+/* Casilla con texto y enlaces: la fila entera es el área de clic. */
+.ui-checkbox {
+  align-items: flex-start;
+  color: var(--color-text-default);
+  cursor: pointer;
+  display: flex;
+  font-size: var(--font-size-sm);
+  gap: var(--space-2);
+  line-height: var(--line-height-default);
+}
+
+.ui-checkbox__input {
+  accent-color: var(--color-text-brand);
+  flex: 0 0 auto;
+  height: 18px;
+  margin: 0.15em 0 0;
+  width: 18px;
+}
+
+.ui-checkbox__input:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: 2px;
+}
+
+.ui-checkbox__input[aria-invalid="true"] {
+  outline: 2px solid var(--color-danger-700);
+  outline-offset: 1px;
+}
+
+.ui-checkbox__label {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 @keyframes auth-panel-enter {
@@ -546,36 +917,6 @@
   }
 }
 
-@keyframes auth-image-breathe {
-  from {
-    transform: scale(1);
-  }
-
-  to {
-    transform: scale(1.025);
-  }
-}
-
-@keyframes auth-glow-drift-one {
-  from {
-    transform: translate3d(-3%, -2%, 0) scale(0.96);
-  }
-
-  to {
-    transform: translate3d(14%, 10%, 0) scale(1.08);
-  }
-}
-
-@keyframes auth-glow-drift-two {
-  from {
-    transform: translate3d(4%, 4%, 0) scale(1);
-  }
-
-  to {
-    transform: translate3d(-16%, -9%, 0) scale(1.1);
-  }
-}
-
 @media (max-width: 900px) {
   .auth-screen {
     grid-template-columns: minmax(0, 1fr);
@@ -583,28 +924,6 @@
     min-height: 100vh;
     min-height: 100dvh;
     overflow: visible;
-  }
-
-  .auth-visual__image {
-    object-position: center 46%;
-  }
-
-  .auth-visual::before,
-  .auth-visual::after {
-    display: none;
-  }
-
-  .auth-visual__overlay {
-    background:
-      linear-gradient(0deg, rgb(2 20 39 / 0.68) 0%, transparent 64%),
-      linear-gradient(90deg, rgb(2 20 39 / 0.14), transparent 35%);
-  }
-
-  .auth-visual__message {
-    bottom: var(--space-5);
-    font-size: 1.05rem;
-    left: clamp(1.5rem, 5vw, 3rem);
-    max-width: 390px;
   }
 
   .auth-panel {
@@ -625,12 +944,6 @@
       max(1.25rem, env(safe-area-inset-left));
   }
 
-  .auth-visual__image {
-    animation: none;
-    transform: none;
-    will-change: auto;
-  }
-
   .auth-card__header {
     margin-bottom: var(--space-6);
   }
@@ -649,10 +962,6 @@
     grid-template-rows: 112px auto;
   }
 
-  .auth-visual__message {
-    display: none;
-  }
-
   .auth-panel {
     align-items: flex-start;
     padding-top: 1.75rem;
@@ -665,7 +974,7 @@
 
 @media (max-width: 680px) {
   .auth-screen {
-    background: linear-gradient(180deg, #f5fafb 0%, #ffffff 260px);
+    background: linear-gradient(180deg, #f5fafb 0%, var(--color-surface-panel) 260px);
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr);
     min-height: 100vh;
@@ -673,19 +982,9 @@
     overflow: visible;
   }
 
-  .auth-visual,
-  .auth-visual::before,
-  .auth-visual::after,
-  .auth-visual__image,
-  .auth-visual__overlay,
-  .auth-visual__message {
-    animation: none;
-    display: none;
-  }
-
   .auth-panel {
     align-items: flex-start;
-    background: linear-gradient(180deg, #f5fafb 0%, #ffffff 260px);
+    background: linear-gradient(180deg, #f5fafb 0%, var(--color-surface-panel) 260px);
     box-sizing: border-box;
     max-width: 100%;
     min-height: 100vh;
@@ -719,7 +1018,8 @@
   .auth-password-control,
   .auth-form__utility,
   .auth-feedback,
-  .auth-actions {
+  .auth-actions,
+  .auth-legal {
     box-sizing: border-box;
     max-width: 100%;
     min-width: 0;
@@ -776,10 +1076,6 @@
     display: block;
   }
 
-  .auth-visual {
-    display: none;
-  }
-
   .auth-panel {
     min-height: 100vh;
     min-height: 100dvh;
@@ -809,10 +1105,7 @@
   .auth-card__title,
   .auth-card__subtitle,
   .auth-form,
-  .auth-actions,
-  .auth-visual__image,
-  .auth-visual::before,
-  .auth-visual::after {
+  .auth-actions {
     animation: none;
   }
 
@@ -827,17 +1120,12 @@
     transform: none;
   }
 
-  .auth-visual__image {
-    transform: none;
-    will-change: auto;
-  }
-
   .auth-submit {
     transition-duration: 80ms;
   }
 
-  .auth-submit:hover:not(:disabled),
-  .auth-submit:active:not(:disabled) {
+  .auth-submit:hover:not(:disabled):not(.ui-button--loading),
+  .auth-submit:active:not(:disabled):not(.ui-button--loading) {
     transform: none;
   }
 }
@@ -846,7 +1134,7 @@
 .onboarding-screen {
   align-items: center;
   background:
-    linear-gradient(180deg, rgb(15 118 110 / 0.055), transparent 360px),
+    linear-gradient(180deg, color-mix(in srgb, var(--color-brand-600) 5.5%, transparent), transparent 360px),
     var(--color-surface-canvas);
   display: flex;
   justify-content: center;
@@ -1012,7 +1300,7 @@
 
 .onboarding-alert {
   background: var(--color-danger-50);
-  border: 1px solid #fecaca;
+  border: 1px solid var(--color-danger-200);
   border-left: 4px solid var(--color-danger-700);
   border-radius: var(--radius-md);
   color: var(--color-danger-700);
@@ -1022,15 +1310,28 @@
   padding: var(--space-3) var(--space-4);
 }
 
+.onboarding-invitations {
+  align-items: center;
+  background: var(--color-info-50);
+  border: 1px solid var(--color-info-200);
+  border-radius: var(--radius-md);
+  color: var(--color-info-700);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: var(--font-size-sm);
+  gap: var(--space-3);
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+}
+
+.onboarding-invitations p {
+  margin: 0;
+}
+
 .onboarding-submit {
   margin-top: var(--space-1);
   min-height: 46px;
   width: 100%;
-}
-
-.onboarding-submit[aria-busy="true"] .ui-button__icon,
-.onboarding-submit[aria-busy="true"] svg {
-  animation: onboarding-spin 0.8s linear infinite;
 }
 
 .onboarding-footnote {
@@ -1070,12 +1371,6 @@
   margin-top: var(--space-4);
 }
 
-@keyframes onboarding-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 @media (max-width: 640px) {
   .onboarding-screen {
     align-items: flex-start;
@@ -1105,12 +1400,6 @@
 
   .onboarding-brand-row .ui-button {
     padding-inline: var(--space-2);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .onboarding-submit[aria-busy="true"] svg {
-    animation: none;
   }
 }
 
@@ -1176,7 +1465,7 @@
 
 .onboarding-brand-row .brand-logo--auth .brand-logo__icon {
   border-radius: calc(var(--radius-md) * 2);
-  box-shadow: 0 6px 16px rgb(15 118 110 / 0.1);
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--color-brand-600) 10%, transparent);
   height: 48px;
   width: 48px;
 }
@@ -1374,7 +1663,7 @@
 
 .onboarding-submit {
   border-radius: calc(var(--radius-md) * 2);
-  box-shadow: 0 8px 18px rgb(15 118 110 / 0.18);
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--color-brand-600) 18%, transparent);
   font-size: var(--font-size-md);
   margin-top: 0;
   min-height: 48px;
@@ -1384,15 +1673,15 @@
     transform 150ms ease;
 }
 
-.onboarding-submit:hover:not(:disabled) {
+.onboarding-submit:hover:not(:disabled):not(.ui-button--loading) {
   box-shadow:
-    0 11px 24px rgb(15 118 110 / 0.23),
+    0 11px 24px color-mix(in srgb, var(--color-brand-600) 23%, transparent),
     0 0 0 1px rgb(19 135 126 / 0.08);
   transform: translateY(-2px);
 }
 
-.onboarding-submit:active:not(:disabled) {
-  box-shadow: 0 5px 12px rgb(15 118 110 / 0.17);
+.onboarding-submit:active:not(:disabled):not(.ui-button--loading) {
+  box-shadow: 0 5px 12px color-mix(in srgb, var(--color-brand-600) 17%, transparent);
   transform: translateY(0) scale(0.995);
 }
 
@@ -1497,7 +1786,7 @@
 }
 
 .business-completion-progress > span {
-  background: var(--color-brand-600);
+  background: var(--color-text-brand-accent);
   border-radius: inherit;
   display: block;
   height: 100%;
@@ -1556,7 +1845,7 @@
 }
 
 .business-completion-checklist button:hover {
-  color: var(--color-brand-900);
+  color: var(--color-text-brand-hover);
   text-decoration: underline;
 }
 
@@ -1597,7 +1886,7 @@
 }
 
 .activation-checklist li.is-complete svg {
-  color: var(--color-brand-600);
+  color: var(--color-text-brand-accent);
 }
 
 .activation-checklist li:last-child:nth-child(odd) {
@@ -1789,7 +2078,7 @@
 }
 
 .business-category-option:hover {
-  background: var(--color-brand-50);
+  background: var(--color-surface-brand);
   border-color: var(--color-brand-200);
 }
 
@@ -1799,6 +2088,55 @@
   box-shadow: 0 0 0 1px var(--color-brand-200);
   color: var(--color-brand-800);
   font-weight: var(--font-weight-semibold);
+}
+
+.business-category-soon {
+  margin-top: var(--space-5);
+}
+
+.business-category-soon h3 {
+  align-items: center;
+  color: var(--color-text-muted);
+  display: flex;
+  font-size: var(--font-size-sm);
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+}
+
+.business-category-soon__list {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.business-category-soon__list li {
+  display: grid;
+  min-width: 0;
+}
+
+.business-category-option--soon,
+.business-category-option--soon:hover {
+  background: var(--color-surface-subtle);
+  border-color: var(--color-border-subtle);
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+}
+
+.business-category-soon__tag {
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-pill);
+  font-size: var(--font-size-xs);
+  padding: 0 var(--space-2);
+  white-space: nowrap;
+}
+
+.business-category-soon__more {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  margin: var(--space-3) 0 0;
 }
 
 .business-category-option:focus-visible {
@@ -1823,7 +2161,7 @@
 }
 
 .business-category-other {
-  background: var(--color-brand-50);
+  background: var(--color-surface-brand);
   border-top: 1px solid var(--color-brand-200);
   display: grid;
   gap: var(--space-2);
@@ -1882,7 +2220,8 @@
     max-height: min(70dvh, 560px);
   }
 
-  .business-category-group__grid {
+  .business-category-group__grid,
+  .business-category-soon__list {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -2086,8 +2425,7 @@
   .onboarding-shell,
   .onboarding-card,
   .onboarding-screen::before,
-  .onboarding-screen::after,
-  .onboarding-submit[aria-busy="true"] svg {
+  .onboarding-screen::after {
     animation: none;
   }
 
@@ -2101,8 +2439,8 @@
     transition-duration: 80ms;
   }
 
-  .onboarding-submit:hover:not(:disabled),
-  .onboarding-submit:active:not(:disabled) {
+  .onboarding-submit:hover:not(:disabled):not(.ui-button--loading),
+  .onboarding-submit:active:not(:disabled):not(.ui-button--loading) {
     transform: none;
   }
 }
@@ -2148,7 +2486,7 @@
 }
 
 .quote-email-dialog__qa-notice {
-  background: #fffbeb;
+  background: var(--color-warning-50);
   border: 1px solid #f59e0b;
   border-radius: 6px;
   color: #78350f;
@@ -2182,7 +2520,7 @@
 
 .quote-email-dialog__qa-action {
   align-items: center;
-  background: #ffffff;
+  background: var(--color-surface-panel);
   border: 1px solid currentColor;
   border-radius: var(--radius-sm);
   color: inherit;
@@ -2408,4 +2746,373 @@
   .quote-email-dialog__field textarea {
     min-height: 200px;
   }
+}
+
+/* Control segmentado (<SegmentedControl>, etapa 5 paso 9): pocas opciones
+   siempre visibles en una píldora. Los radios nativos quedan .sr-only; el
+   foco y el estado activo se muestran en .ui-segmented__content. */
+.ui-segmented {
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border-control);
+  border-radius: var(--radius-pill);
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: 0;
+  min-width: 0;
+  padding: var(--space-1);
+}
+
+.ui-segmented__option {
+  cursor: pointer;
+  display: inline-flex;
+}
+
+.ui-segmented__content {
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  color: var(--color-text-muted);
+  display: inline-flex;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  gap: var(--space-2);
+  min-height: 36px;
+  padding: 0 var(--space-4);
+}
+
+.ui-segmented__option:hover .ui-segmented__content {
+  color: var(--color-text-strong);
+}
+
+.ui-segmented__input:checked + .ui-segmented__content {
+  background: var(--color-brand-50);
+  border-color: var(--color-brand-200);
+  color: var(--color-brand-600);
+}
+
+.ui-segmented__input:focus-visible + .ui-segmented__content {
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-offset);
+}
+
+/* Pestañas (<Tabs> / <TabPanel>): fila con subrayado en la activa, desplazable
+   en horizontal si no caben. El contenido vive en .ui-tab-panel. */
+.ui-tabs {
+  border-bottom: 1px solid var(--color-border-default);
+  display: flex;
+  gap: var(--space-1);
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.ui-tab {
+  background: transparent;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  flex: 0 0 auto;
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  min-height: 44px;
+  padding: 0 var(--space-3);
+}
+
+.ui-tab:hover {
+  color: var(--color-brand-700);
+}
+
+.ui-tab.is-active {
+  border-bottom-color: var(--color-brand-600);
+  color: var(--color-text-strong);
+}
+
+.ui-tab:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: calc(var(--focus-offset) * -1);
+}
+
+.ui-tab-panel {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+  padding-top: var(--space-4);
+}
+
+.ui-tab-panel[hidden] {
+  display: none;
+}
+
+/* Modo oscuro: el texto de marca y el subrayado usan --color-brand-400, el
+   mismo criterio que el resto de pestañas (brand-600/700 no alcanzan AA como
+   texto sobre superficies oscuras). */
+:where(:root[data-theme="dark"]) .ui-tab:hover {
+  color: var(--color-brand-400);
+}
+
+:where(:root[data-theme="dark"]) .ui-tab.is-active {
+  border-bottom-color: var(--color-brand-400);
+}
+
+/* Modo oscuro (etapa 5, paso 3 de 10: hub compartido). Ver
+   scripts/design-baseline.json para el detalle de cada literal nuevo
+   registrado aquí. */
+:where(:root[data-theme="dark"]) {
+  /* Rellenos sólidos con texto inverso encima: se fijan al mismo rojo de
+     siempre. --color-danger-600/700 ya tienen valor oscuro (paso 2), pero
+     se calibró para TEXTO sobre un fondo -50 (badges), no para ser el
+     propio relleno con --color-text-inverse blanco encima — blanco sobre
+     esos valores da 3.03:1/2.28:1, no pasa AA. Un rojo sólido se lee igual
+     de bien en claro y en oscuro, así que aquí se fija en vez de seguir la
+     redefinición del token (mismo criterio que --color-brand-600/700 como
+     fondo de botón, que sí se dejó seguir sin cambios). */
+  .ui-button--danger {
+    background: #dc2626;
+  }
+  .ui-button--danger:hover:not(:disabled):not(.ui-button--loading) {
+    background: #b91c1c;
+  }
+  .ui-badge-count {
+    background: #b91c1c;
+  }
+
+  /* --color-brand-600/700/800 se mantienen sin cambio (paso 2, decisión
+     "se mantiene igual"): funcionan bien como FONDO de botón/franja con
+     --color-text-inverse encima. Como TEXTO/ícono directo sobre una
+     superficie oscura no pasan AA (2.26:1 medido en el paso 2). Se
+     corrige selector por selector con --color-brand-400 (mínimo 4.92:1
+     contra las 6 superficies oscuras de la fundación, confirmado contra
+     cada una antes de elegirlo). Se EXCLUYEN a propósito los selectores
+     donde ese texto vive sobre --color-brand-50/100/200 (sin cambio,
+     siguen claros: .auth-password-toggle:hover, .onboarding-icon,
+     .onboarding-section__icon, .business-category-option[aria-checked]) —
+     ahí el par ya funciona igual que en claro, y aplicar brand-400 ahí
+     rompería el contraste (texto claro sobre fondo claro). */
+  .ui-button--ghost,
+  .ui-spinner,
+  .onboarding-step,
+  .business-completion-card__heading > strong,
+  .business-completion-checklist button,
+  .business-category-group h3 svg,
+  .quote-record-link,
+  .quote-record-link:hover,
+  .quote-email-dialog__recipient-action,
+  .quote-email-dialog__recipient-action:hover:not(:disabled),
+  .quote-email-dialog__attachment {
+    color: var(--color-brand-400);
+  }
+
+  /* Fondos decorativos de onboarding y login: pastel casi blanco en claro,
+     primer valor razonable para oscuro (mismo espíritu que ya deja escrito
+     --color-skeleton-base/-highlight en tokens.css: validar en pantalla
+     antes de darlo por definitivo). Sin texto encima, no aplica medir
+     contraste AA — son fondos decorativos, no pares texto/fondo. */
+  .onboarding-screen {
+    background:
+      radial-gradient(circle at 12% 8%, rgb(83 211 200 / 0.1), transparent 28%),
+      radial-gradient(circle at 88% 92%, rgb(127 178 245 / 0.08), transparent 30%),
+      linear-gradient(145deg, #0e2230 0%, #0c1e2b 48%, #0e2230 100%);
+  }
+
+  .onboarding-screen::before {
+    background: rgb(83 211 200 / 0.05);
+  }
+
+  .onboarding-screen::after {
+    background: rgb(127 178 245 / 0.05);
+  }
+
+  .onboarding-card {
+    border-color: rgb(83 211 200 / 0.35);
+    box-shadow:
+      0 20px 55px rgb(2 6 12 / 0.4),
+      0 0 0 1px rgb(255 255 255 / 0.04) inset;
+  }
+
+  .onboarding-field input:disabled,
+  .onboarding-field select:disabled {
+    background-color: var(--color-surface-subtle);
+  }
+
+  .auth-panel {
+    background:
+      radial-gradient(circle at 100% 0%, rgb(83 211 200 / 0.05), transparent 28%),
+      var(--color-surface-panel);
+  }
+
+  .auth-panel::before {
+    background: linear-gradient(
+      180deg,
+      transparent 3%,
+      rgb(83 211 200 / 0.14) 34%,
+      rgb(83 211 200 / 0.05) 68%,
+      transparent 97%
+    );
+  }
+
+  .auth-submit:hover:not(:disabled):not(.ui-button--loading) {
+    box-shadow:
+      0 11px 24px color-mix(in srgb, var(--color-brand-600) 24%, transparent),
+      0 0 0 1px rgb(83 211 200 / 0.14);
+  }
+
+  .onboarding-submit:hover:not(:disabled):not(.ui-button--loading) {
+    box-shadow:
+      0 11px 24px color-mix(in srgb, var(--color-brand-600) 23%, transparent),
+      0 0 0 1px rgb(83 211 200 / 0.14);
+  }
+
+  @media (max-width: 680px) {
+    .auth-screen,
+    .auth-panel {
+      background: linear-gradient(180deg, #0e2230 0%, var(--color-surface-panel) 260px);
+    }
+  }
+
+  /* Aviso "QA local" del envío de correo de cotización: familia cian
+     deliberadamente distinta de los semánticos reales (para marcar que es
+     de prueba, no dato real), sin tokens propios — ya era deuda sin
+     registrar en claro. El aviso base ya usa var(--color-warning-50) como
+     fondo (con valor oscuro del paso 2); se reutilizan aquí los MISMOS
+     hex oscuros ya elegidos para --color-warning-200/800 en tokens.css,
+     en vez de inventar otros, para no duplicar decisiones de contraste
+     (warning-800/warning-50 ya midió 9.32:1 en el paso 2). El cian de
+     --qa-notice--result no tiene token: 7fd9e6/0f2b2e mide 9.23:1,
+     7fd9e6/panel oscuro (fondo de .qa-action) mide 8.90:1. */
+  .quote-email-dialog__qa-notice {
+    border-color: #5c4318;
+    color: #f0c05a;
+  }
+
+  .quote-email-dialog__qa-notice--result {
+    background: #0f2b2e;
+    border-color: #3d8a94;
+    color: #7fd9e6;
+  }
+
+  .quote-email-dialog__qa-action:hover {
+    background: #123640;
+  }
+
+  .quote-email-dialog__qa-action:focus-visible {
+    outline-color: #56c7d8;
+  }
+}
+
+/* Enlaces de contacto (components/contacts/ContactLinks): correo, teléfono y
+   WhatsApp en listas de clientes y proveedores. */
+.ui-contact-links {
+  display: grid;
+  gap: var(--space-1);
+  justify-items: start;
+  min-width: 0;
+}
+
+.ui-contact-links__phone {
+  align-items: center;
+  display: inline-flex;
+  gap: var(--space-2);
+}
+
+.ui-contact-links__empty {
+  color: var(--color-text-muted);
+}
+
+.ui-contact-link {
+  color: var(--color-text-brand);
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+
+.ui-contact-link:hover {
+  text-decoration: underline;
+}
+
+.ui-contact-link:focus-visible {
+  border-radius: var(--radius-sm);
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-offset);
+}
+
+.ui-contact-link--whatsapp {
+  align-items: center;
+  border: 1px solid var(--color-border-control);
+  border-radius: var(--radius-sm);
+  color: var(--color-success-700);
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 32px;
+  justify-content: center;
+  width: 32px;
+}
+
+.ui-contact-link--whatsapp:hover {
+  background: var(--color-surface-hover);
+}
+
+/* Invitaciones de equipo recibidas (InvitationsInbox, RejectInvitationDialog) */
+
+.ui-invitations {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.ui-invitation-list {
+  display: grid;
+  gap: var(--space-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ui-invitation {
+  background: var(--color-info-50);
+  border: 1px solid var(--color-info-200);
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+
+.ui-invitation__body {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.ui-invitation__body strong {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+
+.ui-invitation__body small {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.ui-invitation__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+
+.ui-invitation-reject {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.ui-invitation-reject__count {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  text-align: right;
+}
+
+.ui-invitation-reject__error {
+  color: var(--color-danger-700);
+  font-size: var(--font-size-sm);
+  margin: 0;
 }

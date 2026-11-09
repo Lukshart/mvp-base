@@ -17,7 +17,7 @@ export default function PurchaseOrderItemsEditor({disabled, items, onChange, onO
         </div>
         {!disabled && (
           <div className="po-header__actions">
-            <BarcodeInput actionOnly actionLabel="Escanear producto" onSubmit={onScanProduct} />
+            <BarcodeInput actionOnly continuous actionLabel="Escanear producto" onSubmit={onScanProduct} />
             <button type="button" className="po-button po-button--secondary" onClick={onOpenCatalog}>
               Agregar desde catálogo
             </button>

@@ -4,16 +4,16 @@ import {
   Building2,
   ClipboardCheck,
   BriefcaseBusiness,
-  Car,
   History,
-  MapPin,
   ReceiptText,
   PackageCheck,
   UserRound,
   UsersRound,
   Truck,
   ShoppingCart,
+  Puzzle,
 } from "lucide-react";
+import { VERTICAL_MODULES } from "../domain/verticalModules.mjs";
 
 export const navigationSections = [
   {
@@ -62,28 +62,6 @@ export const navigationSections = [
         label: "Proyectos y trabajos",
         title: "Proyectos y trabajos",
         icon: BriefcaseBusiness,
-      },
-      {
-        to: "/taller/ordenes",
-        label: "Órdenes de trabajo",
-        title: "Órdenes de trabajo",
-        icon: ClipboardCheck,
-        activeWhen: (pathname) =>
-          pathname === "/taller" || pathname.startsWith("/taller/ordenes"),
-      },
-      {
-        to: "/taller/vehiculos",
-        label: "Vehículos",
-        title: "Vehículos",
-        icon: Car,
-        activeWhen: (pathname) => pathname.startsWith("/taller/vehiculos"),
-      },
-      {
-        to: "/taller/plazas",
-        label: "Plazas",
-        title: "Plazas",
-        icon: MapPin,
-        activeWhen: (pathname) => pathname.startsWith("/taller/plazas"),
       },
       {
         to: "/inventario",
@@ -159,12 +137,32 @@ export const navigationSections = [
   },
 ];
 
-const navigationItems = navigationSections.flatMap((section) => section.items);
+// Los módulos verticales se declaran desde el registro y se agrupan bajo
+// "Módulos", antes de "Cuenta". Solo se muestran los habilitados (el filtro lo
+// aplica filterNavigationSections con enabledModules). Con el registro vacío
+// devuelve las secciones del Core sin cambios.
+export function buildNavigationSections(registry = VERTICAL_MODULES) {
+  if (!registry.length) return navigationSections;
+  const modulesSection = {
+    label: "Módulos",
+    items: registry.map(({ label, basePath }) => ({
+      to: basePath,
+      label,
+      title: label,
+      icon: Puzzle,
+      activeWhen: (pathname) =>
+        pathname === basePath || pathname.startsWith(`${basePath}/`),
+    })),
+  };
+  return navigationSections.flatMap((section) =>
+    section.label === "Cuenta" ? [modulesSection, section] : [section]
+  );
+}
+
+const navigationItems = buildNavigationSections().flatMap((section) => section.items);
 const hiddenRouteMeta = Object.freeze({
   "/finanzas": { title: "Finanzas" },
   "/valorizacion": { title: "Valorización" },
-  "/referencias": { title: "Referencias de mercado" },
-  "/tareas-referencias": { title: "Tareas de referencias" },
 });
 
 export function getRouteMeta(pathname) {
@@ -176,21 +174,6 @@ export function getRouteMeta(pathname) {
   }
   if (pathname === "/ventas/nueva") {
     return { title: "Nueva venta" };
-  }
-  if (pathname === "/taller") {
-    return { title: "Taller" };
-  }
-  if (pathname === "/taller/ordenes/nueva") {
-    return { title: "Nueva orden de trabajo" };
-  }
-  if (/^\/taller\/ordenes\/[^/]+$/.test(pathname)) {
-    return { title: "Orden de trabajo" };
-  }
-  if (pathname === "/taller/vehiculos/nuevo") {
-    return { title: "Nuevo vehículo" };
-  }
-  if (/^\/taller\/vehiculos\/[^/]+$/.test(pathname)) {
-    return { title: "Vehículo" };
   }
   if (pathname === "/compras/nueva") {
     return { title: "Nueva compra" };

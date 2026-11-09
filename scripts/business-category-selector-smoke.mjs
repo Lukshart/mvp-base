@@ -29,18 +29,35 @@ const [picker, quickFields, company, dialog, componentStyles] = await Promise.al
 assert.equal(normalizeCategorySearch("  TECNOLOGÍA  "), "tecnologia");
 assert.equal(normalizeCategorySearch("Cafetería"), "cafeteria");
 const visibleCategories = filterBusinessCategories(catalog.businessCategories, "");
-assert.equal(visibleCategories.length, 11);
+assert.equal(visibleCategories.length, 7);
+assert.deepEqual(
+  visibleCategories.map(({ code }) => code),
+  [
+    "TECNOLOGIA_INFORMATICA",
+    "SEGURIDAD_TELECOMUNICACIONES",
+    "ELECTRICIDAD_ENERGIA_CLIMATIZACION",
+    "AUTOMATIZACION_CONTROL",
+    "MANTENIMIENTO_INSTALACIONES",
+    "INGENIERIA_CONSULTORIA",
+    "OTRO_SERVICIO_PROYECTOS",
+  ]
+);
 assert.equal(visibleCategories.some(({ code }) => code === "RESTAURANTE"), false);
 assert.equal(
   visibleCategories.find(({ code }) => code === "OTRO_SERVICIO_PROYECTOS")?.name,
   "Otro servicio por proyectos"
 );
 
-const technologyResults = filterBusinessCategories(
+const securityResults = filterBusinessCategories(
   catalog.businessCategories,
-  "PROGRAMACIÓN"
+  "ALARMAS"
 );
-assert.ok(technologyResults.some(({ code }) => code === "SOFTWARE_SOLUCIONES_DIGITALES"));
+assert.ok(securityResults.some(({ code }) => code === "SEGURIDAD_TELECOMUNICACIONES"));
+// "programación" apuntaba a un rubro que ya no es elegible.
+assert.deepEqual(
+  filterBusinessCategories(catalog.businessCategories, "PROGRAMACIÓN"),
+  []
+);
 const computingResults = filterBusinessCategories(
   catalog.businessCategories,
   "computacion"
@@ -52,6 +69,40 @@ assert.equal(
   ),
   false
 );
+
+// Grupo "Próximamente": filas deshabilitadas, sin código y fuera del buscador.
+for (const query of [
+  "taller",
+  "automotriz",
+  "veterinaria",
+  "clinica",
+  "construccion",
+  "software",
+  "marketing",
+]) {
+  assert.deepEqual(filterBusinessCategories(catalog.businessCategories, query), []);
+}
+assert.match(picker, /Próximamente/);
+assert.match(picker, /Taller automotriz \(en construcción\)/);
+assert.match(picker, /Clínica veterinaria \(en construcción\)/);
+assert.match(picker, /label: "Construcción y obras", tag: "Próximamente"/);
+assert.match(picker, /label: "Software y soluciones digitales", tag: "Próximamente"/);
+assert.match(picker, /label: "Servicios digitales y creativos", tag: "Próximamente"/);
+assert.match(picker, /Más rubros próximamente/);
+assert.match(picker, /aria-disabled="true"/);
+const soonBlock = picker.slice(picker.indexOf('className="business-category-soon"'));
+assert.doesNotMatch(soonBlock, /onClick|chooseOption|role="radio"/);
+assert.ok(
+  picker.indexOf('role="radiogroup"') < picker.indexOf('className="business-category-soon"')
+);
+assert.match(componentStyles, /\.business-category-option--soon/);
+
+// Nota fiscal para países distintos de Chile (solo presentación).
+assert.match(
+  quickFields,
+  /Moneda y formato disponibles\. Las reglas fiscales \(facturas, boletas, IVA\) están pensadas para Chile y están en revisión\./
+);
+assert.match(quickFields, /values\.paisCodigo !== "CL"/);
 
 assert.match(quickFields, /<BusinessCategoryPicker/);
 assert.match(company, /<BusinessCategoryPicker/);

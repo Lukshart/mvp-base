@@ -3,15 +3,24 @@ import {
   KeyRound,
   MailCheck,
   MailWarning,
+  Monitor,
+  Moon,
   RefreshCw,
   Save,
+  ScrollText,
   Send,
+  Sun,
+  SunMoon,
   UserRound,
 } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
+import LoadingState from "../components/ui/LoadingState";
+import SegmentedControl from "../components/ui/SegmentedControl";
 import StatusBadge from "../components/ui/StatusBadge";
+import usePrefersDarkMode from "../hooks/usePrefersDarkMode";
+import useThemePreference from "../hooks/useThemePreference";
 import { formatChileanRut, isValidChileanRut } from "../domain/fiscalIdentifier.mjs";
 import {
   refreshCurrentUser,
@@ -27,6 +36,12 @@ import {
 const ACCOUNT_SECTIONS = [
   { id: "perfil", label: "Perfil personal", icon: UserRound },
   { id: "acceso", label: "Acceso y seguridad", icon: KeyRound },
+  { id: "apariencia", label: "Apariencia", icon: SunMoon },
+];
+const THEME_OPTIONS = [
+  { value: "system", label: "Sistema", icon: Monitor },
+  { value: "light", label: "Claro", icon: Sun },
+  { value: "dark", label: "Oscuro", icon: Moon },
 ];
 const RESEND_COOLDOWN_SECONDS = 60;
 const PERSONAL_DOCUMENT_CONTEXT = Object.freeze({
@@ -46,7 +61,14 @@ function authErrorMessage(error, fallback) {
   return fallback;
 }
 
-function AccountPage({ onSessionRefresh, usuario }) {
+function formatLegalAcceptedAt(value) {
+  const date = value ? new Date(value) : null;
+  return date && !Number.isNaN(date.getTime())
+    ? date.toLocaleDateString("es-CL")
+    : "";
+}
+
+function AccountPage({ legalAcceptance, onSessionRefresh, usuario }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedSection = searchParams.get("seccion") || "perfil";
   const activeSection = ACCOUNT_SECTIONS.some(({ id }) => id === requestedSection)
@@ -67,6 +89,8 @@ function AccountPage({ onSessionRefresh, usuario }) {
   const [refreshing, setRefreshing] = React.useState(false);
   const [resettingPassword, setResettingPassword] = React.useState(false);
   const [resendCooldown, setResendCooldown] = React.useState(0);
+  const { preference: themePreference, setPreference: setThemePreference } = useThemePreference();
+  const isDarkTheme = usePrefersDarkMode();
 
   React.useEffect(() => {
     let active = true;
@@ -259,7 +283,7 @@ function AccountPage({ onSessionRefresh, usuario }) {
               <h2 id="personal-profile-title" tabIndex="-1">Perfil personal</h2>
               <p>La información se guarda únicamente en tu cuenta personal y no modifica los datos de ninguna empresa.</p>
             </header>
-            {loading ? <p className="settings-loading">Cargando perfil...</p> : (
+            {loading ? <LoadingState variant="section" label="Cargando perfil..." /> : (
               <form onSubmit={submit} noValidate>
                 <fieldset className="settings-fieldset settings-card" disabled={saving}>
                   <legend className="sr-only">Datos personales</legend>
@@ -299,7 +323,7 @@ function AccountPage({ onSessionRefresh, usuario }) {
                 </fieldset>
                 {error && <p className="settings-message settings-message--error" role="alert">{error}</p>}
                 {success && <p className="settings-message settings-message--success" role="status">{success}</p>}
-                <div className="settings-save-row"><Button type="submit" icon={Save} disabled={saving}>{saving ? "Guardando..." : "Guardar perfil"}</Button></div>
+                <div className="settings-save-row"><Button type="submit" icon={Save} loading={saving}>{saving ? "Guardando..." : "Guardar perfil"}</Button></div>
               </form>
             )}
           </section>
@@ -331,7 +355,7 @@ function AccountPage({ onSessionRefresh, usuario }) {
                     type="button"
                     variant="secondary"
                     icon={RefreshCw}
-                    disabled={refreshing || resending}
+                    loading={refreshing} disabled={resending}
                     onClick={refreshVerification}
                   >
                     {refreshing ? "Comprobando..." : "Comprobar verificación"}
@@ -339,7 +363,7 @@ function AccountPage({ onSessionRefresh, usuario }) {
                   <Button
                     type="button"
                     icon={Send}
-                    disabled={resending || refreshing || resendCooldown > 0}
+                    loading={resending} disabled={refreshing || resendCooldown > 0}
                     onClick={resendVerification}
                   >
                     {resending
@@ -365,14 +389,62 @@ function AccountPage({ onSessionRefresh, usuario }) {
                 <Button
                   type="button"
                   variant="secondary"
-                  disabled={resettingPassword}
+                  loading={resettingPassword}
                   onClick={changePassword}
                 >
                   {resettingPassword ? "Enviando..." : "Enviar enlace para cambiar contraseña"}
                 </Button>
               </div>
+              {legalAcceptance?.acceptedVersion && (
+                <div className="account-security-row">
+                  <div className="account-security-row__icon" aria-hidden="true">
+                    <AppIcon icon={ScrollText} size={20} />
+                  </div>
+                  <div className="account-security-row__copy">
+                    <span>Política de privacidad y términos de uso</span>
+                    <strong>Versión aceptada: {legalAcceptance.acceptedVersion}</strong>
+                    <small>
+                      {formatLegalAcceptedAt(legalAcceptance.acceptedAt)
+                        ? `Aceptada el ${formatLegalAcceptedAt(legalAcceptance.acceptedAt)}.`
+                        : "Fecha de aceptación no disponible."}
+                    </small>
+                  </div>
+                </div>
+              )}
               {securityError && <p className="settings-message settings-message--error" role="alert">{securityError}</p>}
               {securityMessage && <p className="settings-message settings-message--success" role="status">{securityMessage}</p>}
+            </div>
+          </section>
+        )}
+
+        {activeSection === "apariencia" && (
+          <section id="cuenta-apariencia" className="settings-section" aria-labelledby="account-appearance-title">
+            <header className="settings-section__header">
+              <h2 id="account-appearance-title" tabIndex="-1">Apariencia</h2>
+              <p>Elige cómo se ve ValoraCloud en este dispositivo.</p>
+            </header>
+            <div className="settings-card account-security-card">
+              <div className="account-security-row">
+                <div className="account-security-row__icon" aria-hidden="true">
+                  <AppIcon icon={SunMoon} size={20} />
+                </div>
+                <div className="account-security-row__copy">
+                  <span>Tema</span>
+                  <strong>
+                    {themePreference === "system"
+                      ? `Igual que el sistema (ahora ${isDarkTheme ? "oscuro" : "claro"})`
+                      : themePreference === "dark" ? "Oscuro" : "Claro"}
+                  </strong>
+                  <small>Es una preferencia de este dispositivo: se guarda en este navegador, no en tu cuenta.</small>
+                </div>
+                <SegmentedControl
+                  legend="Tema de ValoraCloud"
+                  name="account-theme"
+                  onChange={setThemePreference}
+                  options={THEME_OPTIONS}
+                  value={themePreference}
+                />
+              </div>
             </div>
           </section>
         )}

@@ -5,24 +5,24 @@
 **Implementado:** ficha administrativa con nombre, cliente y cotización
 opcionales, responsable, participantes reales, prioridad y fechas; expediente
 comercial; tareas con subtareas; documentación textual; HH, gastos y materiales
-con costo congelado; y balance autoritativo de Proyecto.
+con costo congelado; y balance autoritativo de Proyecto. También implementados
+(SPEC 019, commit `ea203c1`): selector de cotización buscable y vista de tablero
+de tareas dentro de la ficha de un Proyecto abierto. También implementados
+(SPEC 020, commit `a2fdeb7`): Adicionales facturables y evidencia de gastos.
 
-**Confirmado pendiente:** selector de cotización buscable, reducción de ruido
-visual, separación más clara entre ficha y espacio operativo, y tablero de
-tareas abierto para un Proyecto concreto. El tablero vigente todavía presenta
-las fichas de múltiples Proyectos como tarjetas.
+**Confirmado pendiente:** reducción de ruido visual y separación más clara
+entre ficha y espacio operativo. El tablero de `/trabajos` sigue presentando las
+fichas de múltiples Proyectos como tarjetas; el tablero de tareas por Proyecto
+es una vista adicional dentro de la ficha (SPEC 019 §2.5). La revisión visual
+de lo implementado sigue diferida a `PENDING_GLOBAL_QA`.
 
-También está pendiente distinguir costos internos no facturables de
-materiales/adicionales facturables solicitados por el cliente. Un adicional
-facturable deberá consumir stock e incrementar el cobro asociado al Proyecto;
-HH, comida, combustible y gastos internos no se cobrarán automáticamente. No se
-ha definido todavía el contrato de modificación del cobro ni su interacción con
-Cotización/Venta, por lo que queda pendiente de diseño y no debe inferirse del
-libro de materiales actual.
+Un adicional facturable es un concepto comercial `PENDIENTE_COBRO` que se cobra
+al incorporarse como línea de una Venta confirmada (SPEC 020); el consumo de
+stock y el ingreso ocurren al confirmar esa Venta, no al registrar el adicional.
+HH, comida, combustible y gastos internos no se cobran automáticamente.
 
-La documentación de tareas vigente es textual. Un gasto interno deberá poder
-conservar evidencia/boleta y autoría en una etapa posterior; almacenamiento,
-retención, permisos y modelo de archivo quedan pendientes de diseño.
+La documentación de tareas es textual. Un gasto de Proyecto puede conservar
+evidencia/boleta adjunta con autoría (SPEC 020, Storage Rules incluidas).
 
 ## Objetivo
 
@@ -129,17 +129,17 @@ El historial registra creación, cambios de estado y responsable, participantes 
 
 La ruta `/trabajos` ofrece búsqueda y filtros, lista responsive y tablero sin drag-and-drop. Cada tarjeta resume responsable, prioridad, progreso, tareas, costo acumulado, último avance, espera y falta de actividad. La ficha prioriza resumen, tareas/subtareas y costos por fuente/día; documentación e historial permanecen secundarios. Completar con pendientes exige confirmación explícita y conserva el progreso real.
 
-La descripción anterior corresponde a la interfaz implementada. El target que
-la sustituirá sólo en este punto es: seleccionar primero un Proyecto y abrir un
-tablero con sus tareas; no presentar cada ficha de Proyecto como una tarjeta del
-tablero operativo.
+La descripción anterior corresponde a la interfaz implementada. Además, la
+sección de tareas de la ficha de un Proyecto abierto ofrece una vista
+Lista/Tablero de sus tareas (SPEC 019). El tablero de `/trabajos` no fue
+sustituido: sigue presentando cada Proyecto como una tarjeta.
 
 ## Límites
 
 - Sin facturación, pagos ni conversión FX.
-- Sin archivos adjuntos en el estado actual, comentarios anidados, subtareas
-  anidadas o dependencias. La evidencia de gastos confirmada post-demo amplía
-  este límite sólo cuando exista un diseño seguro aprobado.
+- Sin archivos adjuntos, salvo la evidencia de gastos (SPEC 020: PDF, JPEG o
+  PNG, hasta 5 MB y hasta 5 archivos por gasto), ni comentarios anidados,
+  subtareas anidadas o dependencias.
 - Sin drag-and-drop.
 
 Los documentos generados por ValoraCloud no se denominan “factura electrónica”

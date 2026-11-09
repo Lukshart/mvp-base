@@ -11,10 +11,15 @@ import {
   calculateQuoteTotals,
   canDuplicateQuotes,
   DRAFT_QUOTE_NUMBER_LABEL,
+  getQuoteExpiryAlert,
   getQuoteStatusLabel,
   getQuotePdfFileName,
+  isAdvancedQuoteScope,
+  isValidQuoteDateRange,
+  matchesQuoteQuickFilter,
   normalizeQuoteItem,
   normalizeScopeSections,
+  QUOTE_SIMPLE_SCOPE_TITLE,
   resolveQuoteClientSelectionSnapshot,
 } from "../src/domain/quoteModel.mjs";
 import {filterSelectableClients} from "../src/domain/clientModel.mjs";
@@ -27,12 +32,12 @@ const company = {
   nombreComercial: "BAGNER Servicios Integrales",
   razonSocial: "Bagner Servicios Integrales SpA",
   rut: "77.091.679-8",
-  direccion: "Tamarugal 2985",
+  direccion: "Calle Ficticia 1234",
   ciudad: "Iquique",
   region: "I Región",
-  responsable: "Bruno Pairumani Altieri",
-  telefono: "+56 9 8247 0752",
-  email: "bruno.pairumani@bagner.cl",
+  responsable: "Persona de Prueba",
+  telefono: "+56 9 1234 5678",
+  email: "persona.prueba@example.test",
   condicionesPago: "50% al inicio y 50% al finalizar el trabajo",
   validezCotizacionDias: 10,
 };
@@ -298,6 +303,28 @@ assert.throws(() => calculateQuoteTotals([item(1)], 2000), /no puede superar/);
 console.log("OK validación: cantidades, precios, NaN y descuentos inválidos rechazados");
 
 assert.equal(calculateQuoteExpiryDate("2026-06-25", 10), "2026-07-05");
+
+// Vigencia en el historial: fechaVencimiento es el último día válido y solo
+// las emitidas generan aviso (incluidas las emitidas a mano que el job de
+// vencimiento no alcanza).
+const emitted = (fechaVencimiento) => ({estado: "emitida", fechaVencimiento});
+assert.deepEqual(getQuoteExpiryAlert(emitted("2026-10-09"), "2026-10-09"), {kind: "por_vencer", days: 0});
+assert.deepEqual(getQuoteExpiryAlert(emitted("2026-10-12"), "2026-10-09"), {kind: "por_vencer", days: 3});
+assert.deepEqual(getQuoteExpiryAlert(emitted("2026-10-13"), "2026-10-09"), {kind: "", days: 4});
+assert.deepEqual(getQuoteExpiryAlert(emitted("2026-10-08"), "2026-10-09"), {kind: "vencida_sin_marcar", days: -1});
+assert.deepEqual(getQuoteExpiryAlert(emitted("2026-11-02"), "2026-10-30"), {kind: "por_vencer", days: 3});
+assert.equal(getQuoteExpiryAlert({estado: "borrador", fechaVencimiento: "2026-10-09"}, "2026-10-09").kind, "");
+assert.equal(getQuoteExpiryAlert({estado: "aceptada", fechaVencimiento: "2026-10-01"}, "2026-10-09").kind, "");
+assert.equal(getQuoteExpiryAlert(emitted(""), "2026-10-09").kind, "");
+assert.equal(getQuoteExpiryAlert(emitted("2026-10-09"), "").kind, "");
+assert.equal(matchesQuoteQuickFilter({estado: "archivada"}, "todos", "2026-10-09"), false);
+assert.equal(matchesQuoteQuickFilter({}, "todos", "2026-10-09"), true);
+assert.equal(matchesQuoteQuickFilter({}, "borrador", "2026-10-09"), true);
+assert.equal(matchesQuoteQuickFilter({estado: "archivada"}, "archivada", "2026-10-09"), true);
+assert.equal(matchesQuoteQuickFilter(emitted("2026-10-01"), "por_vencer", "2026-10-09"), true);
+assert.equal(matchesQuoteQuickFilter(emitted("2026-10-30"), "por_vencer", "2026-10-09"), false);
+assert.equal(matchesQuoteQuickFilter({estado: "vencida", fechaVencimiento: "2026-10-01"}, "por_vencer", "2026-10-09"), false);
+console.log("OK historial: aviso de vigencia y filtros rápidos por estado");
 console.log("OK fecha: vencimiento calculado");
 
 const longDescription = "Descripción técnica con áéíóú, ñ y alcance detallado. ".repeat(30);
@@ -314,6 +341,30 @@ assert.equal(
   "Informe"
 );
 console.log("OK contenido: descripciones extensas y alcance vacío/poblado");
+
+assert.equal(isAdvancedQuoteScope([]), false);
+assert.equal(isAdvancedQuoteScope([{ titulo: "", lineas: ["Instalación completa"] }]), false);
+assert.equal(
+  isAdvancedQuoteScope([{ titulo: QUOTE_SIMPLE_SCOPE_TITLE, lineas: ["Instalación completa"] }]),
+  false,
+  "una cotización guardada en modo simple debe seguir clasificando como simple al recargarla"
+);
+assert.equal(isAdvancedQuoteScope([{ titulo: "Materiales", lineas: ["Cemento"] }]), true);
+assert.equal(
+  isAdvancedQuoteScope([
+    { titulo: "", lineas: ["a"] },
+    { titulo: "", lineas: ["b"] },
+  ]),
+  true
+);
+console.log("OK alcance: modo simple sobrevive al round-trip, título editado y múltiples secciones siguen en modo avanzado");
+
+assert.equal(isValidQuoteDateRange("2026-09-15", "2026-09-25"), true);
+assert.equal(isValidQuoteDateRange("2026-09-15", "2026-09-15"), true);
+assert.equal(isValidQuoteDateRange("2026-09-25", "2026-09-15"), false);
+assert.equal(isValidQuoteDateRange("2026-09-15", ""), false);
+assert.equal(isValidQuoteDateRange("", "2026-09-15"), false);
+console.log("OK plazo: rango desde/hasta exige ambas fechas y rechaza hasta anterior a desde");
 
 const inventorySource = item(1);
 const snapshotted = normalizeQuoteItem(inventorySource, 0, { strict: true });
@@ -474,6 +525,8 @@ assert.match(sourceNewQuote, /savingRef\.current/);
 assert.match(sourceNewQuote, /estado:\s*"borrador"/);
 assert.match(sourceNewQuote, /openQuoteId/);
 assert.match(sourceNewQuote, /Más condiciones/);
+assert.match(sourceNewQuote, /isAdvancedQuoteScope\(quote\.seccionesAlcance\)/);
+assert.match(sourceNewQuote, /isValidQuoteDateRange\(plazoRangeDraft\.desde, plazoRangeDraft\.hasta\)/);
 assert.match(sourceNewQuote, /Restaurar valores de Empresa/);
 assert.match(sourceNewQuote, /if \(isEditMode\) return;/);
 assert.match(sourceNewQuote, /profile\.plazoEntregaCotizacion/);
@@ -485,14 +538,43 @@ assert.doesNotMatch(sourceQuoteItems, /Usar asistente/);
 assert.match(sourceQuoteSummary, /Crear cotización/);
 assert.match(sourceQuoteSummary, /Guardar cambios/);
 assert.doesNotMatch(sourceQuoteSummary, /Vista previa|Enviar por correo|Descargar PDF/);
+// Formulario: sin franja superior (la barra ya muestra el título); el aviso
+// del número va bajo el botón y, en edición, número y fecha en el resumen.
+assert.doesNotMatch(sourceNewQuote, /quote-workspace__header|quote-workspace__eyebrow/);
+assert.doesNotMatch(sourceQuoteWorkspaceCss, /quote-workspace__header|quote-workspace__eyebrow/);
+assert.match(sourceQuoteSummary, /\{!isEditMode && <small className="quote-summary__hint">El número se asignará al crear la cotización\.<\/small>\}/);
+assert.match(sourceQuoteSummary, /quoteNumber, quoteDate/);
+// "Crear cotización" también se deshabilita sin ítems y explica qué falta.
+assert.match(sourceNewQuote, /const saveBlocked = saveBlockedByClient \|\| saveBlockedByItems;/);
+assert.match(sourceNewQuote, /missingRequirements\.push\("cliente"\)/);
+assert.match(sourceNewQuote, /missingRequirements\.push\("al menos un ítem"\)/);
+assert.match(sourceNewQuote, /`Falta: \$\{missingRequirements\.join\(" · "\)\}`/);
+assert.match(sourceQuoteSummary, /disabled=\{saving \|\| saveBlocked\} aria-describedby=/);
+assert.match(sourceQuoteSummary, /id="quote-save-blocked-reason"/);
+// Ítems: un solo botón relleno (el del encabezado); el vacío es solo texto.
+assert.equal((sourceQuoteItems.match(/quote-workspace__button--primary/g) || []).length, 1);
+assert.doesNotMatch(sourceQuoteItems, /Abrir catálogo/);
+// "Asunto" sólo en el formulario: sigue guardándose como proyectoNombre y el
+// PDF y la vista de impresión conservan "Proyecto".
+assert.match(sourceNewQuote, /<span className="quote-workspace__kicker">Asunto<\/span>/);
+assert.match(sourceNewQuote, /Aparece como 'Proyecto' en el PDF\./);
+assert.doesNotMatch(sourceNewQuote, /Proyecto o trabajo/);
+assert.match(sourceQuoteDocument, /drawSectionHeading\(doc, "Proyecto"/);
+assert.match(sourceQuotePrintView, /<h3>Proyecto<\/h3>/);
+// Condiciones: campos alineados arriba, placeholder corto y "Qué incluye"
+// cerrado salvo que tenga contenido.
+assert.match(sourceQuoteWorkspaceCss, /\.quote-conditions-primary__grid > \* \{\s*align-self: start;/);
+assert.match(sourceNewQuote, /placeholder="Ej: 10 días hábiles"/);
+assert.match(sourceNewQuote, /const \[scopeOpen, setScopeOpen\] = useState\(false\);/);
+assert.match(sourceNewQuote, /setScopeOpen\(hasScopeContent\(editableQuote\.seccionesAlcance\)\);/);
 assert.match(sourceCompanyConfig, /Valores predeterminados para nuevas cotizaciones/);
 assert.doesNotMatch(sourceCompanyConfig, /Aceptación del cliente/);
 assert.match(sourceQuoteCatalog, /<ResponsiveDialog/);
 assert.match(sourceQuoteCatalog, /initialFocusRef=\{searchRef\}/);
 assert.match(sourceQuoteCatalog, /Agregar otra vez/);
 assert.doesNotMatch(sourceQuoteItems, /<table/);
-assert.match(sourceQuoteItems, /Editar descripción y unidad/);
-assert.match(sourceQuoteItems, /Subtotal \$\{formatCLP\(subtotal\)\}/);
+assert.match(sourceQuoteItems, /Personalizar ítem/);
+assert.match(sourceQuoteItems, /Subtotal \$\{formatBusinessAmount\(subtotal\)\}/);
 assert.match(sourceQuoteItems, /items\.length === 1 \? "" : "s"/);
 assert.match(sourceQuoteItems, /Agrega productos, servicios o actividades para construir la cotización\./);
 assert.match(sourceNewQuote, /saveAttempted \|\| itemsInteracted/);
@@ -524,6 +606,79 @@ assert.equal((quotePrimaryActionsSource.match(/: "WhatsApp"/g) || []).length, 1)
 assert.equal((quotePrimaryActionsSource.match(/: "Descargar PDF"/g) || []).length, 1);
 assert.equal((quotePrimaryActionsSource.match(/>\s*Imprimir\s*<\/button>/g) || []).length, 1);
 assert.doesNotMatch(quoteActionsSource, /Correo|WhatsApp|Descargar PDF|Imprimir|runPdfAction/);
+// Una acción principal por estado: Enviar en pendiente (Editar y Marcar como
+// emitida pasan a "Más acciones"), Reenviar en el menú de emitidas y Ver
+// venta cuando hay venta vinculada.
+assert.match(quoteActionsSource, /onClick=\{\(\) => onSend\(quote\)\}[\s\S]*?>\s*Enviar\s*<\/button>/);
+assert.match(quoteActionsSource, /actions=\{\[editMenuAction, emitMenuAction, archiveMenuAction\]\}/);
+assert.match(quoteActionsSource, /label: "Reenviar"/);
+// Filas: acciones en estilo secundario y "Más acciones" solo con ícono
+// (aria-label y title); el diálogo de detalle conserva el rótulo con texto.
+assert.match(quoteActionsSource, /const mainActionStyle = inRow \? styles\.secondaryButton : styles\.primaryButton;/);
+assert.doesNotMatch(quoteActionsSource, /style=\{styles\.primaryButton\}/);
+assert.equal((quoteActionsSource.match(/iconOnly=\{inRow\}/g) || []).length, (quoteActionsSource.match(/<MoreActionsMenu/g) || []).length);
+// El menú es el componente compartido de components/ui (también lo usa /inventario).
+const moreActionsMenuSource = fs.readFileSync("src/components/ui/MoreActionsMenu.jsx", "utf8");
+assert.match(sourceHistory, /import MoreActionsMenu from "\.\.\/components\/ui\/MoreActionsMenu";/);
+assert.doesNotMatch(sourceHistory, /function MoreActionsMenu|styles\.(moreActions|actionsMenu)/);
+assert.equal((quoteActionsSource.match(/menuLabel="Más acciones de cotización"/g) || []).length, (quoteActionsSource.match(/<MoreActionsMenu/g) || []).length);
+assert.match(moreActionsMenuSource, /label = "Más acciones"/);
+assert.match(moreActionsMenuSource, /aria-label=\{iconOnly \? label : undefined\}/);
+assert.match(moreActionsMenuSource, /title=\{iconOnly \? label : undefined\}/);
+assert.match(moreActionsMenuSource, /\{!iconOnly && <span>\{label\}<\/span>\}/);
+assert.match(moreActionsMenuSource, /role="menu"/);
+assert.match(moreActionsMenuSource, /role="menuitem"/);
+assert.match(moreActionsMenuSource, /\["ArrowDown", "ArrowUp", "Home", "End"\]/);
+assert.equal((sourceHistory.match(/<QuoteActions\s+inRow\b/g) || []).length, 2);
+// Tabla: mismo criterio que /clientes. Sin anchos fijos ni table-layout:
+// fixed (reparto automático), mismo relleno en todas las celdas (sin margen
+// extra en Total), Número/Estado/Total/Acciones sin partirse y la columna
+// Acciones solo para roles con acciones.
+const quoteTableCss = sourceInteriorCss.slice(
+  sourceInteriorCss.indexOf(".quote-history-table {"),
+  sourceInteriorCss.indexOf(".quote-history-table .quote-history-sale-link")
+).replace(/\/\*[\s\S]*?\*\//g, "");
+assert.match(quoteTableCss, /\.quote-history-table \{\s*min-width: 920px;\s*\}/);
+assert.doesNotMatch(quoteTableCss, /table-layout|(?<!-)\bwidth:|padding-right/);
+for (const selector of [
+  ".quote-history-table__number",
+  ".quote-history-table__status",
+  ".quote-history-table__total",
+  ".quote-history-table__actions button",
+]) {
+  const nowrapRule = quoteTableCss.slice(0, quoteTableCss.indexOf("white-space: nowrap"));
+  assert.ok(nowrapRule.includes(`${selector},`) || nowrapRule.includes(`${selector} {`), selector);
+}
+assert.match(sourceHistory, /<td className="quote-history-table__number">/);
+assert.match(sourceHistory, /<td className="quote-history-table__status">/);
+assert.match(sourceHistory, /\{canDuplicate && <th className="quote-history-table__actions">Acciones<\/th>\}/);
+assert.match(sourceHistory, /\{canDuplicate && \(\s*<td className="quote-history-table__actions">/);
+assert.match(sourceHistory, /columns=\{canDuplicate \? 6 : 5\}/);
+assert.doesNotMatch(sourceHistory, /quote-history-table--readonly|quote-history-table__client-cell/);
+// Única excepción a la separación uniforme: más aire entre Total y Válida
+// hasta, en cabecera, celdas y esqueleto de carga.
+assert.match(
+  quoteTableCss,
+  /\.quote-history-table \.quote-history-table__validity,\s*\.quote-history-skeleton th:nth-child\(5\),\s*\.quote-history-skeleton td:nth-child\(5\) \{\s*padding-left: var\(--space-8\);\s*\}/
+);
+assert.match(sourceHistory, /<th className="quote-history-table__validity">Válida hasta<\/th>/);
+assert.match(sourceHistory, /<td className="quote-history-table__validity">\s*<QuoteValidity/);
+assert.match(sourceHistory, /<SkeletonTable className="erp-desktop-only quote-history-skeleton" columns=\{canDuplicate \? 6 : 5\} \/>/);
+assert.match(quoteActionsSource, />\s*Ver venta\s*<\/button>/);
+assert.match(sourceHistory, /<SegmentedControl[\s\S]*?options=\{quickFilterOptions\}[\s\S]*?value=\{statusFilter\}/);
+assert.match(sourceHistory, /Válida hasta/);
+assert.doesNotMatch(sourceHistory, /Actualización<\/th>/);
+assert.match(sourceHistory, /getQuoteClientFiscalId\(quote\)/);
+// Cierre: solo la aceptación tiene fecha confiable (ventaRegistradaEn);
+// rechazadas y vencidas muestran solo la emisión, sin vigencia.
+assert.match(sourceHistory, /estado === "aceptada" && quote\.ventaRegistradaEn/);
+assert.match(sourceHistory, /Aceptada \{formatDate\(quote\.ventaRegistradaEn\)\}/);
+assert.match(sourceHistory, /if \(estado !== "emitida"\) \{[\s\S]*?return <span>\{emissionLabel\}<\/span>;/);
+// Sin acciones en la fila: número de venta bajo "Aceptada" (sin duplicar
+// el botón "Ver venta" de quienes sí tienen acciones).
+assert.match(sourceHistory, /!canDuplicate && quote\.estado === "aceptada" && quote\.ventaId && quote\.ventaNumero/);
+assert.match(sourceHistory, /canReadSales \? \(/);
+assert.doesNotMatch(sourceHistory, /quote-history-table__sale/);
 assert.doesNotMatch(quoteDetailSource, /icon=\{Mail\}|icon=\{MessageCircle\}|icon=\{Download\}|icon=\{Printer\}|runPdfAction/);
 assert.match(commercialStatusSource, /label: "Estado actual"/);
 assert.match(commercialStatusSource, /getQuoteStatusLabel\(quote\.estado\)/);

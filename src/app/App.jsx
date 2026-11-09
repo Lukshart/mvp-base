@@ -9,6 +9,7 @@ import {
 
 import AppLayout from "../layout/AppLayout";
 import EnvironmentNotice from "../components/EnvironmentNotice";
+import LoadingScreen from "../components/LoadingScreen";
 import ToastRouteSync from "../components/ToastRouteSync";
 import CompanyPage from "../pages/CompanyPage";
 import ClientsPage from "../pages/ClientsPage";
@@ -17,13 +18,18 @@ import AccountPage from "../pages/AccountPage";
 import FinancePage from "../pages/FinancePage";
 import InventoryPage from "../pages/InventoryPage";
 import LoginPage from "../pages/LoginPage";
-import MarketReferencesPage from "../pages/MarketReferencesPage";
+import MarketPriceReferencesPage from "../pages/MarketPriceReferencesPage";
 import NewQuotePage from "../pages/NewQuotePage";
 import OnboardingPage from "../pages/OnboardingPage";
 import InitialBusinessActivationPage from "../pages/InitialBusinessActivationPage";
 import PricingPage from "../pages/PricingPage";
 import QuoteHistoryPage from "../pages/QuoteHistoryPage";
 import PublicQuoteProposalPage from "../pages/PublicQuoteProposalPage";
+import LegalDocumentPage from "../features/legal/LegalDocumentPage";
+import LegalAcceptancePage from "../features/legal/LegalAcceptancePage";
+import BusinessWaitingPage from "../features/auth/BusinessWaitingPage";
+import { ACCESS_HINT } from "../domain/accessHint.mjs";
+import { clearAccessHint, useAccessHint } from "../hooks/useAccessHint";
 import NewPurchaseOrderPage from "../pages/NewPurchaseOrderPage";
 import PurchaseOrdersPage from "../pages/PurchaseOrdersPage";
 import NewPurchasePage from "../pages/NewPurchasePage";
@@ -32,7 +38,6 @@ import ReceptionsPage from "../pages/ReceptionsPage";
 import NewReceptionPage from "../pages/NewReceptionPage";
 import NewSalePage from "../pages/NewSalePage";
 import SalesPage from "../pages/SalesPage";
-import ReferenceTasksPage from "../pages/ReferenceTasksPage";
 import StatisticsPage from "../pages/StatisticsPage";
 import BusinessUnavailablePage from "../pages/BusinessUnavailablePage";
 import EmployeesPage from "../pages/EmployeesPage";
@@ -45,8 +50,13 @@ import NewWorkOrderPage from "../pages/NewWorkOrderPage";
 import WorkOrderDetailPage from "../pages/WorkOrderDetailPage";
 import WorkshopPlazasPage from "../pages/WorkshopPlazasPage";
 import Button from "../components/ui/Button";
+import { BusinessFormatProvider } from "../hooks/useBusinessFormat";
+import { ThemePreferenceProvider } from "../hooks/useThemePreference";
 import BusinessOperationGate from "../components/BusinessOperationGate";
-import { subscribeToAuth } from "../services/authService";
+import {
+  subscribeToAuth,
+  waitForRegistrationSetup,
+} from "../services/authService";
 import {
   getBusinessSession,
   setActiveBusiness,
@@ -54,12 +64,17 @@ import {
 import {isPlatformRoute} from "../domain/platformAccess.mjs";
 import {resolveInitialActivationRoute} from "../domain/initialActivationNavigation.mjs";
 import {
+  LEGAL_ACCEPTANCE_GATE,
+  resolveLegalAcceptanceGate,
+} from "../domain/legalAcceptanceGate.mjs";
+import {
   canBusinessOperate,
   isUnverifiedBusinessAllowedPath,
 } from "../domain/businessOperations.mjs";
 import {
   BUSINESS_PERMISSIONS,
   canAccessBusinessPath,
+  getBusinessPathOptions,
   getDefaultBusinessPath,
   hasBusinessPermission,
 } from "../domain/rbac.mjs";
@@ -72,14 +87,6 @@ import {
   PlatformUserDetailPage,
   PlatformUsersPage,
 } from "../platform/PlatformAdminPages";
-
-function LoadingScreen() {
-  return (
-    <div className="auth-screen">
-      <p className="muted">Cargando ValoraCloud...</p>
-    </div>
-  );
-}
 
 function BusinessSessionError({ onRetry }) {
   return (
@@ -97,6 +104,20 @@ function BusinessSessionError({ onRetry }) {
         </div>
       </section>
     </main>
+  );
+}
+
+// Tope de espera por la aceptación legal de un registro en curso (SPEC 024,
+// 5.4): una callable colgada no debe bloquear la carga de la sesión.
+const REGISTRATION_SETUP_TIMEOUT_MS = 8000;
+
+function waitForRegistrationSetupWithTimeout() {
+  let timerId;
+  const timeout = new Promise((resolve) => {
+    timerId = setTimeout(resolve, REGISTRATION_SETUP_TIMEOUT_MS);
+  });
+  return Promise.race([waitForRegistrationSetup(), timeout]).finally(() =>
+    clearTimeout(timerId)
   );
 }
 
@@ -118,6 +139,9 @@ function AppRoutes({
   platformAccess,
 }) {
   const location = useLocation();
+  // Pista de interfaz del ingreso (SPEC 029): solo elige entre la pantalla de
+  // espera y el onboarding; no concede acceso ni se envía al backend.
+  const accessHint = useAccessHint();
   const initialActivationRoute = resolveInitialActivationRoute({
     activeBusinessId: businessSession?.activeBusiness?.id || "",
     destination: initialActivationDestination,
@@ -131,11 +155,35 @@ function AppRoutes({
     }
   }, [initialActivationRoute.status, onInitialActivationSettled]);
 
+  const legalAcceptanceGate = resolveLegalAcceptanceGate(
+    businessSession?.legalAcceptance
+  );
+  const legalAcceptanceUnknown =
+    Boolean(businessSession) &&
+    legalAcceptanceGate === LEGAL_ACCEPTANCE_GATE.UNKNOWN;
+
+  useEffect(() => {
+    if (legalAcceptanceUnknown) {
+      console.warn(
+        "La sesión no trae legalAcceptance (backend sin la SPEC 024): no se exige la aceptación legal."
+      );
+    }
+  }, [legalAcceptanceUnknown]);
+
   if (/^\/propuesta\/[^/]+\/?$/.test(location.pathname)) {
     return (
       <Routes>
         <Route path="/propuesta/:token" element={<PublicQuoteProposalPage />} />
         <Route path="*" element={<PublicQuoteProposalPage />} />
+      </Routes>
+    );
+  }
+
+  if (/^\/(privacidad|terminos)\/?$/.test(location.pathname)) {
+    return (
+      <Routes>
+        <Route path="/privacidad" element={<LegalDocumentPage documentKey="privacidad" />} />
+        <Route path="/terminos" element={<LegalDocumentPage documentKey="terminos" />} />
       </Routes>
     );
   }
@@ -155,7 +203,10 @@ function AppRoutes({
     if (!platformAccess?.isSuperadmin) {
       return <Navigate to={businessSession?.needsOnboarding
         ? "/onboarding"
-        : getDefaultBusinessPath(businessSession?.activeBusiness)} replace />;
+        : getDefaultBusinessPath(
+          businessSession?.activeBusiness,
+          getBusinessPathOptions(businessSession?.activeBusiness)
+        )} replace />;
     }
     return <Routes>
       <Route element={<PlatformAdminLayout usuario={usuario} businessSession={businessSession} onReturnToErp={onBusinessCreated} />}>
@@ -175,6 +226,16 @@ function AppRoutes({
 
   if (businessError) {
     return <BusinessSessionError onRetry={onRetry} />;
+  }
+
+  if (legalAcceptanceGate === LEGAL_ACCEPTANCE_GATE.REQUIRED) {
+    return (
+      <LegalAcceptancePage
+        usuario={usuario}
+        isUpdate={Boolean(businessSession.legalAcceptance.acceptedVersion)}
+        onAccepted={onBusinessCreated}
+      />
+    );
   }
 
   if (businessSession?.accessState === "unavailable") {
@@ -197,6 +258,15 @@ function AppRoutes({
     if (platformAccess?.isSuperadmin && location.pathname === "/login") {
       return <Navigate to="/admin/dashboard" replace />;
     }
+    if (accessHint === ACCESS_HINT.COLABORADOR) {
+      return (
+        <BusinessWaitingPage
+          usuario={usuario}
+          onRefresh={onBusinessCreated}
+          onCreateOwnBusiness={clearAccessHint}
+        />
+      );
+    }
     return (
       <Routes>
         <Route
@@ -205,6 +275,7 @@ function AppRoutes({
             <OnboardingPage
               usuario={usuario}
               onBusinessCreated={onFirstBusinessCreated}
+              onInvitationAccepted={onBusinessCreated}
             />
           }
         />
@@ -216,8 +287,9 @@ function AppRoutes({
   const activeBusiness = businessSession?.activeBusiness;
   const businessId = activeBusiness?.id;
   const role = activeBusiness?.role;
+  const businessPathOptions = getBusinessPathOptions(activeBusiness);
   const safeLanding = canBusinessOperate(activeBusiness)
-    ? getDefaultBusinessPath(activeBusiness)
+    ? getDefaultBusinessPath(activeBusiness, businessPathOptions)
     : "/empresa?seccion=verificacion";
   if (initialActivationRoute.status === "prompt") {
     return (
@@ -234,7 +306,7 @@ function AppRoutes({
   const unverifiedSetupAccess = !canBusinessOperate(activeBusiness) &&
     isUnverifiedBusinessAllowedPath(location.pathname);
   if (!["/", "/login", "/onboarding"].includes(location.pathname) &&
-      !canAccessBusinessPath(activeBusiness, location.pathname) &&
+      !canAccessBusinessPath(activeBusiness, location.pathname, businessPathOptions) &&
       !unverifiedSetupAccess) {
     return <Navigate to={safeLanding} replace />;
   }
@@ -406,6 +478,7 @@ function AppRoutes({
             <AccountPage
               key={usuario?.uid}
               usuario={usuario}
+              legalAcceptance={businessSession?.legalAcceptance}
               onSessionRefresh={onBusinessCreated}
             />
           }
@@ -421,17 +494,9 @@ function AppRoutes({
           }
         />
         <Route
-          path="/referencias"
+          path="/inventario/:itemId/referencias"
           element={
-            <MarketReferencesPage key={businessId} userId={businessId} role={activeBusiness?.role}
-        />
-          }
-        />
-        <Route
-          path="/tareas-referencias"
-          element={
-            <ReferenceTasksPage key={businessId} userId={businessId} role={activeBusiness?.role}
-        />
+            <MarketPriceReferencesPage key={businessId} businessId={businessId} />
           }
         />
         <Route
@@ -444,6 +509,7 @@ function AppRoutes({
             <ClientsPage
               key={businessId}
               businessId={businessId}
+              canCreateQuotes={canWriteQuotes}
               countryCode={activeBusiness?.paisCodigo}
               role={activeBusiness?.role}
             />
@@ -740,7 +806,11 @@ function App() {
     let active = true;
 
     setBusinessState({ loading: true, data: null, error: null });
-    getBusinessSession()
+    // Si hay un registro en curso, espera a que termine su aceptación legal
+    // (con tope) para no mostrar la pantalla de aceptación a quien acaba de
+    // aceptar en el registro. Si vence, el guard resuelve con la sesión.
+    waitForRegistrationSetupWithTimeout()
+      .then(() => (active ? getBusinessSession() : null))
       .then((data) => {
         if (active) setBusinessState({ loading: false, data, error: null });
       })
@@ -769,30 +839,38 @@ function App() {
     setInitialActivationDestination("");
   }, []);
 
+  // Ancestro común de AppLayout (topbar) y de las rutas (Mi cuenta): una sola
+  // fuente de estado para la preferencia de tema.
   return (
-    <BrowserRouter>
-      <ToastRouteSync />
-      <EnvironmentNotice />
-      <AppRoutes
-        usuario={usuario}
-        loading={Boolean(cargando || platformState.loading)}
-        businessLoading={Boolean(
-          usuario && !businessState.data && !businessState.error
-        )}
-        businessError={businessState.error}
-        businessChanging={businessChanging}
-        businessSession={businessState.data}
-        initialActivationBusinessId={initialActivationBusinessId}
-        initialActivationDestination={initialActivationDestination}
-        onBusinessChanged={changeActiveBusiness}
-        onBusinessCreated={refreshBusinessSession}
-        onFirstBusinessCreated={handleFirstBusinessCreated}
-        onInitialActivationFinished={finishInitialActivation}
-        onInitialActivationSettled={settleInitialActivation}
-        onRetry={() => refreshBusinessSession().catch(() => {})}
-        platformAccess={platformState.data}
-      />
-    </BrowserRouter>
+    <ThemePreferenceProvider>
+      <BrowserRouter>
+        <ToastRouteSync />
+        <EnvironmentNotice />
+        {/* Moneda y formato regional del negocio activo (el mismo
+            businessSession.activeBusiness que usa AppRoutes). */}
+        <BusinessFormatProvider business={businessState.data?.activeBusiness}>
+          <AppRoutes
+            usuario={usuario}
+            loading={Boolean(cargando || platformState.loading)}
+            businessLoading={Boolean(
+              usuario && !businessState.data && !businessState.error
+            )}
+            businessError={businessState.error}
+            businessChanging={businessChanging}
+            businessSession={businessState.data}
+            initialActivationBusinessId={initialActivationBusinessId}
+            initialActivationDestination={initialActivationDestination}
+            onBusinessChanged={changeActiveBusiness}
+            onBusinessCreated={refreshBusinessSession}
+            onFirstBusinessCreated={handleFirstBusinessCreated}
+            onInitialActivationFinished={finishInitialActivation}
+            onInitialActivationSettled={settleInitialActivation}
+            onRetry={() => refreshBusinessSession().catch(() => {})}
+            platformAccess={platformState.data}
+          />
+        </BusinessFormatProvider>
+      </BrowserRouter>
+    </ThemePreferenceProvider>
   );
 }
 

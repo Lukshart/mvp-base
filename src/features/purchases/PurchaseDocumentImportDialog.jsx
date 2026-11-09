@@ -1,6 +1,7 @@
 import {useEffect, useMemo, useRef, useState} from "react";
 import Button from "../../components/ui/Button";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
+import Spinner from "../../components/ui/Spinner";
 import {
   applyPurchaseDocumentImport,
   buildPurchaseDocumentPreview,
@@ -15,6 +16,7 @@ import {
 } from "../../services/inventoryAiImportService";
 import {formatMoney} from "../../utils/formatters";
 import "../receptions/receptions.css";
+import useBusinessFormat from "../../hooks/useBusinessFormat";
 
 const EMPTY_FIELDS = {
   tipoDocumento: "factura",
@@ -55,6 +57,7 @@ export default function PurchaseDocumentImportDialog({
   providers,
   taxName = "Impuesto",
 }) {
+  const { locale: businessLocale } = useBusinessFormat();
   const inputRef = useRef(null);
   const applyGuard = useRef(false);
   const [fileData, setFileData] = useState(null);
@@ -209,7 +212,7 @@ export default function PurchaseDocumentImportDialog({
 
   const footer = rows.length ? <>
     <Button type="button" variant="secondary" disabled={analyzing || applying} onClick={close}>Cancelar</Button>
-    <Button type="button" aria-busy={applying} disabled={analyzing || applying || !summary.lista || !selectedProviderId} onClick={apply}>
+    <Button type="button" loading={applying} disabled={analyzing || !summary.lista || !selectedProviderId} onClick={apply}>
       {applying ? "Aplicando factura…" : "Aplicar a Nueva compra"}
     </Button>
   </> : null;
@@ -240,8 +243,8 @@ export default function PurchaseDocumentImportDialog({
         <div className="reception-import__file-actions"><button type="button" disabled={loading || analyzing || applying} onClick={chooseAnotherFile}>Cambiar</button><button type="button" disabled={loading || analyzing || applying} onClick={reset}>Eliminar</button></div>
       </section>}
       {fileData && !rows.length && <section className="reception-import__analysis">
-        {analyzing ? <div className="reception-import__processing" role="status" aria-live="polite"><span className="reception-import__spinner" aria-hidden="true" /><div><strong>{ANALYSIS_MESSAGES[analysisMessageIndex]}</strong><span>Todavía no se guarda ni confirma ninguna compra.</span></div></div> : <><strong>Factura lista para analizar</strong><span>Propondremos proveedor, líneas y totales para revisión humana.</span></>}
-        <Button type="button" disabled={loading || analyzing || !fileData.base64} onClick={analyze}>{analyzing ? "Analizando factura…" : "Analizar y vincular"}</Button>
+        {analyzing ? <div className="reception-import__processing" role="status" aria-live="polite"><Spinner /><div><strong>{ANALYSIS_MESSAGES[analysisMessageIndex]}</strong><span>Todavía no se guarda ni confirma ninguna compra.</span></div></div> : <><strong>Factura lista para analizar</strong><span>Propondremos proveedor, líneas y totales para revisión humana.</span></>}
+        <Button type="button" loading={analyzing} disabled={loading || !fileData.base64} onClick={analyze}>{analyzing ? "Analizando factura…" : "Analizar y vincular"}</Button>
       </section>}
       {error && <p className="po-message po-message--error" role="alert">{error}</p>}
 
@@ -259,9 +262,9 @@ export default function PurchaseDocumentImportDialog({
         <section className="reception-import__document-summary" aria-label="Resumen de la factura">
           <div><span>Folio</span><strong>{fields.numeroDocumento || "Sin folio"}</strong></div>
           <div><span>Fecha</span><strong>{fields.fechaDocumento || "Sin fecha"}</strong></div>
-          <div><span>Neto</span><strong>{hasValue(fields.neto) ? formatMoney(fields.neto, currency) : "—"}</strong></div>
-          <div><span>{hasValue(fields.impuestoPorcentaje) ? `${taxLabel} (${fields.impuestoPorcentaje}%)` : taxLabel}</span><strong>{hasValue(fields.impuestoMonto) ? formatMoney(fields.impuestoMonto, currency) : "—"}</strong></div>
-          <div><span>Total</span><strong>{hasValue(fields.total) ? formatMoney(fields.total, currency) : "—"}</strong></div>
+          <div><span>Neto</span><strong>{hasValue(fields.neto) ? formatMoney(fields.neto, currency, businessLocale) : "—"}</strong></div>
+          <div><span>{hasValue(fields.impuestoPorcentaje) ? `${taxLabel} (${fields.impuestoPorcentaje}%)` : taxLabel}</span><strong>{hasValue(fields.impuestoMonto) ? formatMoney(fields.impuestoMonto, currency, businessLocale) : "—"}</strong></div>
+          <div><span>Total</span><strong>{hasValue(fields.total) ? formatMoney(fields.total, currency, businessLocale) : "—"}</strong></div>
           <div><span>Líneas</span><strong>{summary.vinculadas} de {summary.total} listas</strong></div>
         </section>
         <details className="reception-import__document-details">

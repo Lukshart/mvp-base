@@ -1,4 +1,5 @@
 const {createHash, randomUUID} = require("node:crypto");
+const {VERTICAL_MODULES, normalizeEnabledModules} = require("./verticalModules");
 
 const PLATFORM_SUPERADMIN = "PLATFORM_SUPERADMIN";
 const ACTIVE_STATUS = "activo";
@@ -72,6 +73,17 @@ function timestampToIso(value) {
   if (!value) return null;
   const date = typeof value?.toDate === "function" ? value.toDate() : new Date(value);
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+const MODULES_EVENT_TYPE = "modulos_actualizados";
+const MAX_MODULES_PER_REQUEST = 50;
+
+function moduleIds(value) {
+  return [...new Set(Array.isArray(value) ? value : [])]
+    .filter((item) => typeof item === "string")
+    .map((item) => text(item, 60))
+    .filter(Boolean)
+    .sort();
 }
 
 function verificationState(business = {}) {
@@ -314,6 +326,7 @@ async function listarEmpresasPlataformaHandler(request, dependencies) {
 
 async function obtenerEmpresaPlataformaHandler(request, dependencies) {
   const {auth, db, HttpsError} = dependencies;
+  const registry = dependencies.verticalModules || VERTICAL_MODULES;
   await requirePlatformSuperadmin(request, dependencies);
   const businessId = id(request?.data?.businessId, "La empresa", HttpsError);
   const businessRef = db.collection("negocios").doc(businessId);
@@ -361,8 +374,17 @@ async function obtenerEmpresaPlataformaHandler(request, dependencies) {
     motivo: text(snapshot.data()?.motivo, 1000),
     creadoPorUid: text(snapshot.data()?.creadoPorUid, 160),
     creadoEn: timestampToIso(snapshot.data()?.creadoEn),
+    ...(snapshot.data()?.tipo === MODULES_EVENT_TYPE ? {
+      modulosAnteriores: moduleIds(snapshot.data()?.modulosAnteriores),
+      modulosResultantes: moduleIds(snapshot.data()?.modulosResultantes),
+    } : {}),
   });
   return {
+    modulosDisponibles: registry.map(({id: moduleId, label, basePath}) => ({
+      id: moduleId,
+      label,
+      basePath,
+    })),
     empresa: {
       id: businessId,
       nombreComercial: text(profile.nombreComercial || business.nombreComercial, 180),
@@ -376,6 +398,7 @@ async function obtenerEmpresaPlataformaHandler(request, dependencies) {
       estado: business.eliminadoEn ? "eliminada" : text(business.estado, 30) || ACTIVE_STATUS,
       fechaRegistro: timestampToIso(business.creadoEn),
       verificacion: business.verificacionEmpresa || {estado: "NO_VERIFICADA"},
+      modulosHabilitados: normalizeEnabledModules(business.modulosHabilitados, registry),
     },
     propietario: members.find((member) => member.rol === "OWNER") || null,
     miembros: members,
@@ -680,6 +703,74 @@ async function cambiarEstadoEmpresaPlataformaHandler(request, dependencies) {
   });
 }
 
+async function cambiarModulosEmpresaPlataformaHandler(request, dependencies) {
+  const {db, FieldValue, HttpsError} = dependencies;
+  const registry = dependencies.verticalModules || VERTICAL_MODULES;
+  const actor = await requirePlatformSuperadmin(request, dependencies);
+  const businessId = id(request?.data?.businessId, "La empresa", HttpsError);
+  const requestedModules = request?.data?.modulos;
+  if (!Array.isArray(requestedModules) || requestedModules.length > MAX_MODULES_PER_REQUEST) {
+    fail(HttpsError, "invalid-argument", "La lista de modulos no es valida.");
+  }
+  const desired = normalizeEnabledModules(requestedModules, registry);
+  if (new Set(requestedModules).size !== desired.length) {
+    fail(HttpsError, "invalid-argument", "La lista incluye modulos desconocidos.");
+  }
+  const requestId = operationId(request?.data?.requestId, HttpsError);
+  const reason = text(request?.data?.motivo, 1000);
+  if (!reason) {
+    fail(HttpsError, "invalid-argument", "Indica el motivo del cambio de modulos.");
+  }
+  const requestFingerprint = fingerprint({businessId, desired, reason});
+  const businessRef = db.collection("negocios").doc(businessId);
+  const operationRef = businessRef.collection("platformModulesRequests").doc(requestId);
+  const eventRef = businessRef.collection("eventosPlataforma").doc();
+  return db.runTransaction(async (transaction) => {
+    const [operation, businessSnapshot] = await Promise.all([
+      transaction.get(operationRef),
+      transaction.get(businessRef),
+    ]);
+    if (operation.exists) {
+      const stored = operation.data() || {};
+      if (stored.creadoPorUid !== actor.uid || stored.fingerprint !== requestFingerprint) {
+        fail(HttpsError, "already-exists", "La operacion ya fue utilizada con otros datos.");
+      }
+      return {businessId, modulosHabilitados: moduleIds(stored.modulosResultantes), idempotent: true};
+    }
+    if (!businessSnapshot.exists) fail(HttpsError, "not-found", "No se encontro la empresa.");
+    const business = businessSnapshot.data() || {};
+    if (business.eliminadoEn || business.estado === "eliminada") {
+      fail(HttpsError, "failed-precondition", "Una empresa eliminada no puede modificarse.");
+    }
+    const previous = moduleIds(business.modulosHabilitados);
+    const timestamp = FieldValue.serverTimestamp();
+    if (JSON.stringify(previous) !== JSON.stringify(desired)) {
+      transaction.update(businessRef, {
+        modulosHabilitados: desired,
+        actualizadoPorUid: actor.uid,
+        actualizadoEn: timestamp,
+      });
+      transaction.create(eventRef, {
+        negocioId: businessId,
+        tipo: MODULES_EVENT_TYPE,
+        modulosAnteriores: previous,
+        modulosResultantes: desired,
+        motivo: reason,
+        creadoPorUid: actor.uid,
+        creadoEn: timestamp,
+      });
+    }
+    transaction.create(operationRef, {
+      negocioId: businessId,
+      modulosResultantes: desired,
+      creadoPorUid: actor.uid,
+      fingerprint: requestFingerprint,
+      creadoEn: timestamp,
+    });
+    return {businessId, modulosHabilitados: desired, idempotent: false};
+  });
+}
+
 async function cambiarEstadoUsuarioPlataformaHandler(request, dependencies) {
   const {auth, db, FieldValue, HttpsError} = dependencies;
   const actor = await requirePlatformSuperadmin(request, dependencies);
@@ -979,6 +1070,7 @@ module.exports = {
   SUSPENDED_STATUS,
   cambiarEstadoEmpresaPlataformaHandler,
   cambiarEstadoUsuarioPlataformaHandler,
+  cambiarModulosEmpresaPlataformaHandler,
   eliminarEmpresaPermanentePlataformaHandler,
   listarEmpresasPlataformaHandler,
   listarUsuariosPlataformaHandler,

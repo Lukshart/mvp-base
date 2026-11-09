@@ -1,3 +1,4 @@
+import {getBarcodeLookupCandidates, normalizeBarcode} from "./barcode.mjs";
 export const WORK_MODEL_VERSION = 2;
 export const WORK_FILE_MODEL_VERSION = 1;
 export const WORK_TASK_MODEL_VERSION = 2;
@@ -5,6 +6,84 @@ export const WORK_INACTIVITY_DAYS = 3;
 export const WORK_EXPENSE_MODEL_VERSION = 1;
 export const WORK_LABOR_MODEL_VERSION = 1;
 export const WORK_MATERIAL_MODEL_VERSION = 1;
+export const WORK_ADDITIONAL_MODEL_VERSION = 1;
+
+// Mismo contrato de línea que ya usan Ventas/Cotizaciones (src/domain/saleModel.mjs,
+// src/domain/quoteModel.mjs): un adicional es, conceptualmente, una línea de Venta
+// en espera, nunca texto libre sin respaldo de catálogo (SPEC 020 §5.2).
+export const WORK_ADDITIONAL_ITEM_TYPES = Object.freeze(["producto", "servicio", "actividad"]);
+
+export const WORK_ADDITIONAL_STATUSES = Object.freeze(["PENDIENTE_COBRO", "INCORPORADO_A_VENTA", "ANULADO"]);
+
+// Ambos estados terminales (SPEC 020 §5.3): un adicional anulado nunca se reactiva,
+// uno incorporado nunca se reincorpora ni vuelve a estar pendiente.
+export const WORK_ADDITIONAL_TRANSITIONS = Object.freeze({
+  PENDIENTE_COBRO: Object.freeze(["INCORPORADO_A_VENTA", "ANULADO"]),
+  INCORPORADO_A_VENTA: Object.freeze([]),
+  ANULADO: Object.freeze([]),
+});
+
+// Mismos tipos/límite ya usados por la evidencia de verificación empresarial
+// (src/services/businessVerificationService.js) y por el backend
+// (functions/workPersistence.js): no se inventa un umbral nuevo (SPEC 020 §8.2).
+export const WORK_EXPENSE_EVIDENCE_TYPES = Object.freeze(["application/pdf", "image/jpeg", "image/png"]);
+export const MAX_WORK_EXPENSE_EVIDENCE_BYTES = 5 * 1024 * 1024;
+export const MAX_WORK_EXPENSE_EVIDENCE_FILES = 5;
+
+export function getWorkExpenseEvidenceTypeLabel(tipoMime) {
+  if (tipoMime === "application/pdf") return "PDF";
+  if (tipoMime === "image/jpeg") return "JPG";
+  if (tipoMime === "image/png") return "PNG";
+  return "Archivo";
+}
+
+function workExpenseEvidenceExtension(mimeType) {
+  if (mimeType === "application/pdf") return "pdf";
+  if (mimeType === "image/jpeg") return "jpg";
+  if (mimeType === "image/png") return "png";
+  return "";
+}
+
+const WORK_EXPENSE_EVIDENCE_COMBINING_MARKS = new RegExp(`[${String.fromCharCode(0x0300)}-${String.fromCharCode(0x036f)}]`, "g");
+
+function sanitizeWorkExpenseEvidenceBaseName(name) {
+  const withoutExtension = String(name || "documento").replace(/\.[^./\\]+$/, "");
+  const cleaned = withoutExtension.normalize("NFD").replace(WORK_EXPENSE_EVIDENCE_COMBINING_MARKS, "")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
+  return cleaned || "documento";
+}
+
+// El nombre real subido nunca se usa como identidad autoritativa tal cual
+// (puede colisionar o traer espacios/acentos, SPEC 020 §9.1): se sanea y se
+// le agrega un sufijo único, dentro del mismo alfabeto conservador que ya
+// exige adjuntarEvidenciaGastoTrabajo en el backend
+// (letras/números/puntos/guiones, /^[a-zA-Z0-9._-]{1,200}$/), sin depender
+// de que el cliente lo garantice por sí solo. `uniquePart` es inyectable
+// para pruebas deterministas; en producción se genera solo.
+export function buildWorkExpenseEvidenceFileName(originalName, mimeType, {uniquePart} = {}) {
+  const extension = workExpenseEvidenceExtension(mimeType);
+  const base = sanitizeWorkExpenseEvidenceBaseName(originalName);
+  const suffix = uniquePart || `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  return `${base}-${suffix}${extension ? `.${extension}` : ""}`;
+}
+
+// Validación de forma exclusivamente para UX (feedback inmediato antes de
+// subir). Storage Rules revalida tamaño/contentType real y
+// adjuntarEvidenciaGastoTrabajo relee la metadata real del objeto ya subido:
+// ninguna de las dos capas confía en este resultado.
+export function validateWorkExpenseEvidenceSelection(file, existingCount = 0) {
+  if (!file) return {ok: false, reason: "Selecciona un archivo."};
+  if (existingCount >= MAX_WORK_EXPENSE_EVIDENCE_FILES) {
+    return {ok: false, reason: `Este gasto ya tiene el máximo de ${MAX_WORK_EXPENSE_EVIDENCE_FILES} archivos de evidencia.`};
+  }
+  if (!WORK_EXPENSE_EVIDENCE_TYPES.includes(file.type)) {
+    return {ok: false, reason: "El documento debe ser PDF, JPG o PNG."};
+  }
+  if (!(file.size > 0) || file.size > MAX_WORK_EXPENSE_EVIDENCE_BYTES) {
+    return {ok: false, reason: "El documento no puede superar 5 MB."};
+  }
+  return {ok: true, reason: ""};
+}
 
 export const WORK_EXPENSE_CATEGORIES = Object.freeze([
   {value: "MATERIAL", label: "Material", classification: "DIRECTO"},
@@ -61,14 +140,30 @@ export function canManageWorks(role) {
   return ["OWNER", "ADMIN"].includes(String(role || "").toUpperCase());
 }
 
+export const CLOSED_WORK_STATUSES = Object.freeze(["completado", "cancelado"]);
+
+export function isWorkClosed(work = {}) {
+  return CLOSED_WORK_STATUSES.includes(work?.estado);
+}
+
 export function isWorkOperationalReadOnly(work = {}) {
-  return ["completado", "cancelado"].includes(work?.estado);
+  return isWorkClosed(work);
+}
+
+// Textos de relleno que el backend (businessMemberships.js) y el adaptador
+// (adaptBusinessMember) escriben cuando una persona no tiene nombre. Ninguno
+// es un nombre real: la identidad debe caer al correo.
+const PLACEHOLDER_PERSON_NAMES = new Set(["sin nombre registrado", "nombre no informado", "usuario sin identificar"]);
+
+function realPersonName(value) {
+  const name = String(value || "").trim();
+  return name && !PLACEHOLDER_PERSON_NAMES.has(name.toLocaleLowerCase("es-CL")) ? name : "";
 }
 
 export function getWorkMemberIdentity(member) {
   const safeMember = member || {};
-  const name = String(safeMember.nombre || "").trim();
-  if (name && name !== "Sin nombre registrado") return name;
+  const name = realPersonName(safeMember.nombre);
+  if (name) return name;
   const email = String(safeMember.correo || "").trim();
   if (email && email !== "Sin correo disponible") return email;
   return "Usuario sin identificar";
@@ -76,10 +171,7 @@ export function getWorkMemberIdentity(member) {
 
 export function getWorkHistoricalPersonIdentity(snapshot, uid = "", members = [], fallback = "Una persona del equipo") {
   const safeSnapshot = snapshot || {};
-  const validName = (value) => {
-    const name = String(value || "").trim();
-    return name && !["sin nombre registrado", "usuario sin identificar"].includes(name.toLocaleLowerCase("es-CL")) ? name : "";
-  };
+  const validName = realPersonName;
   const snapshotName = validName(safeSnapshot.nombre);
   if (snapshotName) return snapshotName;
   const snapshotEmail = String(safeSnapshot.correo || "").trim();
@@ -123,6 +215,15 @@ export function getEligibleWorkQuoteOptions(quotes = [], sales = [], {workId = "
     if (!quoteId || quote?.estado !== "aceptada" || !sale || sale?.estado !== "confirmada" || sale?.cotizacionId !== quoteId || linkedElsewhere || !quoteClientId || quoteClientId !== saleClientId) return [];
     return [{quote, sale}];
   });
+}
+
+// Un adicional PENDIENTE_COBRO nunca se ofrece dos veces ni cruza de Proyecto:
+// mismo patrón que getEligibleWorkQuoteOptions, filtrando por trabajoId exacto.
+export function getEligibleWorkAdditionalOptions(additionals = [], {workId = ""} = {}) {
+  const currentWorkId = String(workId || "").trim();
+  return (Array.isArray(additionals) ? additionals : []).filter((additional) =>
+    additional?.estado === "PENDIENTE_COBRO" && String(additional?.trabajoId || "").trim() === currentWorkId
+  );
 }
 
 export function canViewWorkProfitability(role) {
@@ -306,6 +407,88 @@ export function adaptWorkExpense(raw = {}) {
   };
 }
 
+const WORK_ADDITIONAL_ITEM_TYPE_SET = new Set(WORK_ADDITIONAL_ITEM_TYPES);
+const WORK_ADDITIONAL_STATUS_SET = new Set(WORK_ADDITIONAL_STATUSES);
+const WORK_ADDITIONAL_ID_PATTERN = /^[a-zA-Z0-9_.:-]{1,160}$/;
+
+function requiredWorkAdditionalId(value, label) {
+  const result = String(value ?? "").trim();
+  if (!result) throw new Error(`${label} es obligatorio.`);
+  if (!WORK_ADDITIONAL_ID_PATTERN.test(result)) throw new Error(`${label} no es válido.`);
+  return result;
+}
+
+function requiredWorkAdditionalNumber(value, label, {minimum = 0, maximum = Infinity} = {}) {
+  if (value === "" || value == null) throw new Error(`${label} es obligatorio.`);
+  const result = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(result)) throw new Error(`${label} debe ser un número válido.`);
+  if (result < minimum || result > maximum) throw new Error(`${label} está fuera del rango permitido.`);
+  return result;
+}
+
+function requiredWorkAdditionalCurrency(value) {
+  const result = String(value || "").trim().toUpperCase();
+  if (!/^[A-Z]{3}$/.test(result)) throw new Error("La moneda no es válida.");
+  return result;
+}
+
+export function isValidWorkAdditionalStatus(value) {
+  return WORK_ADDITIONAL_STATUS_SET.has(value);
+}
+
+// Único punto de verdad para transiciones válidas (SPEC 020 §5.3): reutilizado
+// tanto por validación en Functions (ETAPA 2) como por controles de UI (ETAPA 4).
+export function canTransitionWorkAdditionalStatus(from, to) {
+  return Boolean(WORK_ADDITIONAL_TRANSITIONS[from]?.includes(to));
+}
+
+// Valida y normaliza los datos de un adicional nuevo. Puro: no consulta
+// ninguna base de datos, inventario ni el catálogo real — sólo aplica las
+// mismas reglas de forma que ya exige una línea de Venta/Cotización (itemId
+// obligatorio, sin texto libre). Un adicional nuevo siempre nace
+// PENDIENTE_COBRO (SPEC 020 §5.3), por lo que este builder no acepta `estado`
+// como entrada.
+export function buildWorkAdditionalMutationPayload(raw = {}) {
+  const negocioId = requiredWorkAdditionalId(raw.negocioId, "El negocio");
+  const trabajoId = requiredWorkAdditionalId(raw.trabajoId, "El trabajo");
+  const itemId = requiredWorkAdditionalId(raw.itemId, "El ítem");
+  if (!WORK_ADDITIONAL_ITEM_TYPE_SET.has(raw.tipoItem)) throw new Error("El tipo de ítem no es válido.");
+  const cantidad = requiredWorkAdditionalNumber(raw.cantidad, "La cantidad", {minimum: Number.MIN_VALUE});
+  const precioUnitario = requiredWorkAdditionalNumber(raw.precioUnitario, "El precio unitario");
+  const moneda = requiredWorkAdditionalCurrency(raw.moneda);
+  const tareaId = raw.tareaId ? requiredWorkAdditionalId(raw.tareaId, "La tarea") : "";
+  const descripcion = String(raw.descripcion || "").trim().slice(0, 2000);
+  return {negocioId, trabajoId, itemId, tipoItem: raw.tipoItem, cantidad, precioUnitario, moneda, tareaId, descripcion};
+}
+
+export function adaptWorkAdditional(raw = {}) {
+  return {
+    ...raw,
+    id: raw.id || raw.adicionalId || "",
+    adicionalId: raw.adicionalId || raw.id || "",
+    modeloAdicionalVersion: Number(raw.modeloAdicionalVersion || WORK_ADDITIONAL_MODEL_VERSION),
+    negocioId: String(raw.negocioId || "").trim(),
+    trabajoId: String(raw.trabajoId || "").trim(),
+    itemId: String(raw.itemId || "").trim(),
+    tipoItem: WORK_ADDITIONAL_ITEM_TYPE_SET.has(raw.tipoItem) ? raw.tipoItem : "producto",
+    cantidad: Number(raw.cantidad || 0),
+    precioUnitario: Number(raw.precioUnitario || 0),
+    moneda: String(raw.moneda || "").trim().toUpperCase(),
+    descripcion: String(raw.descripcion || "").trim(),
+    tareaId: String(raw.tareaId || "").trim(),
+    estado: WORK_ADDITIONAL_STATUS_SET.has(raw.estado) ? raw.estado : "PENDIENTE_COBRO",
+    registradoPorUid: String(raw.registradoPorUid || "").trim(),
+    registradoPorSnapshot: raw.registradoPorSnapshot || null,
+    creadoEn: dateValue(raw.creadoEn),
+    ventaId: String(raw.ventaId || "").trim(),
+    lineaId: String(raw.lineaId || "").trim(),
+    anuladoPorUid: String(raw.anuladoPorUid || "").trim(),
+    anuladoPorSnapshot: raw.anuladoPorSnapshot || null,
+    anuladoEn: dateValue(raw.anuladoEn),
+    motivoAnulacion: String(raw.motivoAnulacion || "").trim(),
+  };
+}
+
 export function adaptWorkLabor(raw = {}) {
   return {
     ...raw,
@@ -394,11 +577,29 @@ export function getWorkDraftErrors(raw = {}) {
 
 export function matchesWorkFilters(work, filters = {}) {
   if (filters.estado && filters.estado !== "todos" && work.estado !== filters.estado) return false;
+  // Lista: por defecto solo proyectos activos. Si se pide un estado cerrado de forma explícita, se respeta.
+  if (filters.incluirCerrados === false && isWorkClosed(work) && !CLOSED_WORK_STATUSES.includes(filters.estado)) return false;
   if (filters.prioridad && filters.prioridad !== "todas" && work.prioridad !== filters.prioridad) return false;
   if (filters.responsableUid && filters.responsableUid !== "todos" && work.responsableUid !== filters.responsableUid) return false;
   const query = normalizeWorkSearch(filters.query);
   if (!query) return true;
   return normalizeWorkSearch([work.numero, work.titulo, work.clienteSnapshot?.nombreRazonSocial, work.clienteSnapshot?.rut].filter(Boolean).join(" ")).includes(query);
+}
+
+// Reglas reales de visibilidad/operación de tareas (extraídas de TaskSection
+// en WorksPage.jsx, sin cambiar su semántica), para que la lista y el
+// tablero de tareas (PROJECTS_V3 ETAPA 2) compartan exactamente la misma
+// fuente de verdad y no puedan divergir.
+export function getVisibleWorkTasks(tasks = [], {canManage, currentUserUid} = {}) {
+  return canManage ? tasks : tasks.filter((task) => task.modeloTareaVersion < 2 || task.responsableUid === currentUserUid);
+}
+
+export function canOperateWorkTask(task, {canManage, role, currentUserUid} = {}) {
+  return canManage || (["TECNICO", "MEMBER"].includes(role) && task?.responsableUid === currentUserUid);
+}
+
+export function getWorkTaskStatusOptions(task, {canManage} = {}) {
+  return WORK_TASK_STATUSES.filter((entry) => canManage || entry.value !== "pendiente" || task?.estado === "pendiente");
 }
 
 export function getWorkTaskProgress(work) {
@@ -415,8 +616,112 @@ export function getTaskProgress(task = {}) {
   return {total: subtasks.length, completed, percent: Math.round((completed / subtasks.length) * 10000) / 100};
 }
 
+// Columnas del tablero por proyecto (SPEC 028 etapa B2): tres columnas sobre los
+// cuatro estados de tarea de siempre. "En espera" no es columna: sus tareas van
+// al final de "En curso" con su etiqueta y motivo. No cambia el modelo.
+export const WORK_BOARD_COLUMNS = Object.freeze([
+  {id: "por_hacer", label: "Por hacer", states: Object.freeze(["pendiente"])},
+  {id: "en_curso", label: "En curso", states: Object.freeze(["en_progreso", "en_espera"])},
+  {id: "hecho", label: "Hecho", states: Object.freeze(["completada"])},
+]);
+
+export function groupWorkTasksByBoardColumn(tasks = []) {
+  const list = Array.isArray(tasks) ? tasks : [];
+  return WORK_BOARD_COLUMNS.map((column) => ({...column, tasks: column.states.flatMap((state) => list.filter((task) => task?.estado === state))}));
+}
+
+// Iniciales y nombre corto para la tarjeta. Recibe la identidad ya resuelta
+// (nombre real o, si no hay, correo): "Camila Torres Morales" -> CT / "Camila T.";
+// "ana@dominio.cl" -> AN / "ana".
+export function getWorkPersonShort(identity) {
+  const text = String(identity || "").trim();
+  if (!text) return {initials: "", shortName: ""};
+  if (text.includes("@")) {
+    const local = text.split("@")[0] || text;
+    return {initials: local.slice(0, 2).toLocaleUpperCase("es-CL"), shortName: local};
+  }
+  const parts = text.split(/\s+/);
+  const initials = `${parts[0][0] || ""}${parts[1]?.[0] || parts[0][1] || ""}`.toLocaleUpperCase("es-CL");
+  return {initials, shortName: parts.length > 1 ? `${parts[0]} ${parts[1][0].toLocaleUpperCase("es-CL")}.` : parts[0]};
+}
+
+// Fecha de cierre de un proyecto cerrado. Completado guarda `fechaCompletado`;
+// Cancelado no guarda una fecha propia, así que se usa la última actualización
+// (un proyecto cerrado es de solo lectura, nada más la mueve).
+export function getWorkClosedAt(work = {}) {
+  if (!isWorkClosed(work)) return null;
+  return (work.estado === "completado" ? work.fechaCompletado : "") || work.actualizadoEn || work.creadoEn || null;
+}
+
+// Proyectos completados y cancelados, el cierre más reciente primero.
+export function getClosedWorks(works = []) {
+  return (Array.isArray(works) ? works : []).filter(isWorkClosed)
+    .map((work) => ({work, closedAt: getWorkClosedAt(work) || ""}))
+    .sort((left, right) => right.closedAt.localeCompare(left.closedAt))
+    .map(({work}) => work);
+}
+
+function chileDayKey(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+  const date = new Date(text);
+  if (Number.isNaN(date.getTime())) return "";
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en", {timeZone: "America/Santiago", year: "numeric", month: "2-digit", day: "2-digit"}).formatToParts(date).map((part) => [part.type, part.value]));
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function inclusiveDays(fromKey, toKey) {
+  if (!fromKey || !toKey) return null;
+  const days = Math.round((Date.parse(`${toKey}T00:00:00Z`) - Date.parse(`${fromKey}T00:00:00Z`)) / 86400000) + 1;
+  return Number.isFinite(days) && days >= 1 ? days : null;
+}
+
+// Duración planificada contra real, en días corridos (el día de inicio cuenta).
+// Inicio = inicio planificado, o la fecha de creación si no hay. Plan: hasta el
+// término planificado. Real: hasta la fecha de cierre. Sin dato, null.
+export function getWorkDurationSummary(work = {}) {
+  const start = chileDayKey(work.fechaInicio) || chileDayKey(work.creadoEn);
+  const planned = inclusiveDays(start, chileDayKey(work.fechaPrevista));
+  const actual = inclusiveDays(start, chileDayKey(getWorkClosedAt(work)));
+  return {plannedDays: planned, actualDays: actual, deltaDays: planned != null && actual != null ? actual - planned : null};
+}
+
+// Resultado de un proyecto cerrado a partir de su balance (obtenerBalanceTrabajo).
+// "gano" / "perdio" / "equilibrio", o "no_disponible" sin balance completo (sin
+// Venta confirmada o monedas incompatibles): nunca se inventa un resultado.
+export function getWorkClosedResultKind(balance) {
+  if (!balance || balance.estado !== "COMPLETO" || balance.resultado == null || !Number.isFinite(Number(balance.resultado))) return "no_disponible";
+  return balance.resultado > 0 ? "gano" : balance.resultado < 0 ? "perdio" : "equilibrio";
+}
+
+// Cuántos cierres recientes cargan su balance en la vista Cerrados.
+export const WORK_CLOSED_BALANCE_LIMIT = 20;
+
 function rounded(value) {
   return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+}
+
+// Alcance de costos por tarea en el tablero del proyecto. Un costo pertenece a
+// una tarea por su `tareaId`; sin él pertenece al proyecto ("General"); con un
+// `tareaId` que ya no existe queda "Sin tarea asignada". Sin alcance (undefined)
+// no se filtra nada. Solo organiza registros: no calcula importes.
+export const WORK_COST_SCOPE_ORPHAN = "__sin_tarea_asignada__";
+
+export function filterWorkCostsByTaskScope(records = [], scope, tasks = []) {
+  const list = Array.isArray(records) ? records : [];
+  if (scope === undefined) return list;
+  const taskIds = new Set((Array.isArray(tasks) ? tasks : []).map((task) => String(task?.id || "")));
+  if (scope === WORK_COST_SCOPE_ORPHAN) return list.filter((entry) => entry?.tareaId && !taskIds.has(String(entry.tareaId)));
+  return list.filter((entry) => String(entry?.tareaId || "") === String(scope || ""));
+}
+
+// Proyecto que el tablero muestra por defecto: el abierto (no completado ni
+// cancelado) más reciente; `works` ya viene ordenado del más reciente al más
+// antiguo. Si todos están cerrados, el primero.
+export function getDefaultBoardWorkId(works = []) {
+  const list = Array.isArray(works) ? works : [];
+  return (list.find((work) => !["completado", "cancelado"].includes(work?.estado)) || list[0])?.id || "";
 }
 
 export function getWorkAccumulatedCost(work = {}) {
@@ -540,6 +845,10 @@ export function humanizeWorkEvent(event = {}, {includeAmounts = true} = {}) {
     tarea_eliminada: `${actor} eliminó la tarea “${detail.tareaTitulo || "Sin título"}”.`,
     gasto_registrado: `${actor} registró el gasto “${detail.concepto || "Sin concepto"}”${amountText(detail.monto)}.`,
     gasto_anulado: `${actor} anuló el gasto “${detail.concepto || "Sin concepto"}”${amountText(detail.monto)}.`,
+    gasto_evidencia_adjuntada: `${actor} adjuntó evidencia “${detail.nombreArchivo || "documento"}” a un gasto.`,
+    adicional_registrado: `${actor} registró un adicional de ${Number(detail.cantidad || 0)} unidad(es)${amountText(detail.precioUnitario)} cada una.`,
+    adicional_anulado: `${actor} anuló un adicional${amountText(detail.precioUnitario)}.`,
+    adicional_incorporado_a_venta: `${actor} incorporó un adicional a la venta ${detail.numero || "sin número"}${amountText(detail.precioUnitario)}.`,
     horas_hombre_registradas: `${actor} registró ${Number(detail.horas || 0)} HH para ${detail.tecnicoNombre || "un técnico"}${amountText(detail.total)}.`,
     horas_hombre_anuladas: `${actor} anuló ${Number(detail.horas || 0)} HH de “${detail.concepto || "Sin concepto"}”${amountText(detail.total)}.`,
     material_salida_registrada: `${actor} registró la salida de ${Number(detail.cantidad || 0)} ${detail.productoNombre || "material"}${amountText(detail.costoTotal)}.`,
@@ -554,4 +863,24 @@ export function humanizeWorkEvent(event = {}, {includeAmounts = true} = {}) {
     venta_confirmada: `${actor} confirmó la venta ${detail.numero || "sin número"}${detail.cotizacionNumero ? ` originada en ${detail.cotizacionNumero}` : ""}${amountText(detail.total)}.`,
   };
   return messages[event.tipo] || `${actor} actualizó el trabajo.`;
+}
+
+// Decide qué hacer con una lectura en la salida de material: solo se
+// preselecciona un producto de la lista disponible y se pone cantidad 1 si
+// estaba vacía. La salida nunca se registra sola; la confirma el usuario.
+export function resolveWorkMaterialScan(products, rawBarcode, draft = {}) {
+  const candidates = getBarcodeLookupCandidates(rawBarcode);
+  const matches = candidates.length
+    ? (Array.isArray(products) ? products : []).filter((product) =>
+      candidates.includes(normalizeBarcode(product?.barcode || product?.codigoBarras)))
+    : [];
+  if (matches.length > 1) return {status: "ambiguous"};
+  if (!matches.length) return {status: "not_available"};
+  const hasQuantity = String(draft?.cantidad ?? "").trim() !== "";
+  return {
+    status: "found",
+    product: matches[0],
+    itemId: matches[0].id,
+    cantidad: hasQuantity ? draft.cantidad : "1",
+  };
 }

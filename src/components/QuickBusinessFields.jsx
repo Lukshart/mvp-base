@@ -5,6 +5,9 @@ import {
 } from "../domain/businessCatalog";
 import BusinessCategoryPicker from "./BusinessCategoryPicker";
 
+const NON_CHILE_FISCAL_NOTE =
+  "Moneda y formato disponibles. Las reglas fiscales (facturas, boletas, IVA) están pensadas para Chile y están en revisión.";
+
 function FieldMessage({ error, help = "", id }) {
   return (
     <div className="quick-business-field__message">
@@ -126,7 +129,17 @@ function QuickBusinessFields({
               "aria-invalid": Boolean(errors[field]),
               "aria-describedby": messageId,
             })}
-            <FieldMessage id={messageId} error={errors[field]} />
+            <FieldMessage
+              id={messageId}
+              error={errors[field]}
+              help={
+                field === "paisCodigo" &&
+                values.paisCodigo &&
+                values.paisCodigo !== "CL"
+                  ? NON_CHILE_FISCAL_NOTE
+                  : ""
+              }
+            />
           </div>
           );
         })}

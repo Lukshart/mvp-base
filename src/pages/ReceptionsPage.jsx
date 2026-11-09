@@ -2,6 +2,9 @@ import React, {useEffect, useMemo, useState} from "react";
 import {Search} from "lucide-react";
 import {useNavigate} from "react-router-dom";
 import AppIcon from "../components/ui/AppIcon";
+import Button from "../components/ui/Button";
+import EmptyStateIllustration from "../components/ui/EmptyStateIllustration";
+import {SkeletonRegion, SkeletonTable} from "../components/ui/Skeleton";
 import {canManageReceptions, getReceptionStatusLabel} from "../domain/receptionModel.mjs";
 import {listarRecepciones} from "../services/receptionService";
 import "../features/receptions/receptions.css";
@@ -58,17 +61,29 @@ export default function ReceptionsPage({businessId, role}) {
     : `/recepciones/${entry.id}`);
   return (
     <main className="erp-page po-history">
-      <div className="erp-module-intro">
-        <div className="erp-page-intro"><p>Confirma la recepción física; el inventario y la compra se registran automáticamente.</p></div>
-      </div>
-      {message && <p className="po-message po-message--error">{message}</p>}
+      {message && <p className="po-message po-message--error" role="alert">{message}</p>}
       <section className="erp-panel erp-history-panel">
         <div className="erp-panel-header"><div><h2 className="erp-panel-title">Historial de recepciones</h2><p className="erp-secondary-text">{filtered.length} recepciones</p></div></div>
         <div className="erp-filters erp-history-filters po-history__toolbar">
           <label className="erp-field erp-history-search-field"><span className="erp-field__label">Buscar por recepcion, OC o proveedor</span><span className="clients-search-control"><AppIcon icon={Search} size={18} /><input className="erp-control" value={search} onChange={(event) => setSearch(event.target.value)} /></span></label>
           <label className="erp-field"><span className="erp-field__label">Estado</span><select className="erp-control" value={status} onChange={(event) => setStatus(event.target.value)}><option value="todos">Todos</option><option value="borrador">Preparadas</option><option value="confirmada">Recibidas</option><option value="cancelada">Canceladas</option></select></label>
         </div>
-        {loading ? <div className="erp-empty-state">Cargando recepciones...</div> : <section className="erp-table-region">
+        {loading ? <SkeletonRegion label="Cargando recepciones..."><SkeletonTable columns={7} /></SkeletonRegion> : message && items.length === 0 ? null : filtered.length === 0 ? (
+          <div className="erp-empty-state ui-empty-state">
+            <EmptyStateIllustration variant={items.length ? "no-results" : "empty-list"} />
+            <h3>{items.length ? "No hay recepciones coincidentes" : "Aún no hay recepciones"}</h3>
+            <p>
+              {items.length
+                ? "Prueba con otra búsqueda o estado."
+                : "Las recepciones se inician desde una orden de compra, cuando llega la mercadería."}
+            </p>
+            {!items.length && canManage && (
+              <div className="ui-empty-state__actions">
+                <Button type="button" variant="secondary" onClick={() => navigate("/ordenes-compra")}>Ir a órdenes de compra</Button>
+              </div>
+            )}
+          </div>
+        ) : <section className="erp-table-region">
           <table className="erp-table po-history__table"><thead><tr><th>Recepción</th><th>Proveedor</th><th>Orden de compra</th><th>Compra</th><th>Fecha</th><th>Recibido</th><th>Estado</th></tr></thead><tbody>
             {filtered.map((entry) => <tr key={entry.id}>
               <td><button type="button" className="po-inline-link" onClick={() => open(entry)}>{entry.numero}</button></td>
@@ -79,7 +94,6 @@ export default function ReceptionsPage({businessId, role}) {
               <td>{receptionProgressLabel(entry)}</td>
               <td><span className={`po-status po-status--${entry.estado}`}>{getReceptionStatusLabel(entry.estado)}</span></td>
             </tr>)}
-            {!filtered.length && <tr><td colSpan="7" className="po-history__empty">No hay recepciones coincidentes.</td></tr>}
           </tbody></table>
         </section>}
       </section>

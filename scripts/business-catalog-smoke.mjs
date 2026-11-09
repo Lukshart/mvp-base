@@ -69,24 +69,38 @@ for (const category of catalog.businessCategories) {
 }
 const expectedV1Categories = [
   ["TECNOLOGIA_INFORMATICA", "Tecnología e informática"],
-  ["SOFTWARE_SOLUCIONES_DIGITALES", "Software y soluciones digitales"],
   ["SEGURIDAD_TELECOMUNICACIONES", "Seguridad electrónica y telecomunicaciones"],
   ["ELECTRICIDAD_ENERGIA_CLIMATIZACION", "Electricidad, energía y climatización"],
   ["AUTOMATIZACION_CONTROL", "Automatización y control"],
   ["MANTENIMIENTO_INSTALACIONES", "Mantenimiento e instalaciones técnicas"],
-  ["CONSTRUCCION_OBRAS", "Construcción y obras especializadas"],
-  ["AUTOMOTRIZ_MOVILIDAD", "Automotriz y movilidad"],
   ["INGENIERIA_CONSULTORIA", "Ingeniería y consultoría técnica"],
-  ["SERVICIOS_DIGITALES_CREATIVOS", "Servicios digitales y creativos"],
   ["OTRO_SERVICIO_PROYECTOS", "Otro servicio por proyectos"],
 ];
 const selectableCategories = catalog.businessCategories.filter((category) =>
   isSelectableBusinessCategory(category, catalog.businessCategoryCatalogVersion)
 );
+assert.equal(selectableCategories.length, 7);
 assert.deepEqual(
   selectableCategories.map(({ code, name }) => [code, name]),
   expectedV1Categories
 );
+// Rubros que dejaron de ser seleccionables: siguen en el catálogo y activos.
+for (const code of [
+  "AUTOMOTRIZ_MOVILIDAD",
+  "CONSTRUCCION_OBRAS",
+  "SOFTWARE_SOLUCIONES_DIGITALES",
+  "SERVICIOS_DIGITALES_CREATIVOS",
+]) {
+  const retired = catalog.businessCategories.find((category) => category.code === code);
+  assert.ok(retired, code);
+  assert.equal(retired.active, true, code);
+  assert.equal(retired.selectable, false, code);
+  assert.equal(
+    isSelectableBusinessCategory(retired, catalog.businessCategoryCatalogVersion),
+    false,
+    code
+  );
+}
 for (const legacyCode of ["RESTAURANTE", "TECNOLOGIA_SOFTWARE", "OTRO"]) {
   const legacyCategory = catalog.businessCategories.find(({ code }) => code === legacyCode);
   assert.ok(legacyCategory);

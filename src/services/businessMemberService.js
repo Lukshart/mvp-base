@@ -1,10 +1,7 @@
 import {httpsCallable} from "firebase/functions";
 import {assertCloudFunctionAllowed} from "../config/firebaseEnvironment.mjs";
 import {getFirebaseFunctions} from "../firebase/firebaseConfig.js";
-import {
-  adaptBusinessMember,
-  normalizeBusinessMemberEmail,
-} from "../domain/businessMemberModel.mjs";
+import {adaptBusinessMember} from "../domain/businessMemberModel.mjs";
 
 const functions = getFirebaseFunctions("us-central1");
 
@@ -20,15 +17,6 @@ export async function listarMiembrosNegocio(businessId) {
     "consultar miembros"
   );
   return (response.data?.miembros || []).map(adaptBusinessMember);
-}
-
-export async function asociarUsuarioExistente(businessId, correo, rol, profileId = "") {
-  const response = await call(
-    "asociarUsuarioExistente",
-    {businessId, correo: normalizeBusinessMemberEmail(correo), rol, profileId},
-    "asociar usuarios"
-  );
-  return response.data?.miembro || null;
 }
 
 export async function actualizarMembresiaNegocio(

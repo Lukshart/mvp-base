@@ -3,6 +3,8 @@ import {Plus, Search} from "lucide-react";
 import {useNavigate} from "react-router-dom";
 import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
+import EmptyStateIllustration from "../components/ui/EmptyStateIllustration";
+import {SkeletonCards, SkeletonRegion, SkeletonTable} from "../components/ui/Skeleton";
 import {
   canManageSales,
   getSaleStatusLabel,
@@ -42,18 +44,17 @@ export default function SalesPage({businessId, role}) {
   )), [items, origin, search, status]);
 
   const open = (sale) => navigate(sale.estado === "borrador" && canManage ? `/ventas/${sale.id}/editar` : `/ventas/${sale.id}`);
-  const openOriginQuote = (sale) => navigate(`/cotizaciones/${sale.cotizacionId}/editar`);
+  const openOriginQuote = (sale) => navigate("/cotizaciones", {state: {openQuoteId: sale.cotizacionId}});
 
   return (
     <main className="erp-page po-history sale-history">
-      <div className="erp-module-intro">
-        <div className="erp-page-intro">
-            <p>Consulta el historial de ventas directas y originadas desde cotizaciones.</p>
+      {canManage && (
+        <div className="erp-module-intro">
+          <Button type="button" icon={Plus} onClick={() => navigate("/ventas/nueva")}>Nueva venta</Button>
         </div>
-        {canManage && <Button type="button" icon={Plus} onClick={() => navigate("/ventas/nueva")}>Nueva venta</Button>}
-      </div>
+      )}
 
-      {message && <p className="po-message po-message--error">{message}</p>}
+      {message && <p className="po-message po-message--error" role="alert">{message}</p>}
 
       <section className="erp-panel erp-history-panel sale-history-panel" aria-labelledby="sales-history-title">
         <div className="erp-panel-header">
@@ -66,7 +67,7 @@ export default function SalesPage({businessId, role}) {
         <div className="erp-filters erp-history-filters erp-history-filters--three po-history__toolbar sale-history-filters no-print">
           <label className="erp-field erp-history-search-field sale-history-search-field">
             <span className="erp-field__label">Buscar por número, cliente, RUT o documento</span>
-            <span className="sale-history-search-control">
+            <span className="clients-search-control">
               <AppIcon icon={Search} size={18} />
               <input className="erp-control" placeholder="Ej.: VTA-2026-0001 o cliente" value={search} onChange={(event) => setSearch(event.target.value)} />
             </span>
@@ -81,7 +82,29 @@ export default function SalesPage({businessId, role}) {
           </label>
         </div>
 
-        {loading ? <div className="erp-empty-state" role="status">Cargando ventas...</div> : (
+        {loading ? (
+          <SkeletonRegion label="Cargando ventas...">
+            <SkeletonTable className="po-history__desktop" columns={7} />
+            <SkeletonCards className="po-history__cards" />
+          </SkeletonRegion>
+        ) : message && items.length === 0 ? null : filtered.length === 0 ? (
+          <div className="erp-empty-state ui-empty-state">
+            <EmptyStateIllustration variant={items.length ? "no-results" : "empty-list"} />
+            <h3>{items.length ? "No hay ventas coincidentes" : "Aún no hay ventas"}</h3>
+            <p>
+              {items.length
+                ? "Prueba con otra búsqueda, estado u origen."
+                : canManage
+                  ? "Registra tu primera venta directa o créala desde una cotización."
+                  : "Tu perfil es de solo lectura; los perfiles autorizados registran las ventas."}
+            </p>
+            {!items.length && canManage && (
+              <div className="ui-empty-state__actions">
+                <Button type="button" icon={Plus} onClick={() => navigate("/ventas/nueva")}>Nueva venta</Button>
+              </div>
+            )}
+          </div>
+        ) : (
           <>
           <section className="erp-table-region po-history__desktop">
             <table className="erp-table clients-table po-history__table sale-history-table">
@@ -98,7 +121,6 @@ export default function SalesPage({businessId, role}) {
                     <td>{formatDate(sale.fechaVenta)}</td>
                   </tr>
                 ))}
-                {!filtered.length && <tr><td colSpan="7" className="po-history__empty">No hay ventas coincidentes.</td></tr>}
               </tbody>
             </table>
           </section>
@@ -114,7 +136,6 @@ export default function SalesPage({businessId, role}) {
                 <dl><div><dt>Total</dt><dd>{money(sale.total, sale)}</dd></div><div><dt>Origen</dt><dd>{sale.cotizacionId ? <button type="button" className="sale-history-link sale-origin-link" onClick={() => openOriginQuote(sale)}>{sale.cotizacionNumero || "Ver cotización"}</button> : "Directa"}</dd></div><div><dt>Stock</dt><dd>{getSaleStockStatusLabel(sale.estadoStock, sale)}</dd></div><div><dt>Fecha</dt><dd>{formatDate(sale.fechaVenta)}</dd></div></dl>
               </article>
             ))}
-            {!filtered.length && <div className="po-history__cards-empty">No hay ventas coincidentes.</div>}
           </section>
           </>
         )}

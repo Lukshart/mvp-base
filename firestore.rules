@@ -52,6 +52,16 @@ service cloud.firestore {
           == "VERIFICADA";
     }
 
+    // Módulos verticales: la lista la escribe solo el backend de plataforma
+    // (negocios/{id} no admite escrituras desde el SDK cliente). Campo ausente
+    // equivale a lista vacía. Aún sin uso: se combinará con
+    // hasBusinessModuleAccess en las colecciones de cada vertical.
+    function isBusinessModuleEnabled(businessId, moduleId) {
+      let businessPath = /databases/$(database)/documents/negocios/$(businessId);
+      return exists(businessPath)
+        && get(businessPath).data.get("modulosHabilitados", []).hasAny([moduleId]);
+    }
+
     function canOperateBusiness(businessId) {
       return canAccessBusiness(businessId) && isVerifiedBusiness(businessId);
     }
@@ -375,7 +385,11 @@ service cloud.firestore {
         "ultimoCosto",
         "ultimoProveedor",
         "ultimaAdquisicionId",
-        "ultimaAdquisicionEn"
+        "ultimaAdquisicionEn",
+        // SPEC 023 §6.1: la exención de IVA solo la cambia Functions, que
+        // restringe el cambio a OWNER/ADMIN.
+        "impuestoId",
+        "impuestoTasa"
       ]);
     }
 
@@ -391,7 +405,7 @@ service cloud.firestore {
         || (
           request.resource.data.get("tipoItem", "") == "producto"
           && request.resource.data.keys().hasAll(fields)
-          && request.resource.data.get("formacionPrecioVersion", null) == 2
+          && request.resource.data.get("formacionPrecioVersion", null) in [2, 3]
           && request.resource.data.get("tasaImpuestoCompra", null) is number
           && request.resource.data.get("tasaImpuestoCompra", -1) >= 0
           && request.resource.data.get("tasaImpuestoCompra", 101) <= 100
@@ -560,6 +574,15 @@ service cloud.firestore {
       );
     }
 
+    // Calcado de isAllowedReferenceTaskUpdate(): el cliente solo puede
+    // marcar la notificación como leída, sin tocar tipo/titulo/descripcion/
+    // eventoRefId ni el resto del contenido.
+    function isAllowedNotificationUpdate() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      return request.resource.data.leida == true
+        && changed.hasOnly(["leida", "leidaEn"]);
+    }
+
     function hasValidFinancialCategory(type, categoryId) {
       return (
         type == "income"
@@ -725,6 +748,10 @@ service cloud.firestore {
         allow read, create, update, delete: if false;
       }
 
+      match /aceptacionesLegales/{version} {
+        allow read, create, update, delete: if false;
+      }
+
       match /config/{docId} {
         allow read, create, update: if isOwner(uid);
         allow delete: if false;
@@ -833,12 +860,6 @@ service cloud.firestore {
 
       match /quoteCreateRequests/{requestId} {
         allow read, create, update, delete: if false;
-      }
-
-      match /tareasReferencias/{taskId} {
-        allow read: if canOperateActiveBusiness(uid);
-        allow update: if canOperateActiveBusiness(uid) && isAllowedReferenceTaskUpdate();
-        allow create, delete: if false;
       }
     }
 
@@ -951,6 +972,14 @@ service cloud.firestore {
         allow create, update: if hasBusinessRole(businessId, ["OWNER", "ADMIN"])
           && hasValidBusinessDocument(businessId);
         allow delete: if false;
+      }
+
+      // Cache de precios de mercado (Google Shopping vía Serper) por ítem
+      // de inventario. Sólo la Cloud Function (Admin SDK, sin Rules) la
+      // escribe; el cliente nunca lee ni escribe esta colección
+      // directamente, siempre recibe los datos como respuesta del callable.
+      match /referenciasPrecios/{itemId} {
+        allow read, write: if false;
       }
 
       match /cotizaciones/{quoteId} {
@@ -1086,6 +1115,20 @@ service cloud.firestore {
           allow create, update, delete: if false;
         }
 
+        // SPEC 020 (Adicionales facturables): mismo patrón exacto que gastos/
+        // horasHombre. La creación es exclusiva de crearAdicionalTrabajo (que
+        // siempre fija estado en PENDIENTE_COBRO); la transición a
+        // INCORPORADO_A_VENTA sólo existirá dentro de confirmarVenta (ETAPA 5,
+        // no implementada todavía). Ningún cliente puede crear, actualizar ni
+        // eliminar un adicional directamente, cualquiera sea el estado que
+        // intente asignarle.
+        match /adicionales/{adicionalId} {
+          allow read: if canReadWorkCosts(businessId, trabajoId, resource.data)
+            && resource.data.negocioId == businessId
+            && resource.data.trabajoId == trabajoId;
+          allow create, update, delete: if false;
+        }
+
         match /historial/{eventoId} {
           allow read: if canReadWorkOperations(businessId, trabajoId)
             && resource.data.negocioId == businessId
@@ -1183,6 +1226,18 @@ service cloud.firestore {
         allow create, update, delete: if false;
       }
 
+      // Mismo filtro de lectura que eventosVerificacionEmpresa (OWNER): la
+      // notificación referencia ese evento (eventoRefId) y no tiene sentido
+      // que la vea un rol que no puede leer el evento de origen.
+      match /notificaciones/{notificacionId} {
+        allow read: if hasSetupBusinessRole(businessId, ["OWNER"])
+          && resource.data.negocioId == businessId;
+        allow update: if hasSetupBusinessRole(businessId, ["OWNER"])
+          && resource.data.negocioId == businessId
+          && isAllowedNotificationUpdate();
+        allow create, delete: if false;
+      }
+
       match /businessVerificationRequests/{requestId} {
         allow read, create, update, delete: if false;
       }
@@ -1192,6 +1247,10 @@ service cloud.firestore {
       }
 
       match /platformBusinessStatusRequests/{requestId} {
+        allow read, create, update, delete: if false;
+      }
+
+      match /platformModulesRequests/{requestId} {
         allow read, create, update, delete: if false;
       }
 
@@ -1326,6 +1385,20 @@ service cloud.firestore {
         && isPlatformUserActive(request.auth.uid)
         && resource.data.uid == request.auth.uid;
       allow create, update, delete: if false;
+    }
+
+    // SPEC 032: invitaciones de equipo. Todo pasa por Functions; la persona
+    // invitada lee las suyas con listarMisInvitaciones, no con el SDK.
+    match /invitacionesEquipo/{invitationId} {
+      allow read, write: if false;
+    }
+
+    match /invitacionRequests/{requestId} {
+      allow read, write: if false;
+    }
+
+    match /invitacionLimites/{limitId} {
+      allow read, write: if false;
     }
 
     match /quotePublicTokens/{tokenHash} {

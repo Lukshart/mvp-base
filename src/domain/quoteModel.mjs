@@ -327,6 +327,34 @@ export function normalizeScopeSections(sections) {
     .filter((section) => section.titulo || section.lineas.length > 0);
 }
 
+// Título autogenerado cuando la UI de "Alcance" opera en modo simple (un solo
+// textarea, sin pedirle título al usuario). Vive aquí -no sólo en la página-
+// porque distinguir modo simple de modo avanzado en una cotización ya
+// guardada depende de comparar contra este mismo valor exacto.
+export const QUOTE_SIMPLE_SCOPE_TITLE = "Qué incluye esta propuesta";
+
+// Una cotización es "avanzada" (varios apartados con título propio) si tiene
+// más de una sección, o si su única sección tiene un título que el usuario
+// escribió a mano (distinto del autogenerado). Sin este segundo chequeo, una
+// cotización guardada en modo simple reaparecería como avanzada al volver a
+// cargarla, porque el título autogenerado quedó persistido para cumplir la
+// regla existente de que toda sección con líneas requiere título.
+export function isAdvancedQuoteScope(sections) {
+  const list = Array.isArray(sections) ? sections : [];
+  if (list.length > 1) return true;
+  const title = String(list[0]?.titulo || "").trim();
+  return Boolean(title) && title !== QUOTE_SIMPLE_SCOPE_TITLE;
+}
+
+// V1 mínima de validación para el selector desde/hasta del plazo de
+// ejecución: ambas fechas son obligatorias y "hasta" no puede ser anterior a
+// "desde". Las fechas llegan como "YYYY-MM-DD", así que la comparación de
+// strings ya respeta el orden cronológico sin necesidad de parsear Date.
+export function isValidQuoteDateRange(desde, hasta) {
+  if (!desde || !hasta) return false;
+  return String(hasta) >= String(desde);
+}
+
 export function normalizeQuoteConditions(raw = {}, company = {}) {
   const conditions = raw?.condiciones && typeof raw.condiciones === "object"
     ? raw.condiciones
@@ -477,6 +505,40 @@ export function calculateQuoteExpiryDate(issueDate, validityDays) {
   const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
+}
+
+export const QUOTE_EXPIRY_WARNING_DAYS = 3;
+
+function dateOnlyToUtcDays(value) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(safeQuoteText(value, 40));
+  if (!match) return null;
+  return Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) / 86400000;
+}
+
+// Seguimiento de vigencia en el historial. fechaVencimiento es el último día
+// válido (el backend vence la propuesta a la medianoche siguiente, hora de
+// Chile). Solo aplica a emitidas: una emitida "Marcada como emitida" no tiene
+// enlace público y el vencimiento automático nunca la alcanza, así que puede
+// seguir emitida con la fecha ya pasada ("vencida_sin_marcar").
+export function getQuoteExpiryAlert(quote = {}, today = "") {
+  const none = {kind: "", days: null};
+  if ((quote?.estado || "borrador") !== "emitida") return none;
+  const expiry = dateOnlyToUtcDays(quote.fechaVencimiento);
+  const current = dateOnlyToUtcDays(today);
+  if (expiry === null || current === null) return none;
+  const days = expiry - current;
+  if (days < 0) return {kind: "vencida_sin_marcar", days};
+  if (days <= QUOTE_EXPIRY_WARNING_DAYS) return {kind: "por_vencer", days};
+  return {kind: "", days};
+}
+
+// Filtros rápidos del historial: "todos" excluye archivadas (como el
+// selector Estado) y "por_vencer" incluye las emitidas con fecha ya pasada.
+export function matchesQuoteQuickFilter(quote = {}, filter = "todos", today = "") {
+  const estado = quote?.estado || "borrador";
+  if (filter === "todos") return estado !== "archivada";
+  if (filter === "por_vencer") return Boolean(getQuoteExpiryAlert(quote, today).kind);
+  return estado === filter;
 }
 
 export function normalizeAcceptance(raw = {}) {

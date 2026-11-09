@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import {createRequire} from "node:module";
-import {adaptStoredWork, adaptWorkExpense, adaptWorkLabor, adaptWorkLink, adaptWorkMaterialMovement, adaptWorkTask, adaptWorkTaskDocumentation, buildQuickWorkCreationPayload, buildWorkDailyCostSummary, buildWorkMutationPayload, canManageWorks, formatWorkNumber as formatFrontendNumber, getEligibleWorkQuoteOptions, getInventoryCurrentCost, getTaskProgress, getWorkCostSummary, getWorkDraftErrors, getWorkHistoricalPersonIdentity, getWorkMemberIdentity, getWorkMemberOptionLabel, getWorkOperationalIndicators, getWorkSaleMaterials, getWorkTaskProgress, hasAdditionalWorkMembers, humanizeWorkEvent, isWorkOperationalReadOnly, matchesWorkFilters, WORK_MODEL_VERSION} from "../src/domain/workModel.mjs";
+import * as workDomain from "../src/domain/workModel.mjs";
+import {adaptStoredWork, adaptWorkExpense, adaptWorkLabor, adaptWorkLink, adaptWorkMaterialMovement, adaptWorkTask, adaptWorkTaskDocumentation, buildQuickWorkCreationPayload, buildWorkDailyCostSummary, buildWorkMutationPayload, canManageWorks, formatWorkNumber as formatFrontendNumber, getEligibleWorkQuoteOptions, getInventoryCurrentCost, getTaskProgress, getWorkCostSummary, getWorkDraftErrors, getWorkHistoricalPersonIdentity, getWorkMemberIdentity, getWorkMemberOptionLabel, getWorkOperationalIndicators, getWorkSaleMaterials, getWorkTaskProgress, hasAdditionalWorkMembers, humanizeWorkEvent, isWorkOperationalReadOnly, matchesWorkFilters, resolveWorkMaterialScan, WORK_MODEL_VERSION} from "../src/domain/workModel.mjs";
 
 const require = createRequire(import.meta.url);
 const {actualizarSubtareaTrabajoHandler, actualizarTrabajoHandler, agregarNotaTrabajoHandler, agregarSubtareaTrabajoHandler, anularGastoTrabajoHandler, anularHorasHombreTrabajoHandler, asignarTareaTrabajoHandler, cambiarEstadoTareaTrabajoV2Handler, cambiarEstadoTrabajoHandler, crearTareaTrabajoV2Handler, crearTrabajoHandler, documentarTareaTrabajoHandler, eliminarSubtareaTrabajoHandler, eliminarTareaTrabajoV2Handler, formatWorkNumber, normalizeWorkInput, registrarDevolucionMaterialTrabajoHandler, registrarGastoTrabajoHandler, registrarHorasHombreTrabajoHandler, registrarSalidaMaterialTrabajoHandler, WORK_EXPENSE_CATEGORIES, writeCommercialLink, writeQuoteResponseEvent, writeSaleConfirmationEvent} = require("../functions/workPersistence.js");
@@ -522,28 +523,82 @@ assert.equal(isWorkOperationalReadOnly({estado: "en_progreso"}), false);
 for (const estado of ["pendiente", "en_espera"]) assert.equal(isWorkOperationalReadOnly({estado}), false);
 console.log("OK frontend: búsqueda, payload restringido y eventos sin UID crudo");
 
+// SPEC 028 etapa B2: tablero en tres columnas, lista de activos y vista Cerrados (dominio puro).
+{
+  const {WORK_BOARD_COLUMNS, WORK_CLOSED_BALANCE_LIMIT, getClosedWorks, getWorkClosedAt, getWorkClosedResultKind, getWorkDurationSummary, getWorkPersonShort, groupWorkTasksByBoardColumn, isWorkClosed, matchesWorkFilters, WORK_TASK_STATUSES} = workDomain;
+  // Tres columnas sobre los cuatro estados de siempre: el modelo de estados no cambia.
+  assert.deepEqual(WORK_BOARD_COLUMNS.map((column) => column.label), ["Por hacer", "En curso", "Hecho"]);
+  assert.deepEqual(WORK_TASK_STATUSES.map((entry) => entry.value), ["pendiente", "en_progreso", "en_espera", "completada"], "los estados de tarea no cambian");
+  assert.deepEqual(WORK_BOARD_COLUMNS.flatMap((column) => column.states).sort(), WORK_TASK_STATUSES.map((entry) => entry.value).sort(), "cada estado cae en exactamente una columna");
+  const grouped = groupWorkTasksByBoardColumn([
+    {id: "wait", estado: "en_espera"}, {id: "done", estado: "completada"}, {id: "todo", estado: "pendiente"}, {id: "doing-b", estado: "en_progreso"}, {id: "doing-a", estado: "en_progreso"}, {id: "wait-2", estado: "en_espera"},
+  ]);
+  assert.deepEqual(grouped.map((column) => column.tasks.map((task) => task.id)), [["todo"], ["doing-b", "doing-a", "wait", "wait-2"], ["done"]], "En espera se agrupa en En curso, al final");
+  assert.deepEqual(groupWorkTasksByBoardColumn(null).map((column) => column.tasks.length), [0, 0, 0]);
+  // Iniciales y nombre corto.
+  assert.deepEqual(getWorkPersonShort("Camila Torres Morales"), {initials: "CT", shortName: "Camila T."});
+  assert.deepEqual(getWorkPersonShort("ana@dominio.cl"), {initials: "AN", shortName: "ana"});
+  assert.deepEqual(getWorkPersonShort("Ana"), {initials: "AN", shortName: "Ana"});
+  assert.deepEqual(getWorkPersonShort(""), {initials: "", shortName: ""});
+  // Lista: solo activos por defecto; un estado cerrado pedido de forma explícita se respeta.
+  const sample = [{id: "a", estado: "pendiente", numero: "TRB-1", titulo: "A"}, {id: "b", estado: "en_progreso", numero: "TRB-2", titulo: "B"}, {id: "c", estado: "en_espera", numero: "TRB-3", titulo: "C"}, {id: "d", estado: "completado", numero: "TRB-4", titulo: "D"}, {id: "e", estado: "cancelado", numero: "TRB-5", titulo: "E"}];
+  assert.deepEqual(sample.filter((work) => matchesWorkFilters(work, {incluirCerrados: false})).map((work) => work.id), ["a", "b", "c"], "activos: pendiente, en progreso y en espera");
+  assert.deepEqual(sample.filter((work) => matchesWorkFilters(work, {incluirCerrados: true})).map((work) => work.id), ["a", "b", "c", "d", "e"]);
+  assert.deepEqual(sample.filter((work) => matchesWorkFilters(work, {})).map((work) => work.id), ["a", "b", "c", "d", "e"], "sin la opción, el filtro se comporta como siempre");
+  assert.deepEqual(sample.filter((work) => matchesWorkFilters(work, {incluirCerrados: false, estado: "completado"})).map((work) => work.id), ["d"]);
+  assert.equal(isWorkClosed({estado: "completado"}) && isWorkClosed({estado: "cancelado"}) && !isWorkClosed({estado: "en_espera"}), true);
+  // Cerrados: completados y cancelados, el cierre más reciente primero.
+  const closedWorks = getClosedWorks([
+    {id: "old", estado: "completado", fechaCompletado: "2026-03-01T12:00:00.000Z"},
+    {id: "open", estado: "en_progreso"},
+    {id: "cancel", estado: "cancelado", actualizadoEn: "2026-09-10T12:00:00.000Z"},
+    {id: "new", estado: "completado", fechaCompletado: "2026-10-01T12:00:00.000Z"},
+  ]);
+  assert.deepEqual(closedWorks.map((work) => work.id), ["new", "cancel", "old"]);
+  assert.equal(getWorkClosedAt({estado: "en_progreso", fechaCompletado: "2026-10-01T12:00:00.000Z"}), null);
+  assert.equal(getWorkClosedAt({estado: "cancelado", actualizadoEn: "2026-09-10T12:00:00.000Z"}), "2026-09-10T12:00:00.000Z", "Cancelado no guarda fecha propia: usa la última actualización");
+  assert.equal(WORK_CLOSED_BALANCE_LIMIT, 20);
+  // Duración planificada contra real (días corridos, el día de inicio cuenta).
+  assert.deepEqual(getWorkDurationSummary({estado: "completado", fechaInicio: "2026-10-01", fechaPrevista: "2026-10-10", fechaCompletado: "2026-10-13T15:00:00.000Z"}), {plannedDays: 10, actualDays: 13, deltaDays: 3});
+  assert.deepEqual(getWorkDurationSummary({estado: "completado", fechaInicio: "2026-10-01", fechaCompletado: "2026-10-03T15:00:00.000Z"}), {plannedDays: null, actualDays: 3, deltaDays: null}, "sin término planificado no se inventa el plan");
+  assert.deepEqual(getWorkDurationSummary({estado: "completado", fechaInicio: "2026-10-05", fechaPrevista: "2026-10-04", fechaCompletado: "2026-10-06T15:00:00.000Z"}).plannedDays, null, "un plan inválido no produce duración negativa");
+  // Resultado: Ganó / Perdió solo con balance completo; nunca se inventa uno.
+  assert.equal(getWorkClosedResultKind({estado: "COMPLETO", resultado: 1500}), "gano");
+  assert.equal(getWorkClosedResultKind({estado: "COMPLETO", resultado: -1}), "perdio");
+  assert.equal(getWorkClosedResultKind({estado: "COMPLETO", resultado: 0}), "equilibrio");
+  assert.equal(getWorkClosedResultKind({estado: "PARCIAL_SIN_VENTA", resultado: null}), "no_disponible");
+  assert.equal(getWorkClosedResultKind({estado: "INCONSISTENTE_MONEDA", resultado: 100}), "no_disponible");
+  assert.equal(getWorkClosedResultKind(null), "no_disponible");
+}
+console.log("OK frontend: tres columnas (En espera dentro de En curso), lista de activos, cerrados, duración y resultado");
+
 const rules = fs.readFileSync("firestore.rules", "utf8");
 const page = fs.readFileSync("src/pages/WorksPage.jsx", "utf8");
+const board = fs.readFileSync("src/features/works/WorkProjectBoard.jsx", "utf8");
+const taskPanel = fs.readFileSync("src/features/works/WorkTaskPanel.jsx", "utf8");
+const closedView = fs.readFileSync("src/features/works/WorkClosedProjects.jsx", "utf8");
 const styles = fs.readFileSync("src/features/works/works.css", "utf8");
 const backend = fs.readFileSync("functions/workPersistence.js", "utf8");
 assert.match(rules, /match \/trabajos\/\{trabajoId\}/); assert.match(rules, /match \/historial\/\{eventoId\}[\s\S]*allow create, update, delete: if false/); assert.match(rules, /match \/documentacion\/\{documentacionId\}/);
 assert.match(backend, /workCounters/); assert.match(backend, /workCreateRequests/); assert.match(backend, /workTaskRequests/); assert.match(backend, /workCostRequests/); assert.match(backend, /requireBusinessAccess/);
 assert.match(backend, /runTransaction[\s\S]*transaction\.get\(counterRef\)[\s\S]*transaction\.set\(counterRef/);
-assert.match(page, /ResponsiveDialog/); assert.doesNotMatch(page, /window\.confirm|actorUid/); assert.match(page, /works-board/); assert.match(page, /Historial del trabajo/); assert.match(page, /TaskSection/); assert.match(page, /FinancialSection/); assert.match(page, /No tienes tareas asignadas/);
-assert.match(page, /\+ Nuevo cliente/); assert.match(page, /openCreateClient/); assert.match(page, /editingWork \|\| hasAdditionalMembers/);
+assert.match(page, /ResponsiveDialog/); assert.doesNotMatch(page, /window\.confirm|actorUid/); assert.match(page, /<WorkProjectBoard/); assert.doesNotMatch(page, /function WorkBoard\(|<WorkBoard |TaskSection/, "el tablero ya no muestra tarjetas de proyectos ni la sección de tareas de la ficha"); assert.match(page, /Historial del trabajo/); assert.match(page, /FinancialSection/); assert.match(board, /No tienes tareas asignadas/);
+assert.match(page, /\+ Nuevo cliente/); assert.match(page, /openCreateClient/); assert.match(page, /No hay otros miembros activos en tu negocio/); assert.doesNotMatch(page, /hasAdditionalMembers|editingWork \|\| hasAdditionalMembers/); assert.match(page, /<legend>Equipo</); assert.match(page, /participanteUids: draft\.participanteUids\.includes\(member\.uid\)|draft\.participanteUids\.includes\(member\.uid\)/);
 assert.match(page, /Responsable principal/); assert.match(page, /Equipo adicional/); assert.match(page, /Sin integrantes/); assert.doesNotMatch(page, /<Field[^>]+label="Número"/);
 assert.match(page, /member\.uid === currentUserUid && member\.estado === "activo"/); assert.match(page, /responsableUid: currentMember\?\.uid \|\| ""/);
-assert.match(page, /label="Cotización asociada" optional/); assert.match(page, /Sin cotización/); assert.match(page, /getEligibleWorkQuoteOptions/);
+assert.match(page, /label="Cotización asociada" optional/); assert.match(page, /<WorkQuoteSelector/); assert.match(page, /getEligibleWorkQuoteOptions/);
+const quoteSelector = fs.readFileSync("src/features/works/WorkQuoteSelector.jsx", "utf8");
+assert.match(quoteSelector, /Sin cotización asociada/); assert.doesNotMatch(quoteSelector, /firebase|firestore|getDocs|httpsCallable|onSnapshot/i);
 assert.match(page, /label="Descripción" optional/); assert.match(page, /label="Cliente" optional/); assert.match(page, /label="Responsable" optional/); assert.match(page, /label="Inicio planificado" optional/); assert.match(page, /label="Término planificado" optional/); assert.match(page, /Completado el/);
 assert.match(page, /Escribe un nombre breve para identificar el proyecto/); assert.match(page, /Describe el requerimiento o lo informado por el cliente/); assert.match(page, /El número TRB y el estado Pendiente se asignarán automáticamente\./);
 assert.doesNotMatch(page, /Nueva cotización/); assert.doesNotMatch(page, /fecha de ingreso se asignarán automáticamente/);
 assert.match(styles, /works-form-automatic-note/); assert.match(styles, /@media\(min-width:768px\)[\s\S]*works-form-dialog \.responsive-dialog__body/);
-assert.match(page, /function DetailDisclosure[\s\S]*<details className="works-detail-disclosure">/); assert.match(page, /className="works-costs-focus"/); assert.match(page, /title="Notas del proyecto"/); assert.match(page, /title="Historial del trabajo"/);
-assert.match(page, /<h3>Resumen<\/h3>[\s\S]*<TaskSection[\s\S]*<h3>Costos<\/h3>[\s\S]*title="Notas del proyecto"[\s\S]*title="Historial del trabajo"/);
+assert.match(page, /function DetailDisclosure[\s\S]*<details className="works-detail-disclosure"/); assert.doesNotMatch(page, /className="works-costs-focus"|id="operacion"/, "la ficha ya no trae la pestaña Operación: opera el tablero"); assert.match(page, /title="Notas del proyecto"/); assert.match(page, /title="Historial del trabajo"/);
+assert.match(page, /id="datos"[\s\S]*id="comercial"[\s\S]*<CommercialFile[\s\S]*<WorkAdditionalsSection[\s\S]*id="balance"[\s\S]*<WorkBalanceSection[\s\S]*<DailyCostSummary[\s\S]*<SaleMaterialsGroup[\s\S]*id="notas"[\s\S]*title="Notas del proyecto"[\s\S]*title="Historial del trabajo"/);
 assert.match(page, /Aún no hay venta confirmada para calcular resultado y margen\./); assert.match(page, /Aún no se han registrado consumos adicionales\./); assert.match(page, /Aún no se han registrado gastos\./); assert.match(page, /Aún no se han registrado horas hombre\./);
-assert.match(page, /Materiales incluidos en la venta/); assert.match(page, /Registra aquí sólo consumos adicionales del proyecto/); assert.match(page, /Costo estimado de esta salida/);
-assert.match(page, /Costo asignado a esta tarea/); assert.match(page, /Último avance/); assert.match(page, /Sin actividad reciente/); assert.match(page, /Completar igualmente/); assert.match(page, /Motivo de espera/);
-assert.match(page, /TaskCostSelect/); assert.match(page, /Costos por día/); assert.match(page, /Nueva subtarea/); assert.match(page, /subtask\.completada/);
+assert.match(page, /Materiales incluidos en la venta/); assert.match(page, /Los consumos adicionales del proyecto se registran en el tablero/); assert.match(page, /Costo estimado de esta salida/);
+assert.match(page, /Sin actividad reciente/); assert.match(page, /Completar igualmente/); assert.match(page, /Motivo de espera/);
+assert.match(page, /TaskCostSelect/); assert.match(page, /Costos por día/); assert.match(taskPanel, /Nueva subtarea/); assert.match(taskPanel, /subtask\.completada/, "las subtareas se marcan y agregan desde el panel de la tarea");
 assert.match(page, /const completed = selectedWork\?\.estado === "completado"/);
 assert.match(page, /const operationalReadOnly = isWorkOperationalReadOnly\(selectedWork\)/);
 assert.match(page, /readOnly=\{operationalReadOnly\}/);
@@ -552,7 +607,7 @@ assert.match(page, /canRegister && !readOnly && <form className="works-cost-form
 assert.match(page, /canRegister && !readOnly && <form className="works-cost-form" onSubmit=\{saveLabor\}/);
 assert.match(page, /canManage && !readOnly && entry\.estado !== "anulado"/);
 assert.match(page, /canManage && !readOnly && remaining > 0/);
-assert.match(page, /!operationalReadOnly && <Button[^>]+onClick=\{\(\) => setCancelWork\(selectedWork\)\}>Cancelar trabajo/);
+assert.match(page, /!operationalReadOnly && <MoreActionsMenu actions=\{\[\{label: "Cancelar trabajo", onSelect: \(\) => setCancelWork\(selectedWork\)\}\]\}/); assert.doesNotMatch(page, /variant="ghost-danger" onClick=\{\(\) => setCancelWork/);
 assert.match(page, /open=\{Boolean\(cancelWork\) && !isWorkOperationalReadOnly\(cancelWork\)\}/);
 assert.match(page, /Reabrir proyecto/);
 assert.match(page, /visibleExpenses\.map/); assert.match(page, /visibleLabor\.map/); assert.match(page, /exits\.map/); assert.match(page, /saleMaterials\.map/);
@@ -561,6 +616,107 @@ assert.doesNotMatch(page, /Costos \/ ingreso|<dt>Rentabilidad<\/dt>|<th>Avance<\
 assert.match(page, /El costo histórico de/);
 assert.match(backend, /agregarSubtareaTrabajoHandler/); assert.match(backend, /actualizarSubtareaTrabajoHandler/); assert.match(backend, /eliminarSubtareaTrabajoHandler/); assert.match(backend, /tareaId: taskId/);
 assert.match(styles, /works-detail-disclosure\[open\]/); assert.match(styles, /works-commercial-list[\s\S]*grid-template-columns/);
+// Ficha por pestañas: cabecera siempre visible, componente compartido <Tabs>, formulario con "Más detalles" cerrado.
+assert.match(page, /import \{TabPanel, Tabs\} from "\.\.\/components\/ui\/Tabs"/); assert.match(page, /Trabajar en el tablero/); assert.match(page, /import MoreActionsMenu from "\.\.\/components\/ui\/MoreActionsMenu"/);
+assert.match(page, /const WORK_DETAIL_TABS = Object\.freeze\(\[\s*\{id: "datos", label: "Datos"\},\s*\{id: "comercial", label: "Comercial"\},\s*\{id: "balance", label: "Balance"\},\s*\{id: "notas", label: "Notas e historial"\},\s*\]\)/);
+assert.match(page, /const \[detailTab, setDetailTab\] = useState\("datos"\)/); assert.match(page, /setDetailTab\("datos"\);\s*loadDetail\(requestedWork\.id\)/); assert.match(page, /const openDetail = \(work, tab = "datos"\) => \{[^}]*setDetailTab\(tab\)/, "la ficha abre en Datos salvo que se pida otra pestaña (Cerrados abre en Balance)");
+assert.ok(page.indexOf('<div className="works-detail-header">') < page.indexOf("<WorkSummary work={selectedWork}") && page.indexOf("<WorkSummary work={selectedWork}") < page.indexOf("<Tabs className="), "la cabecera (estado, acciones y franja) va antes y fuera de las pestañas");
+assert.match(page, /<details className="works-more-details" open=\{moreDetailsOpen\}/); assert.match(page, /useState\(false\);\s*const \[detailTab/);
+assert.ok(page.indexOf("<summary>Más detalles</summary>") < page.indexOf('label="Descripción" optional') && page.indexOf("<summary>Más detalles</summary>") < page.indexOf('label="Inicio planificado" optional'), "Descripción e Inicio planificado viven dentro de Más detalles");
+assert.ok(page.indexOf('label="Término planificado" optional') < page.indexOf("<summary>Más detalles</summary>"), "Término planificado queda visible");
+{
+  const datos = page.slice(page.indexOf('id="datos" idPrefix'), page.indexOf('id="comercial" idPrefix'));
+  assert.doesNotMatch(datos, /Término planificado/, "Datos no repite el término que ya muestra la franja");
+  assert.match(datos, /works-empty-line/);
+}
+assert.match(page, /\{canViewWorkProfitability\(role\) && <WorkBalanceSection balance=\{detail\.balance\} loading=\{detailLoading\} \/>\}/);
+const tabsSource = fs.readFileSync("src/components/ui/Tabs.jsx", "utf8");
+assert.match(tabsSource, /role="tablist"/); assert.match(tabsSource, /role="tab"/); assert.match(tabsSource, /role="tabpanel"/); assert.match(tabsSource, /aria-selected=/); assert.match(tabsSource, /ArrowRight/); assert.match(tabsSource, /hidden=\{!active\}/);
+const componentsCss = fs.readFileSync("src/styles/components.css", "utf8");
+assert.match(componentsCss, /\.ui-tabs \{/); assert.match(componentsCss, /\.ui-tab\.is-active \{/); assert.match(componentsCss, /\.ui-tab-panel\[hidden\] \{/);
 console.log("OK integración: Rules, autoridad backend, lista/tablero y confirmación segura");
+
+const scanProducts = [{id: "p1", nombre: "Cable", barcode: "0012345678905"}, {id: "p2", nombre: "Switch", codigoBarras: "7801234567890"}];
+const scanFound = resolveWorkMaterialScan(scanProducts, "012345678905", {itemId: "", cantidad: ""});
+assert.deepEqual([scanFound.status, scanFound.itemId, scanFound.cantidad], ["found", "p1", "1"]);
+assert.equal(resolveWorkMaterialScan(scanProducts, "7801234567890", {cantidad: ""}).itemId, "p2");
+assert.equal(resolveWorkMaterialScan(scanProducts, "999", {cantidad: ""}).status, "not_available");
+assert.equal(resolveWorkMaterialScan(scanProducts, "", {}).status, "not_available");
+assert.equal(resolveWorkMaterialScan(scanProducts, "012345678905", {cantidad: "5"}).cantidad, "5");
+console.log("OK escáner de salida de material: disponible, no disponible y cantidad conservada");
+
+// Interfaz de Proyectos y Trabajos: un fallo de carga nunca se muestra como vacío.
+{
+  const mainStart = page.indexOf("export default function WorksPage");
+  const mainEnd = page.indexOf("function commercialStatusLabel");
+  const main = page.slice(mainStart, mainEnd);
+  // Lista: error propio, separado del error de acciones, y la lista/tablero/vacío
+  // solo se renderizan en la rama sin error.
+  assert.match(main, /const \[loadError, setLoadError\] = useState\(""\)/);
+  assert.match(main, /catch \(failure\) \{\s*setLoadError\(/);
+  assert.doesNotMatch(main.slice(main.indexOf("const load = useCallback"), main.indexOf("useEffect(() => { load(); }")), /setError\(failure|setError\(loadError/);
+  const listBranch = main.indexOf("{loadError ? <LoadFailure message={loadError} onRetry={load} /> : <>");
+  assert.ok(listBranch > 0, "la lista tiene una rama de error de carga");
+  const beforeListBranch = main.slice(0, listBranch);
+  assert.doesNotMatch(beforeListBranch, /<WorkList|<WorkProjectBoard|<WorksEmptyState/);
+  const afterListBranch = main.slice(listBranch);
+  assert.match(afterListBranch, /<WorkList[\s\S]*<\/>\}\s*<\/section>/);
+  assert.match(main, /\{canManage && !loadError && <div className="erp-module-intro">/);
+  // Ficha: loadDetail guarda su error aparte y el error reemplaza todas las secciones.
+  assert.match(main, /const \[detailError, setDetailError\] = useState\(""\)/);
+  assert.match(main, /catch \(failure\) \{ setDetailError\(/);
+  const detailBranch = main.indexOf("{detailError ? <LoadFailure message={detailError} onRetry={() => loadDetail(selectedWork.id)} /> : <>");
+  assert.ok(detailBranch > 0, "la ficha tiene una rama de error de carga");
+  assert.doesNotMatch(main.slice(0, detailBranch), /<CommercialFile|<WorkAdditionalsSection|<DailyCostSummary|Notas del proyecto|Historial del trabajo/);
+  const detailRest = main.slice(detailBranch);
+  for (const section of ["<CommercialFile", "<DailyCostSummary", "<SaleMaterialsGroup", "<WorkAdditionalsSection", 'title="Notas del proyecto"', 'title="Historial del trabajo"']) {
+    assert.ok(detailRest.includes(section), `${section} solo se renderiza sin error de carga`);
+  }
+  // Los textos de vacío de la ficha viven dentro de esas secciones, nunca fuera de la rama sin error.
+  assert.doesNotMatch(main.slice(0, detailBranch), /Aún no hay notas|Aún no hay tareas/);
+  // Tablero: "no hay Proyectos" frente a "los filtros no coinciden", con el mismo vacío de la Lista.
+  assert.match(main, /view === "board" \? \(works\.length \? <WorkProjectBoard [\s\S]*\/> : <WorksEmptyState hasAnyWork=\{false\}/);
+  // Tablero del proyecto: cargando, error, datos (en ese orden) y error propio separado del de acciones.
+  assert.match(main, /const \[boardError, setBoardError\] = useState\(""\)/);
+  assert.match(board, /loading \? <LoadingState variant="section" label="Cargando tablero\.\.\." \/> : error \? <LoadFailure message=\{error\} onRetry=\{onRetry\} \/> : \(/);
+  assert.doesNotMatch(board.slice(0, board.indexOf("error ? <LoadFailure")), /<WorkTaskBoard|<CostCard/);
+  const emptyState = page.slice(page.indexOf("function WorksEmptyState"), page.indexOf("function WorkList"));
+  assert.match(emptyState, /No hay trabajos coincidentes/);
+  assert.match(emptyState, /Aún no hay trabajos/);
+  assert.match(page, /function WorkList[\s\S]*?<WorksEmptyState/);
+  // Menores.
+  assert.doesNotMatch(page, /window\.alert/);
+  assert.match(page, /setEvidenceError\("No se pudo abrir el documento\. Intenta nuevamente\."\)/);
+  assert.match(page, /<LoadingState variant="section" label="Calculando desde fuentes autoritativas\.\.\." \/>/);
+  assert.doesNotMatch(page, /<p>Calculando desde fuentes autoritativas/);
+  assert.match(page, /function CommercialFile[\s\S]*?useBusinessFormat\(\)/);
+  assert.doesNotMatch(page.slice(page.indexOf("function commercialTotal"), page.indexOf("function CommercialFile")), /es-CL/);
+  // Móvil: los tableros se apilan en una columna, sin scroll horizontal.
+  assert.match(styles, /@media\(max-width:767px\)\s*\{[^}]*\.works-load-error[^}]*\}\s*\.works-board, \.works-task-board \{ grid-template-columns: minmax\(0, 1fr\); min-width: 0; \}/);
+  assert.match(styles, /\.works-panel:has\(\.works-board\), \.works-panel:has\(\.works-task-board\), \.works-detail-section:has\(\.works-task-board\) \{ overflow-x: visible; \}/);
+}
+// Vista Cerrados (SPEC 028 etapa B2): tercera vista junto a Lista y Tablero, dentro de la rama sin error de carga.
+{
+  const mainStart = page.indexOf("export default function WorksPage");
+  const main = page.slice(mainStart, page.indexOf("function commercialStatusLabel"));
+  assert.match(main, /searchParams\.get\("vista"\) === "cerrados" \? "closed"/);
+  assert.match(main, /<AppIcon icon=\{Archive\} size=\{17\} \/>Cerrados/);
+  assert.ok(main.indexOf("{loadError ? <LoadFailure message={loadError} onRetry={load} /> : <>") < main.indexOf("<WorkClosedProjects"), "un fallo de carga de la lista reemplaza a Cerrados: nunca se muestra como vacío");
+  assert.match(main, /canViewProfitability=\{canSeeProfitability\}/);
+  assert.match(main, /const canSeeProfitability = canViewWorkProfitability\(role\)/);
+  assert.match(main, /closedBalanceIds = useMemo\(\(\) => getClosedWorks\(works\)\.slice\(0, WORK_CLOSED_BALANCE_LIMIT\)/, "balances limitados a los 20 cierres más recientes");
+  assert.match(main, /Promise\.allSettled\(ids\.map\(\(id\) => obtenerBalanceTrabajo\(businessId, id\)\)\)/, "balances en paralelo, un fallo no tumba a los demás");
+  assert.match(main, /if \(view === "closed" && canSeeProfitability && !loading && !loadError && closedBalanceKey\)/, "sin permiso de ganancias no se pide ningún balance");
+  assert.match(main, /openDetail\(work, canSeeProfitability \? "balance" : "datos"\)/, "cada fila abre la ficha en Balance (Datos sin permiso de ganancias)");
+  assert.match(main, /matchesWorkFilters\(work, \{\.\.\.filters, incluirCerrados: showClosed\}\)/, "la Lista muestra solo activos salvo que se pida lo contrario");
+  assert.match(main, /Mostrar también cerrados/);
+  assert.match(page, /No hay proyectos activos/);
+  // El componente: condiciona lo monetario al permiso y separa error de vacío.
+  assert.doesNotMatch(closedView, /firebase|firestore|httpsCallable|getDocs|obtenerBalanceTrabajo/i, "WorkClosedProjects es presentacional");
+  assert.match(closedView, /canViewProfitability && <th>Balance<\/th>/); assert.match(closedView, /\{canViewProfitability && <td>\{balanceCell\(work\)\}<\/td>\}/); assert.match(closedView, /\{canViewProfitability && balanceCell\(work\)\}/);
+  assert.match(closedView, /canViewProfitability && balancesError/);
+  assert.match(closedView, /Aún no hay proyectos cerrados/);
+}
+console.log("OK interfaz de trabajos: error de carga separado del vacío (lista y ficha), vacío del tablero, sin window.alert y tableros apilados en móvil");
 
 console.log("WORKS_MODEL_SMOKE_OK");

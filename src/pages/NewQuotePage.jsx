@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { sileo } from "sileo";
 import AiAvailabilityStatus from "../components/ai/AiAvailabilityStatus";
+import Spinner from "../components/ui/Spinner";
 import { AI_MODELS } from "../config/aiModels";
 import {
   createQuoteItemFromValuation,
@@ -10,7 +11,9 @@ import {
 import {
   calculateQuoteLineAmounts,
   DEFAULT_QUOTE_CONDITIONS,
-  getQuoteStatusLabel,
+  isAdvancedQuoteScope,
+  isValidQuoteDateRange,
+  QUOTE_SIMPLE_SCOPE_TITLE,
   resolveQuoteClientSelectionSnapshot,
   tryCalculateQuoteTotals,
   validateQuoteDraft,
@@ -40,7 +43,8 @@ import {
   updateQuote,
 } from "../services/quoteService";
 import { subscribeToValuations } from "../services/valuationService";
-import { formatCLP, formatDate } from "../utils/formatters";
+import { useBusinessMoney } from "../hooks/useBusinessFormat";
+import { formatDate } from "../utils/formatters";
 
 const ASSISTANT_DESCRIPTION_MAX_LENGTH = 1200;
 const MANUAL_CATALOG_PAGE_SIZE = 10;
@@ -63,6 +67,19 @@ const DEFAULT_UNIT_BY_TYPE = {
   servicio: "servicio",
   actividad: "hora",
 };
+
+function formatShortEsDate(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value || ""))) return "";
+  const date = new Date(`${value}T12:00:00Z`);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("es-CL", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  })
+    .format(date)
+    .replace(/\./g, "");
+}
 
 const PRICE_CONFIDENCE_UNAVAILABLE = "no_disponible";
 const DEFAULT_PRICE_JUSTIFICATION =
@@ -243,20 +260,20 @@ function hasSameDraftText(first, second) {
 
 const statusStyles = {
   [PRICING_STATUS.SIN_REFERENCIAS]: {
-    background: "#f1f5f9",
-    color: "#475569",
+    background: "var(--color-surface-subtle)",
+    color: "var(--color-text-default)",
   },
   [PRICING_STATUS.BAJO_MERCADO]: {
-    background: "#dbeafe",
-    color: "#1d4ed8",
+    background: "var(--color-info-50)",
+    color: "var(--color-info-700)",
   },
   [PRICING_STATUS.DENTRO_DE_RANGO]: {
-    background: "#dcfce7",
-    color: "#166534",
+    background: "var(--color-success-50)",
+    color: "var(--color-success-700)",
   },
   [PRICING_STATUS.SOBRE_MERCADO]: {
-    background: "#fee2e2",
-    color: "#991b1b",
+    background: "var(--color-danger-50)",
+    color: "var(--color-danger-700)",
   },
 };
 
@@ -325,6 +342,15 @@ function normalizeStoredQuoteItems(items) {
   );
 }
 
+// "Qué incluye esta propuesta" empieza cerrado salvo que ya tenga contenido:
+// más de un apartado o alguna línea escrita (en modo simple la sección única
+// sólo lleva título mientras tiene texto).
+function hasScopeContent(sections = []) {
+  return sections.length > 1 || sections.some((section) =>
+    (section?.lineas || []).some((line) => String(line || "").trim())
+  );
+}
+
 function buildQuoteFromSavedQuote(savedQuote = {}) {
   return {
     ...buildInitialQuote(),
@@ -368,6 +394,7 @@ function buildQuoteFromSavedQuote(savedQuote = {}) {
 }
 
 function NewQuotePage({ userId }) {
+  const formatBusinessAmount = useBusinessMoney();
   const { quoteId: editQuoteId = "" } = useParams();
   const location = useLocation();
   const projectContext = location.state?.projectContext || null;
@@ -445,6 +472,8 @@ function NewQuotePage({ userId }) {
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [scopeOpen, setScopeOpen] = useState(false);
   const [conditionsOpen, setConditionsOpen] = useState(false);
+  const [plazoRangeOpen, setPlazoRangeOpen] = useState(false);
+  const [plazoRangeDraft, setPlazoRangeDraft] = useState({ desde: "", hasta: "" });
 
   useEffect(() => {
     currentClienteIdRef.current = quote.clienteId;
@@ -632,6 +661,7 @@ function NewQuotePage({ userId }) {
         };
         currentClienteIdRef.current = editableQuote.clienteId;
         setQuote(editableQuote);
+        setScopeOpen(hasScopeContent(editableQuote.seccionesAlcance));
         setLoadedDraftQuote(editableQuote);
         setSavedQuoteId(savedQuote.id);
         setDirty(false);
@@ -820,6 +850,24 @@ function NewQuotePage({ userId }) {
     }));
   };
 
+  // V1 mínima: el selector desde/hasta sólo compone el mismo texto libre que
+  // ya acepta "condiciones.plazoEntrega" (sin cambiar el contrato ni tocar
+  // Functions/PDF). El campo sigue siendo editable a mano, incluida la
+  // redacción de plazos relativos ("10 días hábiles desde la orden de
+  // compra"), que este selector no cubre todavía.
+  const applyPlazoRange = () => {
+    // El botón ya se deshabilita si el rango no es válido; esta comprobación
+    // es defensiva (por ejemplo, un envío por teclado) y evita persistir un
+    // rango invertido aunque cambie la UI que lo invoca.
+    if (!isValidQuoteDateRange(plazoRangeDraft.desde, plazoRangeDraft.hasta)) return;
+    const desdeLabel = formatShortEsDate(plazoRangeDraft.desde);
+    const hastaLabel = formatShortEsDate(plazoRangeDraft.hasta);
+    if (!desdeLabel || !hastaLabel) return;
+    updateCondition("plazoEntrega", `${desdeLabel} → ${hastaLabel}`);
+    setPlazoRangeOpen(false);
+    setPlazoRangeDraft({ desde: "", hasta: "" });
+  };
+
   const handleClientChange = useCallback((client) => {
     if (!client) {
       currentClienteIdRef.current = "";
@@ -863,13 +911,50 @@ function NewQuotePage({ userId }) {
   const addScopeSection = () => {
     setDirty(true);
     setScopeOpen(true);
-    setQuote((prev) => ({
-      ...prev,
-      seccionesAlcance: [
-        ...prev.seccionesAlcance,
-        { id: `alcance-${Date.now()}`, titulo: "", lineas: [""] },
-      ],
-    }));
+    setQuote((prev) => {
+      const base = prev.seccionesAlcance.length
+        ? prev.seccionesAlcance
+        : [{ id: `alcance-${Date.now()}`, titulo: QUOTE_SIMPLE_SCOPE_TITLE, lineas: [] }];
+      return {
+        ...prev,
+        seccionesAlcance: [
+          ...base,
+          { id: `alcance-${Date.now()}-extra`, titulo: "", lineas: [""] },
+        ],
+      };
+    });
+  };
+
+  // El textarea principal (modo simple) edita la primera sección de
+  // seccionesAlcance para no crear un campo nuevo: sólo se le asigna un
+  // título por defecto mientras tenga contenido, así pasa la validación
+  // existente (una sección con líneas requiere título) sin pedírselo al
+  // usuario. Si el usuario borra todo el texto, el título vuelve a quedar
+  // vacío y la sección se descarta al guardar (normalizeScopeSections).
+  const updatePrimaryScopeText = (text) => {
+    setDirty(true);
+    setScopeOpen(true);
+    const lineas = text.split(/\r?\n/);
+    const hasContent = lineas.some((line) => line.trim());
+    setQuote((prev) => {
+      if (prev.seccionesAlcance.length === 0) {
+        if (!hasContent) return prev;
+        return {
+          ...prev,
+          seccionesAlcance: [
+            { id: `alcance-${Date.now()}`, titulo: QUOTE_SIMPLE_SCOPE_TITLE, lineas },
+          ],
+        };
+      }
+      return {
+        ...prev,
+        seccionesAlcance: prev.seccionesAlcance.map((section, index) =>
+          index === 0
+            ? { ...section, titulo: hasContent ? (section.titulo || QUOTE_SIMPLE_SCOPE_TITLE) : "", lineas }
+            : section
+        ),
+      };
+    });
   };
 
   const updateScopeSection = (id, patch) => {
@@ -900,6 +985,18 @@ function NewQuotePage({ userId }) {
       return { ...prev, seccionesAlcance: sections };
     });
   };
+
+  // Modo simple (un solo textarea sin título) vs. modo avanzado (varios
+  // apartados con título propio). Se deriva de los datos (isAdvancedQuoteScope
+  // en quoteModel.mjs), no de un flag de UI aparte, para que una cotización
+  // existente con secciones tituladas o múltiples nunca pierda su edición
+  // completa, y para que el round-trip de una cotización guardada en modo
+  // simple no reaparezca como avanzada sólo por el título autogenerado.
+  const isAdvancedScope = isAdvancedQuoteScope(quote.seccionesAlcance);
+  const primaryScopeText = (quote.seccionesAlcance[0]?.lineas || []).join("\n");
+
+  const plazoRangeValid = isValidQuoteDateRange(plazoRangeDraft.desde, plazoRangeDraft.hasta);
+  const plazoRangeShowError = Boolean(plazoRangeDraft.desde && plazoRangeDraft.hasta) && !plazoRangeValid;
 
   const showItemFeedback = (message) => {
     setItemFeedback(message);
@@ -982,6 +1079,7 @@ function NewQuotePage({ userId }) {
     const valuation = valuations.find((entry) => entry.itemId === product.id) ||
       buildValuationForItem(product, []);
     addItem(valuation, 1);
+    return {key: product.id, label: product.nombre};
   };
 
   const handleCatalogSearchChange = (event) => {
@@ -1624,6 +1722,24 @@ function NewQuotePage({ userId }) {
     !clientAvailability.hasActiveClients ||
     !quote.clienteId
   );
+  const saveBlockedByItems = quote.items.length === 0;
+  const saveBlocked = saveBlockedByClient || saveBlockedByItems;
+
+  // Qué falta para habilitar "Crear cotización" / "Guardar cambios". Los
+  // valores mal ingresados (montos, apartados) se siguen informando al pulsar.
+  const missingRequirements = [];
+  if (!isEditMode && !clientAvailability.loading && !clientAvailability.error) {
+    if (!clientAvailability.hasActiveClients) missingRequirements.push("registrar un cliente activo");
+    else if (!quote.clienteId) missingRequirements.push("cliente");
+  }
+  if (saveBlockedByItems) missingRequirements.push("al menos un ítem");
+  const saveBlockedReason = !isEditMode && clientAvailability.loading
+    ? "Cargando clientes…"
+    : !isEditMode && clientAvailability.error
+      ? "No se pudieron cargar los clientes."
+      : missingRequirements.length
+        ? `Falta: ${missingRequirements.join(" · ")}`
+        : "";
 
   const saveQuote = async () => {
     if (savingRef.current) return;
@@ -1723,7 +1839,8 @@ function NewQuotePage({ userId }) {
   if (isEditMode && editLoading) {
     return (
       <section className="quote-page" style={styles.wrapper}>
-        <div className="no-print" style={styles.panel}>
+        <div className="no-print ui-reveal-delay" style={styles.panel} role="status">
+          <div style={styles.loadingSpinner}><Spinner /></div>
           <h3 style={styles.panelTitle}>Cargando cotización pendiente</h3>
           <p style={styles.helpText}>Estamos obteniendo la cotización guardada.</p>
         </div>
@@ -1747,36 +1864,23 @@ function NewQuotePage({ userId }) {
 
   return (
     <section className="quote-page quote-workspace">
-      <header className="quote-workspace__header no-print">
-        <div className="quote-workspace__header-copy">
-          <span className="quote-workspace__eyebrow">Cotizaciones</span>
-          <h1>{isEditMode ? "Editar cotización" : "Nueva cotización"}</h1>
-          {isEditMode ? (
-            <span className="quote-workspace__status">
-              {getQuoteDisplayNumber(quote)} · {getQuoteStatusLabel(quote.estado)}
-            </span>
-          ) : (
-            <small>El número se asignará al crear la cotización.</small>
-          )}
-          {isEditMode && quote.fecha && <small>{formatDate(quote.fecha)}</small>}
+      <section className="quote-workspace__panel quote-workspace__client-project no-print">
+        <div>
+          <span className="quote-workspace__kicker">Cliente</span>
+          <ClientSelector businessId={userId} value={quote.clienteId} snapshot={quote.cliente} onChange={handleClientChange} onAvailabilityChange={setClientAvailability} />
+        </div>
+        <div className="quote-workspace__project">
+          <label className="quote-workspace__project-field">
+            <span className="quote-workspace__kicker">Asunto</span>
+            <input type="text" value={quote.proyectoNombre} onChange={(event) => updateField("proyectoNombre", event.target.value)} placeholder="Ej. Escalera zona de estanque" />
+            <small>Resume en pocas palabras qué se cotiza. Aparece como 'Proyecto' en el PDF.</small>
+          </label>
           {quote.trabajoId && (
             <Link to="/trabajos" state={{openWorkId: quote.trabajoId}} className="quote-workspace__project-link">
               Proyecto {quote.trabajoNumero || quote.trabajoTitulo || quote.trabajoId}
             </Link>
           )}
         </div>
-      </header>
-
-      <section className="quote-workspace__panel quote-workspace__client-project no-print">
-        <div>
-          <span className="quote-workspace__kicker">Cliente</span>
-          <ClientSelector businessId={userId} value={quote.clienteId} snapshot={quote.cliente} onChange={handleClientChange} onAvailabilityChange={setClientAvailability} />
-        </div>
-        <label className="quote-workspace__project">
-          <span className="quote-workspace__kicker">Proyecto o trabajo</span>
-          <input type="text" value={quote.proyectoNombre} onChange={(event) => updateField("proyectoNombre", event.target.value)} placeholder="Ej. Escalera zona de estanque" />
-          <small>Identifica brevemente el alcance principal de esta propuesta.</small>
-        </label>
       </section>
 
       {error && <p className="no-print" style={styles.errorText}>{error}</p>}
@@ -2029,29 +2133,29 @@ function NewQuotePage({ userId }) {
       </div>
 
       <QuoteCollapsibleSection
-        title={quote.seccionesAlcance.length ? "Alcance del trabajo" : "+ Agregar alcance o entregables"}
-        summary={quote.seccionesAlcance.length
-          ? `${quote.seccionesAlcance.length} sección${quote.seccionesAlcance.length === 1 ? "" : "es"} descriptiva${quote.seccionesAlcance.length === 1 ? "" : "s"}`
-          : "Opcional"}
+        title="Qué incluye esta propuesta"
+        summary={quote.seccionesAlcance.length > 1
+          ? `${quote.seccionesAlcance.length} apartados`
+          : hasScopeContent(quote.seccionesAlcance)
+            ? "Con descripción"
+            : "Opcional"}
         open={scopeOpen}
-        onToggle={() => quote.seccionesAlcance.length ? setScopeOpen((current) => !current) : addScopeSection()}
+        onToggle={() => setScopeOpen((current) => !current)}
       >
         <div className="quote-workspace__secondary-body">
           <div className="quote-workspace__secondary-header">
-            <p style={styles.helpText}>Las secciones vacías no aparecerán en el PDF.</p>
-            <button type="button" onClick={addScopeSection} className="quote-workspace__button quote-workspace__button--secondary">Agregar sección</button>
+            <p style={styles.helpText}>Describe brevemente los trabajos, servicios o entregables incluidos en la cotización. Las secciones vacías no aparecerán en el PDF.</p>
+            <button type="button" onClick={addScopeSection} className="quote-workspace__button quote-workspace__button--secondary">+ Agregar apartado</button>
           </div>
-          {quote.seccionesAlcance.length === 0 ? (
-            <div style={styles.compactEmptyState}>Puedes agregar Servicios, Materiales, Gastos de operación, Entregables o cualquier otro título.</div>
-          ) : (
+          {isAdvancedScope ? (
             <div style={styles.scopeList}>
               {quote.seccionesAlcance.map((section, index) => (
                 <article key={section.id} style={styles.scopeCard}>
                   <div style={styles.scopeHeader}>
-                    <input value={section.titulo} onChange={(event) => updateScopeSection(section.id, { titulo: event.target.value })} placeholder="Título de la sección" style={styles.input} />
+                    <input value={section.titulo} onChange={(event) => updateScopeSection(section.id, { titulo: event.target.value })} placeholder="Título del apartado" style={styles.input} />
                     <div style={styles.scopeActions}>
-                      <button type="button" aria-label="Subir sección" disabled={index === 0} onClick={() => moveScopeSection(index, -1)} style={styles.orderButton}>↑</button>
-                      <button type="button" aria-label="Bajar sección" disabled={index === quote.seccionesAlcance.length - 1} onClick={() => moveScopeSection(index, 1)} style={styles.orderButton}>↓</button>
+                      <button type="button" aria-label="Subir apartado" disabled={index === 0} onClick={() => moveScopeSection(index, -1)} style={styles.orderButton}>↑</button>
+                      <button type="button" aria-label="Bajar apartado" disabled={index === quote.seccionesAlcance.length - 1} onClick={() => moveScopeSection(index, 1)} style={styles.orderButton}>↓</button>
                       <button type="button" onClick={() => removeScopeSection(section.id)} style={styles.removeButton}>Eliminar</button>
                     </div>
                   </div>
@@ -2062,6 +2166,14 @@ function NewQuotePage({ userId }) {
                 </article>
               ))}
             </div>
+          ) : (
+            <textarea
+              rows={4}
+              value={primaryScopeText}
+              onChange={(event) => updatePrimaryScopeText(event.target.value)}
+              placeholder="Ej: instalación completa, materiales incluidos, pruebas de funcionamiento..."
+              style={styles.textarea}
+            />
           )}
         </div>
       </QuoteCollapsibleSection>
@@ -2078,7 +2190,25 @@ function NewQuotePage({ userId }) {
           <Field label="Vigencia (días)"><input type="number" min="1" max="3650" value={quote.validezDias} onChange={(event) => updateField("validezDias", event.target.value)} style={styles.input} /></Field>
           <Field label="Tratamiento tributario"><select value={quote.afectaIva === false ? "exenta" : "afecta"} onChange={(event) => updateField("afectaIva", event.target.value === "afecta")} style={styles.input}><option value="afecta">Afecta IVA 19%</option><option value="exenta">Exenta de IVA</option></select></Field>
           <Field label="Forma de pago"><input value={quote.condiciones.formaPago} onChange={(event) => updateCondition("formaPago", event.target.value)} style={styles.input} /></Field>
-          <Field label="Plazo de ejecución o entrega"><input value={quote.condiciones.plazoEntrega} onChange={(event) => updateCondition("plazoEntrega", event.target.value)} style={styles.input} /></Field>
+          <Field label="Plazo de ejecución o entrega">
+            <input value={quote.condiciones.plazoEntrega} onChange={(event) => updateCondition("plazoEntrega", event.target.value)} placeholder="Ej: 10 días hábiles" style={styles.input} />
+            {plazoRangeOpen ? (
+              <div>
+                <div style={styles.plazoRangeRow}>
+                  <input type="date" value={plazoRangeDraft.desde} onChange={(event) => setPlazoRangeDraft((current) => ({ ...current, desde: event.target.value }))} style={{ ...styles.input, width: "auto" }} />
+                  <span aria-hidden="true">→</span>
+                  <input type="date" min={plazoRangeDraft.desde || undefined} value={plazoRangeDraft.hasta} onChange={(event) => setPlazoRangeDraft((current) => ({ ...current, hasta: event.target.value }))} style={{ ...styles.input, width: "auto" }} />
+                  <button type="button" disabled={!plazoRangeValid} onClick={applyPlazoRange} className="quote-workspace__button quote-workspace__button--primary">Aceptar</button>
+                  <button type="button" onClick={() => setPlazoRangeOpen(false)} className="quote-workspace__button quote-workspace__button--secondary">Cancelar</button>
+                </div>
+                {plazoRangeShowError && (
+                  <span style={styles.fieldErrorText}>La fecha "hasta" no puede ser anterior a "desde".</span>
+                )}
+              </div>
+            ) : (
+              <button type="button" onClick={() => setPlazoRangeOpen(true)} className="quote-workspace__link-button">Definir con fecha desde/hasta</button>
+            )}
+          </Field>
         </div>
       </section>
 
@@ -2096,9 +2226,9 @@ function NewQuotePage({ userId }) {
           <div style={styles.conditionsGrid}>
             <Field label="Garantía"><input value={quote.condiciones.garantia} onChange={(event) => updateCondition("garantia", event.target.value)} style={styles.input} /></Field>
             <Field label="Alcance geográfico"><input value={quote.condiciones.alcanceGeografico} onChange={(event) => updateCondition("alcanceGeografico", event.target.value)} style={styles.input} /></Field>
-            <Field label="Observaciones" wide><textarea rows={3} value={quote.condiciones.observaciones} onChange={(event) => updateCondition("observaciones", event.target.value)} style={styles.textarea} /></Field>
-            <Field label="Exclusiones" wide><textarea rows={3} value={quote.condiciones.exclusiones} onChange={(event) => updateCondition("exclusiones", event.target.value)} style={styles.textarea} /></Field>
-            <Field label="Términos y condiciones adicionales" wide><textarea rows={4} value={quote.condiciones.terminosAdicionales} onChange={(event) => updateCondition("terminosAdicionales", event.target.value)} style={styles.textarea} /></Field>
+            <CompactConditionField label="Observaciones" value={quote.condiciones.observaciones} onChange={(value) => updateCondition("observaciones", value)} />
+            <CompactConditionField label="Exclusiones" value={quote.condiciones.exclusiones} onChange={(value) => updateCondition("exclusiones", value)} />
+            <CompactConditionField label="Otras condiciones" value={quote.condiciones.terminosAdicionales} onChange={(value) => updateCondition("terminosAdicionales", value)} />
           </div>
         </div>
       </QuoteCollapsibleSection>
@@ -2115,7 +2245,10 @@ function NewQuotePage({ userId }) {
           taxRate={Number(quote.tasaIva ?? Number(companyProfile?.impuestoPredeterminadoTasa ?? 19) / 100) * 100}
           saving={saving}
           savingEstado={savingEstado}
-          saveBlockedByClient={saveBlockedByClient}
+          quoteDate={isEditMode && quote.fecha ? formatDate(quote.fecha) : ""}
+          quoteNumber={isEditMode ? getQuoteDisplayNumber(quote) : ""}
+          saveBlocked={saveBlocked}
+          saveBlockedReason={saveBlocked ? saveBlockedReason : ""}
           onDiscountChange={(event) => updateField("descuento", event.target.value)}
           onSave={saveQuote}
         />
@@ -2338,7 +2471,7 @@ function NewQuotePage({ userId }) {
                   <Field label="Precio interno calculado">
                     <div style={styles.readOnlyValue}>
                       {suggestedItemDraft.precioInterno
-                        ? formatCLP(suggestedItemDraft.precioInterno)
+                        ? formatBusinessAmount(suggestedItemDraft.precioInterno)
                         : "Pendiente"}
                     </div>
                   </Field>
@@ -2456,6 +2589,37 @@ function Field({ label, helpText, helpTone = "default", wide = false, children }
   );
 }
 
+function CompactConditionField({ label, onChange, value }) {
+  const hasContent = Boolean((value || "").trim());
+  const [expanded, setExpanded] = React.useState(hasContent);
+  const showTextarea = expanded || hasContent;
+  const rows = Math.min(8, Math.max(3, (value || "").split(/\r?\n/).length + 1));
+  return (
+    <Field label={label} wide>
+      {showTextarea ? (
+        <textarea
+          autoFocus={expanded && !hasContent}
+          onBlur={() => {
+            if (!(value || "").trim()) setExpanded(false);
+          }}
+          onChange={(event) => onChange(event.target.value)}
+          rows={rows}
+          style={styles.compactTextarea}
+          value={value || ""}
+        />
+      ) : (
+        <button
+          className="quote-workspace__button quote-workspace__button--secondary"
+          onClick={() => setExpanded(true)}
+          type="button"
+        >
+          + Agregar {label.toLowerCase()}
+        </button>
+      )}
+    </Field>
+  );
+}
+
 const styles = {
   wrapper: {
     display: "grid",
@@ -2464,7 +2628,7 @@ const styles = {
   },
   header: {
     alignItems: "flex-start",
-    borderBottom: "1px solid #e2e8f0",
+    borderBottom: "1px solid var(--color-border-default)",
     display: "flex",
     flexWrap: "wrap",
     justifyContent: "space-between",
@@ -2473,13 +2637,13 @@ const styles = {
   },
   title: {
     margin: "4px 0 6px",
-    color: "#0f172a",
+    color: "var(--color-text-strong)",
     fontSize: "28px",
     fontWeight: 900,
   },
   subtitle: {
     margin: 0,
-    color: "#64748b",
+    color: "var(--color-text-muted)",
     lineHeight: 1.5,
     maxWidth: "720px",
   },
@@ -2499,26 +2663,29 @@ const styles = {
     gap: "12px",
   },
   closingTitle: {
-    color: "#0f172a",
+    color: "var(--color-text-strong)",
     fontSize: "20px",
     fontWeight: 900,
     margin: 0,
   },
   panel: {
-    background: "#ffffff",
-    border: "1px solid #e2e8f0",
+    background: "var(--color-surface-panel)",
+    border: "1px solid var(--color-border-default)",
     borderRadius: "8px",
-    boxShadow: "0 1px 2px rgba(15, 23, 42, 0.04)",
+    boxShadow: "var(--shadow-sm)",
     padding: "20px",
   },
   panelTitle: {
-    color: "#0f172a",
+    color: "var(--color-text-strong)",
     margin: "0 0 12px",
     fontSize: "18px",
     fontWeight: 900,
   },
   compactPanelTitle: {
     marginBottom: "6px",
+  },
+  loadingSpinner: {
+    marginBottom: "12px",
   },
   formGrid: {
     display: "grid",
@@ -2538,7 +2705,7 @@ const styles = {
     gridColumn: "1 / -1",
   },
   label: {
-    color: "#475569",
+    color: "var(--color-text-default)",
     fontSize: "13px",
     fontWeight: 700,
   },
@@ -2556,10 +2723,10 @@ const styles = {
     minWidth: 0,
   },
   fieldBadge: {
-    background: "#f0fdfa",
-    border: "1px solid #99f6e4",
+    background: "var(--color-brand-50)",
+    border: "1px solid var(--color-brand-200)",
     borderRadius: "999px",
-    color: "#0f766e",
+    color: "var(--color-brand-600)",
     fontSize: "11px",
     fontWeight: 800,
     lineHeight: 1.2,
@@ -2567,28 +2734,28 @@ const styles = {
     whiteSpace: "nowrap",
   },
   fieldHelpText: {
-    color: "#64748b",
+    color: "var(--color-text-muted)",
     fontSize: "12px",
     lineHeight: 1.4,
   },
   fieldErrorText: {
-    color: "#b91c1c",
+    color: "var(--color-danger-700)",
     fontWeight: 700,
   },
   input: {
-    background: "#ffffff",
-    border: "1px solid #cbd5e1",
+    background: "var(--color-surface-panel)",
+    border: "1px solid var(--color-border-control)",
     borderRadius: "6px",
-    color: "#0f172a",
+    color: "var(--color-text-strong)",
     lineHeight: 1.35,
     padding: "10px 11px",
     width: "100%",
   },
   compactTextarea: {
-    background: "#ffffff",
-    border: "1px solid #cbd5e1",
+    background: "var(--color-surface-panel)",
+    border: "1px solid var(--color-border-control)",
     borderRadius: "6px",
-    color: "#0f172a",
+    color: "var(--color-text-strong)",
     lineHeight: 1.45,
     minHeight: "62px",
     padding: "10px 11px",
@@ -2596,20 +2763,20 @@ const styles = {
     width: "100%",
   },
   readOnlyValue: {
-    background: "#f8fafc",
-    border: "1px solid #e2e8f0",
+    background: "var(--color-surface-subtle)",
+    border: "1px solid var(--color-border-default)",
     borderRadius: "6px",
-    color: "#334155",
+    color: "var(--color-text-default)",
     lineHeight: 1.35,
     minHeight: "40px",
     padding: "10px 11px",
     width: "100%",
   },
   textarea: {
-    background: "#ffffff",
-    border: "1px solid #cbd5e1",
+    background: "var(--color-surface-panel)",
+    border: "1px solid var(--color-border-control)",
     borderRadius: "6px",
-    color: "#0f172a",
+    color: "var(--color-text-strong)",
     lineHeight: 1.5,
     minHeight: "130px",
     padding: "11px",
@@ -2620,10 +2787,10 @@ const styles = {
     minHeight: "84px",
   },
   observationsTextarea: {
-    background: "#ffffff",
-    border: "1px solid #cbd5e1",
+    background: "var(--color-surface-panel)",
+    border: "1px solid var(--color-border-control)",
     borderRadius: "6px",
-    color: "#0f172a",
+    color: "var(--color-text-strong)",
     height: "130px",
     lineHeight: 1.5,
     padding: "11px",
@@ -2631,8 +2798,8 @@ const styles = {
     width: "100%",
   },
   assistantPanel: {
-    background: "linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)",
-    border: "1px solid #b6e4df",
+    background: "linear-gradient(180deg, var(--color-surface-panel) 0%, var(--color-surface-subtle) 100%)",
+    border: "1px solid var(--color-brand-200)",
   },
   assistantHeader: {
     marginBottom: "16px",
@@ -2662,10 +2829,10 @@ const styles = {
     marginBottom: "14px",
   },
   addedSummary: {
-    background: "#ecfdf5",
-    border: "1px solid #99f6e4",
+    background: "var(--color-brand-50)",
+    border: "1px solid var(--color-brand-200)",
     borderRadius: "8px",
-    color: "#0f766e",
+    color: "var(--color-brand-600)",
     display: "grid",
     gap: "3px",
     minWidth: "160px",
@@ -2673,7 +2840,7 @@ const styles = {
     textAlign: "right",
   },
   helpText: {
-    color: "#64748b",
+    color: "var(--color-text-muted)",
     margin: "-6px 0 0",
     fontSize: "14px",
     lineHeight: 1.45,
@@ -2690,7 +2857,7 @@ const styles = {
     marginBottom: "12px",
   },
   searchInput: {
-    border: "1px solid #cbd5e1",
+    border: "1px solid var(--color-border-control)",
     borderRadius: "6px",
     minWidth: "min(100%, 260px)",
     padding: "10px 11px",
@@ -2701,7 +2868,7 @@ const styles = {
     gap: "10px",
   },
   valuationCard: {
-    border: "1px solid #e5e7eb",
+    border: "1px solid var(--color-border-default)",
     borderRadius: "8px",
     display: "flex",
     flexDirection: "column",
@@ -2717,12 +2884,12 @@ const styles = {
     justifyContent: "space-between",
   },
   miniLabel: {
-    color: "#64748b",
+    color: "var(--color-text-muted)",
     display: "block",
     fontSize: "12px",
   },
   itemMeta: {
-    color: "#64748b",
+    color: "var(--color-text-muted)",
     display: "block",
     fontSize: "12px",
     marginTop: "3px",
@@ -2748,9 +2915,9 @@ const styles = {
     width: "100%",
   },
   th: {
-    background: "#f8fafc",
-    borderBottom: "1px solid #e5e7eb",
-    color: "#64748b",
+    background: "var(--color-surface-subtle)",
+    borderBottom: "1px solid var(--color-border-default)",
+    color: "var(--color-text-muted)",
     fontSize: "12px",
     padding: "10px",
     textAlign: "left",
@@ -2758,39 +2925,39 @@ const styles = {
     whiteSpace: "nowrap",
   },
   td: {
-    borderBottom: "1px solid #eef2f7",
+    borderBottom: "1px solid var(--color-border-subtle)",
     fontSize: "14px",
     padding: "10px",
     verticalAlign: "middle",
     whiteSpace: "nowrap",
   },
   highlightedRow: {
-    background: "#ecfdf5",
-    outline: "2px solid #99f6e4",
+    background: "var(--color-brand-50)",
+    outline: "2px solid var(--color-brand-200)",
     transition: "background 0.2s ease",
   },
   numberInput: {
-    border: "1px solid #cbd5e1",
+    border: "1px solid var(--color-border-control)",
     borderRadius: "6px",
     padding: "8px",
     width: "92px",
   },
   moneyInput: {
-    border: "1px solid #cbd5e1",
+    border: "1px solid var(--color-border-control)",
     borderRadius: "6px",
     padding: "8px",
     width: "130px",
   },
   discountRow: {
     alignItems: "center",
-    borderBottom: "1px solid #eef2f7",
+    borderBottom: "1px solid var(--color-border-subtle)",
     display: "flex",
     justifyContent: "space-between",
     gap: "10px",
     padding: "11px 0",
   },
   discountInput: {
-    border: "1px solid #cbd5e1",
+    border: "1px solid var(--color-border-control)",
     borderRadius: "6px",
     padding: "8px",
     textAlign: "right",
@@ -2798,26 +2965,26 @@ const styles = {
   },
   totalRow: {
     alignItems: "center",
-    borderBottom: "1px solid #eef2f7",
+    borderBottom: "1px solid var(--color-border-subtle)",
     display: "flex",
     justifyContent: "space-between",
     gap: "10px",
     padding: "11px 0",
   },
   totalLabel: {
-    color: "#475569",
+    color: "var(--color-text-default)",
     fontWeight: 700,
   },
   totalLabelStrong: {
-    color: "#111827",
+    color: "var(--color-text-strong)",
     fontSize: "18px",
     fontWeight: 800,
   },
   totalValue: {
-    color: "#111827",
+    color: "var(--color-text-strong)",
   },
   totalValueStrong: {
-    color: "#0f766e",
+    color: "var(--color-text-brand-accent)",
     fontSize: "22px",
   },
   observationsPanel: {
@@ -2826,7 +2993,7 @@ const styles = {
   },
   totalsPanel: {
     alignSelf: "start",
-    background: "#ffffff",
+    background: "var(--color-surface-panel)",
   },
   totalsHeader: {
     alignItems: "flex-start",
@@ -2836,18 +3003,18 @@ const styles = {
     marginBottom: "12px",
   },
   quoteStatusBadge: {
-    background: "#f1f5f9",
-    border: "1px solid #cbd5e1",
+    background: "var(--color-surface-subtle)",
+    border: "1px solid var(--color-border-control)",
     borderRadius: "999px",
-    color: "#334155",
+    color: "var(--color-text-default)",
     fontSize: "12px",
     fontWeight: 800,
     padding: "6px 10px",
     whiteSpace: "nowrap",
   },
   totalsBox: {
-    background: "#f8fafc",
-    border: "1px solid #e2e8f0",
+    background: "var(--color-surface-subtle)",
+    border: "1px solid var(--color-border-default)",
     borderRadius: "8px",
     padding: "2px 12px",
   },
@@ -2857,10 +3024,10 @@ const styles = {
     marginTop: "16px",
   },
   actionHint: {
-    background: "#f8fafc",
-    border: "1px solid #e2e8f0",
+    background: "var(--color-surface-subtle)",
+    border: "1px solid var(--color-border-default)",
     borderRadius: "8px",
-    color: "#64748b",
+    color: "var(--color-text-muted)",
     fontSize: "13px",
     lineHeight: 1.45,
     margin: 0,
@@ -2888,15 +3055,15 @@ const styles = {
     gap: "10px",
   },
   assistantNote: {
-    color: "#64748b",
+    color: "var(--color-text-muted)",
     fontSize: "13px",
     lineHeight: 1.45,
   },
   modeBadge: {
-    background: "#f8fafc",
-    border: "1px solid #cbd5e1",
+    background: "var(--color-surface-subtle)",
+    border: "1px solid var(--color-border-control)",
     borderRadius: "999px",
-    color: "#334155",
+    color: "var(--color-text-default)",
     fontSize: "12px",
     fontWeight: 800,
     padding: "6px 10px",
@@ -2904,8 +3071,8 @@ const styles = {
   },
   suggestionToolbar: {
     alignItems: "center",
-    background: "#f8fafc",
-    border: "1px solid #e5e7eb",
+    background: "var(--color-surface-subtle)",
+    border: "1px solid var(--color-border-default)",
     borderRadius: "8px",
     display: "flex",
     flexWrap: "wrap",
@@ -2920,14 +3087,14 @@ const styles = {
     marginTop: "14px",
   },
   suggestionCard: {
-    border: "1px solid #e5e7eb",
+    border: "1px solid var(--color-border-default)",
     borderRadius: "8px",
     display: "grid",
     gap: "10px",
     padding: "14px",
   },
   suggestionReason: {
-    color: "#475569",
+    color: "var(--color-text-default)",
     fontSize: "13px",
     lineHeight: 1.45,
     margin: 0,
@@ -2938,10 +3105,10 @@ const styles = {
     gap: "6px",
   },
   keywordBadge: {
-    background: "#f8fafc",
-    border: "1px solid #e5e7eb",
+    background: "var(--color-surface-subtle)",
+    border: "1px solid var(--color-border-default)",
     borderRadius: "999px",
-    color: "#475569",
+    color: "var(--color-text-default)",
     fontSize: "11px",
     fontWeight: 700,
     padding: "4px 8px",
@@ -2956,17 +3123,17 @@ const styles = {
     width: "fit-content",
   },
   matchBadgeFound: {
-    background: "#dcfce7",
-    color: "#166534",
+    background: "var(--color-success-50)",
+    color: "var(--color-success-700)",
   },
   matchBadgeMissing: {
-    background: "#f1f5f9",
-    color: "#475569",
+    background: "var(--color-surface-subtle)",
+    color: "var(--color-text-default)",
   },
   quoteBadge: {
-    background: "#e0f2fe",
+    background: "var(--color-info-50)",
     borderRadius: "999px",
-    color: "#0369a1",
+    color: "var(--color-info-700)",
     display: "inline-block",
     fontSize: "12px",
     fontWeight: 800,
@@ -2974,10 +3141,10 @@ const styles = {
     width: "fit-content",
   },
   primaryButton: {
-    background: "#0f766e",
+    background: "var(--color-brand-600)",
     border: 0,
     borderRadius: "6px",
-    color: "#ffffff",
+    color: "var(--color-text-inverse)",
     cursor: "pointer",
     display: "inline-flex",
     alignItems: "center",
@@ -2987,10 +3154,10 @@ const styles = {
     padding: "11px 14px",
   },
   emitButton: {
-    background: "#111827",
+    background: "var(--color-text-strong)",
     border: 0,
     borderRadius: "6px",
-    color: "#ffffff",
+    color: "var(--color-text-on-strong)",
     cursor: "pointer",
     display: "inline-flex",
     alignItems: "center",
@@ -3000,10 +3167,10 @@ const styles = {
     padding: "11px 14px",
   },
   emailButton: {
-    background: "#0f766e",
+    background: "var(--color-brand-600)",
     border: 0,
     borderRadius: "6px",
-    color: "#ffffff",
+    color: "var(--color-text-inverse)",
     cursor: "pointer",
     display: "inline-flex",
     alignItems: "center",
@@ -3013,16 +3180,16 @@ const styles = {
     padding: "11px 14px",
   },
   disabledButton: {
-    background: "#f1f5f9",
-    border: "1px solid #cbd5e1",
-    color: "#64748b",
+    background: "var(--color-surface-subtle)",
+    border: "1px solid var(--color-border-control)",
+    color: "var(--color-text-muted)",
     cursor: "not-allowed",
   },
   secondaryButton: {
-    background: "#ffffff",
-    border: "1px solid #0f766e",
+    background: "var(--color-surface-panel)",
+    border: "1px solid var(--color-text-brand-accent)",
     borderRadius: "6px",
-    color: "#0f766e",
+    color: "var(--color-text-brand-accent)",
     cursor: "pointer",
     display: "inline-flex",
     alignItems: "center",
@@ -3033,10 +3200,10 @@ const styles = {
   },
   secondaryLinkButton: {
     alignItems: "center",
-    background: "#ffffff",
-    border: "1px solid #0f766e",
+    background: "var(--color-surface-panel)",
+    border: "1px solid var(--color-text-brand-accent)",
     borderRadius: "6px",
-    color: "#0f766e",
+    color: "var(--color-text-brand-accent)",
     display: "inline-flex",
     fontWeight: 800,
     justifyContent: "center",
@@ -3054,7 +3221,7 @@ const styles = {
   restoreDefaultButton: {
     background: "none",
     border: 0,
-    color: "#0f766e",
+    color: "var(--color-text-brand-accent)",
     cursor: "pointer",
     fontSize: "12px",
     fontWeight: 800,
@@ -3063,10 +3230,10 @@ const styles = {
     whiteSpace: "nowrap",
   },
   dictationButton: {
-    background: "#ffffff",
-    border: "1px solid #0f766e",
+    background: "var(--color-surface-panel)",
+    border: "1px solid var(--color-text-brand-accent)",
     borderRadius: "6px",
-    color: "#0f766e",
+    color: "var(--color-text-brand-accent)",
     cursor: "pointer",
     display: "inline-flex",
     alignItems: "center",
@@ -3077,26 +3244,26 @@ const styles = {
     padding: "9px 12px",
   },
   dictationButtonActive: {
-    background: "#fef2f2",
-    border: "1px solid #ef4444",
-    color: "#b91c1c",
+    background: "var(--color-danger-50)",
+    border: "1px solid var(--color-danger-600)",
+    color: "var(--color-danger-700)",
   },
   micIcon: {
-    background: "#0f766e",
+    background: "var(--color-text-brand-accent)",
     borderRadius: "999px",
     display: "inline-block",
     height: "14px",
     width: "10px",
   },
   micIconActive: {
-    background: "#b91c1c",
+    background: "var(--color-danger-700)",
   },
   dictationStatusBadge: {
     alignItems: "center",
-    background: "#f8fafc",
-    border: "1px solid #cbd5e1",
+    background: "var(--color-surface-subtle)",
+    border: "1px solid var(--color-border-control)",
     borderRadius: "999px",
-    color: "#475569",
+    color: "var(--color-text-default)",
     display: "inline-flex",
     fontSize: "12px",
     fontWeight: 800,
@@ -3104,33 +3271,33 @@ const styles = {
     padding: "7px 10px",
   },
   dictationStatusActive: {
-    background: "#ecfdf5",
-    border: "1px solid #99f6e4",
-    color: "#0f766e",
+    background: "var(--color-brand-50)",
+    border: "1px solid var(--color-brand-200)",
+    color: "var(--color-brand-600)",
   },
   dictationStatusWarning: {
-    background: "#fffbeb",
-    border: "1px solid #fde68a",
-    color: "#92400e",
+    background: "var(--color-warning-50)",
+    border: "1px solid var(--color-warning-200)",
+    color: "var(--color-warning-800)",
   },
   statusDot: {
-    background: "#94a3b8",
+    background: "var(--color-text-muted)",
     borderRadius: "999px",
     display: "inline-block",
     height: "8px",
     width: "8px",
   },
   statusDotActive: {
-    background: "#0f766e",
+    background: "var(--color-text-brand-accent)",
   },
   statusDotWarning: {
-    background: "#d97706",
+    background: "var(--color-warning-800)",
   },
   clearButton: {
-    background: "#ffffff",
-    border: "1px solid #cbd5e1",
+    background: "var(--color-surface-panel)",
+    border: "1px solid var(--color-border-control)",
     borderRadius: "6px",
-    color: "#334155",
+    color: "var(--color-text-default)",
     cursor: "pointer",
     display: "inline-flex",
     alignItems: "center",
@@ -3140,27 +3307,27 @@ const styles = {
     padding: "11px 14px",
   },
   removeButton: {
-    background: "#ffffff",
-    border: "1px solid #fecaca",
+    background: "var(--color-surface-panel)",
+    border: "1px solid var(--color-danger-200)",
     borderRadius: "6px",
-    color: "#b91c1c",
+    color: "var(--color-danger-700)",
     cursor: "pointer",
     fontWeight: 800,
     padding: "8px 10px",
   },
   printButton: {
-    background: "#ffffff",
-    border: "1px solid #cbd5e1",
+    background: "var(--color-surface-panel)",
+    border: "1px solid var(--color-border-control)",
     borderRadius: "6px",
     cursor: "pointer",
     fontWeight: 800,
     padding: "10px 12px",
   },
   previewPanel: {
-    background: "#ffffff",
-    border: "1px solid #e2e8f0",
+    background: "var(--color-surface-panel)",
+    border: "1px solid var(--color-border-default)",
     borderRadius: "8px",
-    boxShadow: "0 1px 2px rgba(15, 23, 42, 0.04)",
+    boxShadow: "var(--shadow-sm)",
     padding: "20px",
   },
   previewActions: {
@@ -3185,9 +3352,9 @@ const styles = {
     zIndex: 40,
   },
   modalPanel: {
-    background: "#ffffff",
+    background: "var(--color-surface-panel)",
     borderRadius: "8px",
-    boxShadow: "0 20px 50px rgba(15, 23, 42, 0.22)",
+    boxShadow: "var(--shadow-lg)",
     display: "grid",
     gap: "14px",
     gridTemplateRows: "auto minmax(0, 1fr) auto",
@@ -3215,7 +3382,7 @@ const styles = {
     gap: "10px",
   },
   modalSectionTitle: {
-    color: "#334155",
+    color: "var(--color-text-default)",
     fontSize: "13px",
     fontWeight: 900,
     margin: "0 0 -2px",
@@ -3231,8 +3398,8 @@ const styles = {
     gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 280px), 1fr))",
   },
   modalActions: {
-    background: "#ffffff",
-    borderTop: "1px solid #e2e8f0",
+    background: "var(--color-surface-panel)",
+    borderTop: "1px solid var(--color-border-default)",
     bottom: 0,
     display: "flex",
     flexWrap: "wrap",
@@ -3243,23 +3410,23 @@ const styles = {
     position: "sticky",
   },
   priceTraceBox: {
-    background: "#f8fafc",
-    border: "1px solid #e2e8f0",
+    background: "var(--color-surface-subtle)",
+    border: "1px solid var(--color-border-default)",
     borderRadius: "6px",
-    color: "#334155",
+    color: "var(--color-text-default)",
     fontSize: "13px",
     lineHeight: 1.45,
     padding: "10px 11px",
   },
   printSheet: {
-    background: "#ffffff",
-    border: "1px solid #e5e7eb",
-    color: "#111827",
+    background: "var(--color-surface-panel)",
+    border: "1px solid var(--color-border-default)",
+    color: "var(--color-text-strong)",
     padding: "28px",
   },
   printHeader: {
     alignItems: "flex-start",
-    borderBottom: "2px solid #111827",
+    borderBottom: "2px solid var(--color-text-strong)",
     display: "flex",
     justifyContent: "space-between",
     gap: "20px",
@@ -3270,7 +3437,7 @@ const styles = {
     fontSize: "26px",
   },
   printMuted: {
-    color: "#64748b",
+    color: "var(--color-text-muted)",
     margin: "4px 0 0",
   },
   printMeta: {
@@ -3279,8 +3446,8 @@ const styles = {
     textAlign: "right",
   },
   clientBox: {
-    background: "#f8fafc",
-    border: "1px solid #e5e7eb",
+    background: "var(--color-surface-subtle)",
+    border: "1px solid var(--color-border-default)",
     borderRadius: "8px",
     margin: "18px 0",
     padding: "14px",
@@ -3297,20 +3464,20 @@ const styles = {
     width: "100%",
   },
   printTh: {
-    background: "#111827",
-    color: "#ffffff",
+    background: "var(--color-text-strong)",
+    color: "var(--color-text-on-strong)",
     fontSize: "12px",
     padding: "10px",
     textAlign: "left",
     textTransform: "uppercase",
   },
   printTd: {
-    borderBottom: "1px solid #e5e7eb",
+    borderBottom: "1px solid var(--color-border-default)",
     padding: "10px",
     verticalAlign: "top",
   },
   printItemMeta: {
-    color: "#64748b",
+    color: "var(--color-text-muted)",
     display: "block",
     fontSize: "12px",
     marginTop: "3px",
@@ -3321,71 +3488,71 @@ const styles = {
     maxWidth: "320px",
   },
   observationsBox: {
-    borderTop: "1px solid #e5e7eb",
+    borderTop: "1px solid var(--color-border-default)",
     marginTop: "20px",
     paddingTop: "14px",
   },
   emptyState: {
-    background: "#f8fafc",
-    border: "1px dashed #cbd5e1",
+    background: "var(--color-surface-subtle)",
+    border: "1px dashed var(--color-border-control)",
     borderRadius: "8px",
-    color: "#334155",
+    color: "var(--color-text-default)",
     padding: "26px",
     textAlign: "center",
   },
   emptyTitle: {
-    color: "#0f172a",
+    color: "var(--color-text-strong)",
     fontSize: "16px",
     margin: "0 0 6px",
   },
   emptyText: {
-    color: "#64748b",
+    color: "var(--color-text-muted)",
     lineHeight: 1.45,
     margin: 0,
   },
   infoText: {
-    background: "#f8fafc",
-    border: "1px solid #e5e7eb",
+    background: "var(--color-surface-subtle)",
+    border: "1px solid var(--color-border-default)",
     borderRadius: "8px",
-    color: "#475569",
+    color: "var(--color-text-default)",
     margin: "12px 0 0",
     padding: "11px 13px",
   },
   errorText: {
-    background: "#fef2f2",
-    border: "1px solid #fecaca",
+    background: "var(--color-danger-50)",
+    border: "1px solid var(--color-danger-200)",
     borderRadius: "8px",
-    color: "#b91c1c",
+    color: "var(--color-danger-700)",
     margin: 0,
     padding: "11px 13px",
   },
   successText: {
-    background: "#ecfdf5",
-    border: "1px solid #bbf7d0",
+    background: "var(--color-success-50)",
+    border: "1px solid var(--color-success-200)",
     borderRadius: "8px",
-    color: "#166534",
+    color: "var(--color-success-700)",
     margin: 0,
     padding: "11px 13px",
   },
   itemFeedbackText: {
-    background: "#ecfdf5",
-    border: "1px solid #bbf7d0",
+    background: "var(--color-success-50)",
+    border: "1px solid var(--color-success-200)",
     borderRadius: "6px",
-    color: "#166534",
+    color: "var(--color-success-700)",
     fontSize: "13px",
     margin: "0 0 10px",
     padding: "8px 10px",
   },
   warningText: {
-    background: "#fffbeb",
-    border: "1px solid #fde68a",
+    background: "var(--color-warning-50)",
+    border: "1px solid var(--color-warning-200)",
     borderRadius: "8px",
-    color: "#92400e",
+    color: "var(--color-warning-800)",
     margin: "12px 0 0",
     padding: "11px 13px",
   },
   lineDescriptionInput: {
-    border: "1px solid #cbd5e1",
+    border: "1px solid var(--color-border-control)",
     borderRadius: "5px",
     boxSizing: "border-box",
     font: "inherit",
@@ -3395,42 +3562,42 @@ const styles = {
     width: "100%",
   },
   unitInput: {
-    border: "1px solid #cbd5e1",
+    border: "1px solid var(--color-border-control)",
     borderRadius: "5px",
     maxWidth: "90px",
     padding: "8px",
   },
   discountPercentInput: {
-    border: "1px solid #cbd5e1",
+    border: "1px solid var(--color-border-control)",
     borderRadius: "5px",
     maxWidth: "76px",
     padding: "8px",
     textAlign: "right",
   },
   orderButton: {
-    background: "#f8fafc",
-    border: "1px solid #cbd5e1",
+    background: "var(--color-surface-subtle)",
+    border: "1px solid var(--color-border-control)",
     borderRadius: "5px",
-    color: "#334155",
+    color: "var(--color-text-default)",
     cursor: "pointer",
     marginRight: "4px",
     minHeight: "32px",
     minWidth: "32px",
   },
   pdfButton: {
-    background: "#07285d",
-    border: "1px solid #07285d",
+    background: "var(--color-document-navy)",
+    border: "1px solid var(--color-document-navy)",
     borderRadius: "6px",
-    color: "#ffffff",
+    color: "var(--color-text-inverse)",
     cursor: "pointer",
     fontWeight: 800,
     padding: "10px 13px",
   },
   compactEmptyState: {
-    background: "#f8fafc",
-    border: "1px dashed #cbd5e1",
+    background: "var(--color-surface-subtle)",
+    border: "1px dashed var(--color-border-control)",
     borderRadius: "7px",
-    color: "#64748b",
+    color: "var(--color-text-muted)",
     marginTop: "12px",
     padding: "16px",
   },
@@ -3440,8 +3607,8 @@ const styles = {
     marginTop: "14px",
   },
   scopeCard: {
-    background: "#f8fafc",
-    border: "1px solid #e2e8f0",
+    background: "var(--color-surface-subtle)",
+    border: "1px solid var(--color-border-default)",
     borderRadius: "7px",
     display: "grid",
     gap: "10px",
@@ -3465,16 +3632,23 @@ const styles = {
     gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
     marginTop: "14px",
   },
+  plazoRangeRow: {
+    alignItems: "center",
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "8px",
+    marginTop: "8px",
+  },
   acceptanceToggle: {
     alignItems: "center",
-    color: "#334155",
+    color: "var(--color-text-default)",
     display: "flex",
     fontWeight: 700,
     gap: "9px",
     margin: "16px 0 10px",
   },
   totalErrorText: {
-    color: "#b91c1c",
+    color: "var(--color-danger-700)",
     fontSize: "12px",
     margin: "8px 0 0",
   },

@@ -55,3 +55,8 @@ vite-codex*.log
 # Archivos generados por pruebas y validaciones
 /output/
 /tmp/
+
+# Archivos locales de trabajo
+.patches/
+dist.zip
+valoracloud-*.zip

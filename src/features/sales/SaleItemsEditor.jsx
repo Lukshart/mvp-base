@@ -1,9 +1,10 @@
 import React from "react";
+import BarcodeInput from "../../components/barcode/BarcodeInput";
 import {getSaleItemTypeLabel} from "../../domain/saleModel.mjs";
 
 const money = (value) => `$${Math.round(Number(value || 0)).toLocaleString("es-CL")}`;
 
-export default function SaleItemsEditor({disabled, inventory, items, onChange, onOpenCatalog, readOnly, referencesLocked = false}) {
+export default function SaleItemsEditor({disabled, inventory, items, onChange, onOpenCatalog, onScanProduct, readOnly, referencesLocked = false}) {
   const update = (index, field, value) => onChange(items.map((item, current) => current === index ? {...item, [field]: value} : item));
   const inventoryById = new Map(inventory.map((item) => [item.id, item]));
   const canChangeReferences = !disabled && !referencesLocked;
@@ -16,7 +17,12 @@ export default function SaleItemsEditor({disabled, inventory, items, onChange, o
           <h2>Ítems vendidos</h2>
           <p>{items.length === 1 ? "1 ítem" : `${items.length} ítems`}</p>
         </div>
-        {canChangeReferences && <button type="button" className="po-button po-button--secondary" onClick={onOpenCatalog}>Agregar desde inventario</button>}
+        {canChangeReferences && (
+          <div className="po-header__actions">
+            <BarcodeInput actionOnly continuous actionLabel="Escanear producto" onSubmit={onScanProduct} />
+            <button type="button" className="po-button po-button--secondary" onClick={onOpenCatalog}>Agregar desde inventario</button>
+          </div>
+        )}
       </header>
       {!items.length ? (
         <div className="po-empty">Agrega productos, servicios o actividades.</div>
@@ -37,6 +43,7 @@ export default function SaleItemsEditor({disabled, inventory, items, onChange, o
                   <div className="sale-line-title">
                     <strong>{item.nombre}</strong>
                     <span className={`sale-item-type sale-item-type--${item.tipoItem}`}>{getSaleItemTypeLabel(item.tipoItem)}</span>
+                    {item.origenAdicionalId && <span className="sale-item-type sale-item-type--adicional">Adicional</span>}
                   </div>
                   <small>{item.codigo || "Sin código"} · {item.unidad}</small>
                   {item.descripcion && <p className="sale-line-description">{item.descripcion}</p>}

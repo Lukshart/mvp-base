@@ -1,8 +1,10 @@
 import React from "react";
-import { ArrowRight, LoaderCircle, LogOut } from "lucide-react";
+import { ArrowRight, LogOut } from "lucide-react";
 import BrandLogo from "../components/BrandLogo";
+import InvitationsInbox from "../components/InvitationsInbox";
 import QuickBusinessFields from "../components/QuickBusinessFields";
 import Button from "../components/ui/Button";
+import ResponsiveDialog from "../components/ui/ResponsiveDialog";
 import SkipLink from "../components/ui/SkipLink";
 import {
   getBusinessCreationErrorMessage,
@@ -15,6 +17,7 @@ import {
   getCountryByCode,
   getCurrencyByCode,
 } from "../domain/businessCatalog";
+import useMyInvitations from "../hooks/useMyInvitations";
 import { logout } from "../services/authService";
 import {
   clearBusinessCreationRequestId,
@@ -22,7 +25,9 @@ import {
   getBusinessCreationRequestId,
 } from "../services/businessService";
 
-function OnboardingPage({ usuario, onBusinessCreated }) {
+// `onInvitationAccepted` recarga la sesión (no es la creación de un primer
+// negocio, así que no usa `onBusinessCreated`).
+function OnboardingPage({ usuario, onBusinessCreated, onInvitationAccepted }) {
   const [values, setValues] = React.useState(
     INITIAL_ONBOARDING_BUSINESS_VALUES
   );
@@ -31,6 +36,11 @@ function OnboardingPage({ usuario, onBusinessCreated }) {
   const [submitted, setSubmitted] = React.useState(false);
   const [submitError, setSubmitError] = React.useState("");
   const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const [invitationsOpen, setInvitationsOpen] = React.useState(false);
+  const invitationsState = useMyInvitations({
+    onAccepted: () => onInvitationAccepted?.(),
+  });
+  const pendingInvitations = invitationsState.invitations.length;
   const fieldRefs = React.useRef({});
   const requestIdRef = React.useRef(null);
   const selectedCountry = getCountryByCode(values.paisCodigo);
@@ -150,6 +160,18 @@ function OnboardingPage({ usuario, onBusinessCreated }) {
             </div>
           </header>
 
+          {pendingInvitations > 0 && (
+            <div className="onboarding-invitations">
+              <p>
+                Tienes <strong>{pendingInvitations}</strong>{" "}
+                {pendingInvitations === 1 ? "invitación pendiente" : "invitaciones pendientes"}
+              </p>
+              <Button type="button" variant="secondary" onClick={() => setInvitationsOpen(true)}>
+                Ver invitaciones
+              </Button>
+            </div>
+          )}
+
           <section
             className="onboarding-card onboarding-card--quick"
             aria-labelledby="onboarding-title"
@@ -200,9 +222,8 @@ function OnboardingPage({ usuario, onBusinessCreated }) {
                 <Button
                   type="submit"
                   className="onboarding-submit"
-                  icon={isSubmitting ? LoaderCircle : ArrowRight}
-                  disabled={isSubmitting}
-                  aria-busy={isSubmitting}
+                  icon={ArrowRight}
+                  loading={isSubmitting}
                 >
                   {isSubmitting ? "Creando negocio..." : "Crear mi negocio"}
                 </Button>
@@ -211,6 +232,28 @@ function OnboardingPage({ usuario, onBusinessCreated }) {
           </section>
         </div>
       </main>
+
+      <ResponsiveDialog
+        open={invitationsOpen}
+        onClose={() => setInvitationsOpen(false)}
+        title="Invitaciones"
+        eyebrow="Equipos"
+        size="small"
+      >
+        <InvitationsInbox
+          busyId={invitationsState.busyId}
+          feedback={invitationsState.feedback}
+          invitations={invitationsState.invitations}
+          onAccept={(invitation) => invitationsState.respond(invitation, "aceptar")}
+          onClearFeedback={invitationsState.clearFeedback}
+          onReject={(invitation, reason) =>
+            invitationsState.respond(invitation, "rechazar", reason)
+          }
+          onRetry={invitationsState.reload}
+          requiresVerification={invitationsState.requiresVerification}
+          status={invitationsState.status}
+        />
+      </ResponsiveDialog>
     </>
   );
 }

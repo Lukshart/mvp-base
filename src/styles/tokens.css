@@ -1,43 +1,212 @@
 :root {
+  /* color-scheme decide cómo pinta el navegador los controles nativos
+     (scrollbar, checkbox, <select>, etc.). Paso 9 (etapa 5): era
+     "light dark" para seguir solo al sistema; ahora sigue al tema resuelto
+     en data-theme, para que un tema elegido a mano también los alcance:
+     "light" aquí y "dark" en el bloque :root[data-theme="dark"] de abajo.
+     OJO: esto NO redefine ninguna custom property propia (--color-*,
+     --shadow-*, etc.); esas viven en ese mismo bloque oscuro, poblado
+     desde el paso 2 (fondos/texto/bordes/familias semánticas) hasta el
+     paso 7 (stock-alert, data-*, data-cost-*, quote-status-*). */
   color-scheme: light;
 
-  /* Brand */
-  --color-brand-50: #edf8f7;
-  --color-brand-100: #d5efec;
-  --color-brand-200: #acdeda;
-  --color-brand-500: #13877e;
+  /* Brand — mismo hue base (teal ValoraCloud), calibrado con un paso más
+     y con el 500 un poco más vívido para usarlo como "acento" en UI clara */
+  --color-brand-50:  #eefaf8;
+  --color-brand-100: #d7f1ec;
+  --color-brand-200: #b0e3da;
+  --color-brand-300: #7fd0c2;
+  --color-brand-400: #45b8a8;
+  --color-brand-500: #14a08f;
   --color-brand-600: #0f766e;
   --color-brand-700: #0b5f59;
   --color-brand-800: #104d49;
+  --color-brand-900: #0a3733;
 
-  /* Surfaces */
-  --color-surface-canvas: #f3f5f7;
+  /* Acento cálido secundario — para progreso, iconos destacados, hover suave.
+     No reemplaza al brand, lo complementa (mismo tono frío-cálido que un portal
+     de salud, pero derivado del propio teal, no un azul/verde genérico ajeno) */
+  --color-accent-100: #fdf1e0;
+  --color-accent-300: #f3c98a;
+  --color-accent-500: #e8a44f;
+  --color-accent-700: #b97a2e;
+
+  /* Visto de la marca (BrandMark). Ámbar sobre fondo claro; en modo oscuro se
+     aclara para mantener contraste sobre las superficies oscuras. */
+  --color-logo-accent: #c27a00;
+
+  /* Surfaces — fondo cálido tipo "papel", no gris frío de spreadsheet */
+  --color-surface-canvas: #f7f5f1;
   --color-surface-panel: #ffffff;
-  --color-surface-subtle: #f8fafc;
+  --color-surface-subtle: #faf8f4;
   --color-surface-raised: #ffffff;
-  --color-surface-hover: #edf6f5;
-  --color-surface-selected: #e0f1ef;
+  --color-surface-hover: #eef8f6;
+  --color-surface-selected: #dff3ef;
 
-  /* Text and borders */
-  --color-text-strong: #0f172a;
-  --color-text-default: #334155;
-  --color-text-muted: #64748b;
+  /* Alias de compatibilidad (etapa 5, paso 10): interior.css:1649
+     (.reports-simple-card) referencia var(--color-surface), que nunca
+     existió como token propio — probablemente un nombre abreviado por
+     error de --color-surface-panel, el mismo fondo que usan 22 tarjetas
+     más en ese archivo. Se resuelve aquí como alias en vez de tocar
+     interior.css (fuera del alcance de esta tarea); una limpieza futura
+     puede corregir la referencia directamente y borrar este alias. */
+  --color-surface: var(--color-surface-panel);
+
+  /* Text and borders — se mantienen casi igual, ya funcionan bien */
+  --color-text-strong: #16211f;
+  --color-text-default: #3a4744;
+  --color-text-muted: #6b7876;
   --color-text-inverse: #ffffff;
-  --color-border-subtle: #d7dee7;
-  --color-border-default: #c5ced9;
-  --color-border-control: #7c899b;
+  --color-border-subtle: #e4e0d8;
+  --color-border-default: #d3cdc2;
+  --color-border-control: #93a09c;
 
-  /* Semantic status */
+  /* Marca semántica (corrección de contraste en oscuro, parte 1). brand-50/
+     600/700/900 NO cambian con el tema: como TEXTO sobre una superficie
+     oscura no pasan AA, y como FONDO claro dejan el texto del tema (claro en
+     oscuro) ilegible. Estos tokens valen EXACTAMENTE lo mismo que el color al
+     que reemplazan en claro; solo el valor oscuro (más abajo) es nuevo. Son
+     varios porque el CSS usaba tonos distintos de marca como texto:
+       --color-text-brand         = brand-700: enlaces, pestañas activas
+       --color-text-brand-accent  = brand-600: eyebrows, iconos, etiquetas
+       --color-text-brand-hover   = brand-900: hover de enlaces de texto
+       --color-surface-brand      = brand-50:  fondo de marca con texto del tema
+       --color-focus              = brand-700: contorno de foco
+       --color-text-on-strong     = blanco:    texto sobre fondo text-strong
+     Usar brand-600/700/800/900 como color de texto en CSS nuevo lo rechaza
+     test:contrast-usage. */
+  --color-text-brand: #0b5f59;
+  --color-text-brand-accent: #0f766e;
+  --color-text-brand-hover: #0a3733;
+  --color-surface-brand: #eefaf8;
+  --color-focus: #0b5f59;
+  --color-text-on-strong: #ffffff;
+  /* = --color-data-expense como TEXTO (montos de gasto, chip de compra): el token
+     data-* es de relleno de gráfico (3:1) y como texto medía 3.30:1. */
+  --color-text-expense: #1e3a5f;
+
+  /* Dark surfaces — familia compartida para el sidebar del panel superadmin
+     y el panel visual del login. Valores tomados tal cual del sidebar de
+     PlatformAdminLayout (ya medidos: ~14.5:1 texto sobre fondo, ~9.9:1
+     acento sobre fondo), no inventados. */
+  --color-dark-ink: #071725;
+  --color-dark-panel: #0d2436;
+  --color-dark-text-strong: #dce8ee;
+  --color-dark-text-default: #c6d6df;
+  --color-dark-text-muted: #87a2b2;
+  --color-dark-text-faint: #7894a4;
+  --color-dark-accent: #53d3c8;
+  --color-dark-accent-soft: rgb(83 211 200 / 0.14);
+
+  /* Formal documents (órdenes de compra y similares enviados a un tercero) —
+     deliberadamente distinto del teal cálido de la app: un documento externo
+     formal se lee mejor con un navy/rojo tipo membrete que con el branding
+     SaaS. Valores tomados de la vista de documento de órdenes de compra. */
+  --color-document-navy: #123765;
+  --color-document-red: #b5222d;
+
+  /* Semantic status — sin cambios de fondo, se mantiene compatibilidad */
   --color-success-50: #ecfdf5;
+  --color-success-200: #a7f3d0;
+  --color-success-300: #86d5b2; /* borde de .ui-status-badge--success, antes literal */
   --color-success-700: #047857;
   --color-warning-50: #fffbeb;
   --color-warning-200: #fde68a;
+  --color-warning-300: #e7bd55; /* borde de .ui-status-badge--warning, antes literal */
   --color-warning-800: #92400e;
+  /* Alias de compatibilidad (etapa 5, paso 10): interior.css:2266
+     (.reports-project-status--cancelado/--en_espera) referencia
+     var(--color-warning-700), que no existe — la escala warning nunca
+     tuvo un rung -700 (usa -800 donde success/danger usan -700; ya
+     contrastado 9.32:1/-50 y reusado en 25+ sitios como texto sobre
+     warning-50). Se resuelve como alias en vez de tocar interior.css. */
+  --color-warning-700: var(--color-warning-800);
   --color-danger-50: #fef2f2;
   --color-danger-600: #dc2626;
+  --color-danger-200: #fecaca;
+  --color-danger-300: #d47782;
   --color-danger-700: #b91c1c;
   --color-info-50: #eff6ff;
+  --color-info-200: #b8cce7;
   --color-info-700: #1d4ed8;
+
+  /* Datos financieros/operacionales (esquema categórico compartido entre
+     tarjetas, montos, marcadores y leyendas): ingreso, gasto, neto y
+     pendiente. "Ingreso" no tiene token propio: usar --color-brand-600
+     directamente (mismo valor, #0f766e).
+     Sincronizado desde la etapa 5, paso 7: los charts en JS
+     (FinancialCharts.jsx, OperationalComparisonChart.jsx,
+     CostCompositionChart.jsx) no pueden leer var() (Chart.js pinta con
+     strings JS, no CSS), así que mantienen su propio par de constantes
+     claro/oscuro que DEBE reflejar estos mismos valores a mano — si se
+     cambia un valor aquí, hay que cambiarlo también en esos archivos
+     (mismo criterio ya documentado, ahora con el par oscuro real). */
+  --color-data-expense: #1e3a5f;
+  --color-data-net: #475569;
+  --color-data-pending: #d97706;
+  --color-data-pending-700: #b45309;
+
+  /* "Pagados" en el donut de FinancialStatusChart (antes TEAL_SOFT local
+     sin token). Mismo valor en claro y oscuro: ya mide 7.64:1/9.01:1
+     contra --color-surface-panel/--color-surface-canvas oscuros tal
+     cual, no necesitó ajuste. */
+  --color-data-paid: #8bc8c2;
+
+  /* Composición de costos de proyecto (leyenda de .reports-cost-breakdown):
+     paleta posicional de 4 categorías, sin relación con el esquema
+     ingreso/gasto de --color-data-* de arriba. Aunque materials coincide en
+     valor con --color-brand-600 y labor con --color-data-expense, se
+     declaran propios para no acoplar categorías de costo a otros conceptos.
+     Sincronizado desde la etapa 5, paso 7: CostCompositionChart.jsx
+     (const COLORS) mantiene su propio par claro/oscuro que debe
+     reflejar estos valores a mano (mismo motivo que la familia de
+     arriba: Chart.js no puede leer var()). */
+  --color-data-cost-materials: #0f766e;
+  --color-data-cost-labor: #1e3a5f;
+  --color-data-cost-direct: #b7791f;
+  --color-data-cost-indirect: #64748b;
+
+  /* Tags categóricos (tipo de ítem en líneas de venta: producto/servicio/
+     actividad/adicional) — identidad propia, no semántica de estado. Verde
+     y ámbar coinciden en valor con success/warning por coincidencia de
+     origen (ambos vienen de la misma paleta por defecto), pero se declaran
+     con su propio valor para no acoplar el esquema de tags a los tokens
+     semánticos. */
+  --color-tag-blue-bg: #e0f2fe;
+  --color-tag-blue-text: #075985;
+  --color-tag-purple-bg: #ede9fe;
+  --color-tag-purple-text: #5b21b6;
+  --color-tag-green-bg: #ecfdf5;
+  --color-tag-green-text: #047857;
+  --color-tag-amber-bg: #fef3c7;
+  --color-tag-amber-text: #92400e;
+
+  /* Estado de cotización (QUOTE_CHART en DashboardPage.jsx, donut de
+     estados) — paleta categórica de 6 estados, identidad propia. NO es
+     el esquema ingreso/gasto/neto/pendiente de --color-data-*: son
+     estados de un documento, no categorías financieras (etapa 5, paso
+     7). "rechazada" no tiene token propio a propósito: usa
+     --color-danger-600 directamente (semántica real: rechazado =
+     peligro), mismo criterio que "ingreso" usa --color-brand-600 en
+     --color-data-*. Mismo motivo que --color-data-*: Chart.js no puede
+     leer var(), así que DashboardPage.jsx mantiene su propio par
+     claro/oscuro que debe reflejar estos valores a mano. */
+  --color-quote-status-draft: #94a3b8;
+  --color-quote-status-issued: #38bdf8;
+  --color-quote-status-accepted: #0f766e;
+  --color-quote-status-expired: #d97706;
+  --color-quote-status-archived: #64748b;
+
+  /* Alerta de stock — familia separada de warning, paleta "orange" de
+     Tailwind, distinta de la "amber" que usa --color-warning-*. Se
+     definió como variante oscura en el paso 5 (11 usos en
+     receptions.css/sales.css). inventory.css se centralizó en el paso 6
+     (.inventory-stock-low tokenizado, contraparte oscura agregada) —
+     corregido aquí un comentario que todavía la daba como pendiente. */
+  --color-stock-alert-50: #fff7ed;
+  --color-stock-alert-200: #fed7aa;
+  --color-stock-alert-500: #f97316;
+  --color-stock-alert-800: #9a3412;
 
   /* Typography */
   --font-family-sans: "Segoe UI Variable Text", "Segoe UI Variable", Inter,
@@ -51,8 +220,22 @@
   --font-size-lg: 1.125rem;
   --font-size-xl: 1.375rem;
   --font-size-2xl: 1.75rem;
+  /* Alias de compatibilidad (etapa 5, paso 10): interior.css:4023
+     (.client-form-section > legend) referencia var(--font-size-base), que
+     no existe. El mismo patrón (legend de texto fuerte) en
+     .settings-fieldset > legend (interior.css:3262) usa --font-size-md,
+     así que se resuelve como alias a ese mismo token en vez de tocar
+     interior.css. */
+  --font-size-base: var(--font-size-md);
   --line-height-tight: 1.25;
   --line-height-default: 1.5;
+  /* --font-weight-regular (etapa 5, paso 10): rung real que faltaba en la
+     escala — medium(550) era el más liviano definido, pero
+     .reports-v4-metrics small (interior.css:2581) y
+     .business-drawer-field label > span (layout.css:818) ya usaban
+     var(--font-weight-regular) para texto normal/no-negrita (peso 400).
+     No es alias de otro token: es un peldaño nuevo. */
+  --font-weight-regular: 400;
   --font-weight-medium: 550;
   --font-weight-semibold: 650;
   --font-weight-bold: 700;
@@ -67,20 +250,50 @@
   --space-8: 2rem;
   --space-10: 2.5rem;
 
-  /* Shape and elevation */
-  --radius-sm: 3px;
-  --radius-md: 4px;
+  /* Shape and elevation — radios más generosos, se agregan los que faltaban
+     (lg y xl cubren lo que hoy se resuelve con `calc(var(--radius-md) * N)`
+     repetido en 15+ lugares distintos) */
+  /* --radius-xs (etapa 5, paso 10): rung nuevo que faltaba por debajo de
+     -sm, referenciado por interior.css:1727 (.reports-simple-project-note,
+     un callout sutil) sin existir. No hay otro literal de radio pequeño
+     consistente en el código (el resto de radios "chicos" son literales
+     sueltos de 4-9px sin tokenizar, fuera del alcance de esta tarea) para
+     anclar un valor exacto, así que se elige 4px por ser el paso natural
+     un peldaño por debajo de -sm (6px), sin implicar ningún umbral de
+     contraste (no es color). */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
   --radius-pill: 999px;
-  --shadow-sm: 0 1px 2px rgb(15 23 42 / 0.06);
-  --shadow-md: 0 8px 24px rgb(15 23 42 / 0.1);
+
+  /* --shadow-xs (etapa 5, paso 10): rung nuevo por debajo de -sm,
+     referenciado por interior.css:1652 (.reports-simple-card, la misma
+     tarjeta que tenía la referencia rota a --color-surface) sin existir.
+     Sigue la misma fórmula que -sm/-md/-lg (color-mix con
+     --color-text-strong, que ya hereda su valor oscuro del bloque
+     @media de abajo), con offset/blur y porcentaje un paso por debajo
+     de -sm. */
+  --shadow-xs: 0 1px 2px color-mix(in srgb, var(--color-text-strong) 4%, transparent);
+  /* DECISIÓN (etapa 5, paso 10): el halo más visible que producen estas
+     sombras color-mix sobre fondo oscuro (por el mayor contraste de
+     --color-text-strong claro contra paneles oscuros) se acepta como
+     parte del lenguaje visual de elevación en modo oscuro. No es un bug
+     a corregir en un paso futuro — no cambiar estos valores sin
+     autorización explícita. */
+  --shadow-sm: 0 1px 3px color-mix(in srgb, var(--color-text-strong) 6%, transparent);
+  --shadow-md: 0 10px 28px color-mix(in srgb, var(--color-text-strong) 9%, transparent);
+  --shadow-lg: 0 20px 48px color-mix(in srgb, var(--color-text-strong) 12%, transparent);
 
   /* Shell */
   --shell-sidebar-width: 248px;
-  --shell-topbar-height: 52px;
+  --shell-topbar-height: 50px;
   --shell-content-max: 1600px;
   --z-sticky: 20;
   --z-overlay: 80;
   --z-drawer: 90;
+  --z-modal: 100;
   --z-dialog: 110;
 
   /* Breakpoint reference tokens (media queries use their literal equivalents). */
@@ -90,8 +303,207 @@
   --breakpoint-narrow: 380px;
 
   /* Interaction */
-  --focus-outline: 2px solid #0b5f59;
+  --focus-outline: 2px solid var(--color-focus);
   --focus-offset: 2px;
-  --focus-ring: 0 0 0 3px rgb(19 135 126 / 0.24);
+  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--color-brand-500) 24%, transparent);
 
+  /* Skeleton — tinte del texto fuerte sobre transparente, para que se lea
+     sobre paneles blancos y sobre el canvas cálido sin fijar un hex propio.
+     VALORES INICIALES (6% base, 3% brillo): validar en pantalla antes de
+     consumirlos en <Skeleton>. */
+  --color-skeleton-base: color-mix(in srgb, var(--color-text-strong) 6%, transparent);
+  --color-skeleton-highlight: color-mix(in srgb, var(--color-text-strong) 3%, transparent);
+
+  /* Movimiento — duración de una vuelta de <Spinner> y de un barrido de
+     brillo de <Skeleton>; retraso y fundido de .ui-reveal-delay, que evita
+     mostrar un loader en cargas muy cortas. */
+  --motion-spin-duration: 0.8s;
+  --motion-shimmer-duration: 1.4s;
+  --motion-reveal-delay: 250ms;
+  --motion-reveal-duration: 150ms;
+
+  /* Marca animada (BrandMark animated): un ciclo completo = trazo del arco de
+     la C, aparición del visto, pausa y fundido. */
+  --motion-brand-mark-duration: 2.6s;
+
+  /* Ilustración animada del ingreso (AuthStage): deriva de las luces,
+     flotación de las etiquetas, ciclo del gráfico y giro del engranaje. */
+  --motion-stage-drift-duration: 14s;
+  --motion-stage-float-duration: 6s;
+  --motion-stage-chart-duration: 6s;
+  --motion-stage-gear-duration: 18s;
 }
+
+/* Modo oscuro (etapa 5, paso 2 de 10): fundación. Pares de contraste
+   verificados a mano contra el umbral WCAG AA de texto normal (4.5:1),
+   con la fórmula de luminancia relativa de WCAG 2:
+     texto por defecto / superficie panel   9.37:1
+     texto por defecto / superficie canvas 11.05:1
+     texto muted / superficie subtle        5.97:1
+     texto fuerte / superficie panel       12.13:1
+     success-700 / success-50               9.54:1
+     warning-800 / warning-50               9.32:1
+     danger-700  / danger-50                7.57:1
+     danger-600  / superficie panel         4.75:1  (el más ajustado, igual pasa AA)
+     info-700    / info-50                  7.49:1
+   Todos pasan AA con margen, salvo danger-600/panel (4.75:1, ajustado
+   pero conforme). Ninguno se forzó: si alguno no hubiera llegado a
+   4.5:1, se habría reportado en vez de ajustarlo a la fuerza (no fue
+   necesario, todos llegan).
+
+   --color-brand-*, --color-text-inverse: NO se redefinen, se mantienen
+   iguales a propósito ("se mantiene igual" de las opciones planteadas).
+   Como fondo de botón/badge con --color-text-inverse encima siguen
+   pasando AA (--color-brand-600 + blanco: 5.47:1). PERO usar
+   --color-brand-600/700 como TEXTO directo sobre el nuevo canvas/panel
+   oscuro NO pasa: 3.10:1 y 2.26:1 medidos, ambos por debajo de 4.5:1.
+   Hoy esto no rompe nada porque ningún archivo de feature tiene todavía
+   su paso de migración a oscuro (paso 3 en adelante); queda como riesgo
+   conocido a revisar ahí, archivo por archivo, distinguiendo cada uso
+   real (fondo de botón vs. texto/link) en vez de resolverlo a ciegas
+   aquí. La escala --color-brand-* ya tiene pasos más claros disponibles
+   (--color-brand-400: 7.02:1, --color-brand-500: 5.22:1 sobre canvas)
+   por si ese paso futuro necesita uno para texto.
+
+   --color-skeleton-base/-highlight: NO se tocan y no hace falta —
+   siguen siendo color-mix(in srgb, var(--color-text-strong) X%,
+   transparent), así que heredan el --color-text-strong oscuro de aquí
+   abajo automáticamente (confirmado por el propio mecanismo de
+   color-mix, no por prueba visual).
+
+   Deliberadamente NO definidos en este paso (excepciones de AGENTS.md):
+   --color-stock-alert-*, --color-tag-*, --color-data-*,
+   --color-document-*, --color-dark-* — decisión pendiente de si se
+   congelan o llevan su propia variante oscura (ver entrega del paso 2).
+   --color-stock-alert-* se decidió y definió en el paso 5 (ver más abajo,
+   fuera de este bloque :root). --color-data-* (incluye --color-data-cost-*
+   y la nueva --color-data-paid) y --color-quote-status-* se decidieron y
+   definieron en el paso 7 (ver más abajo) — quedan pendientes
+   --color-tag-* y --color-document-* (congelado de facto, no se ha
+   necesitado tocar) y --color-dark-* (congelado, no reacciona al tema
+   por diseño). */
+/* Paso 9 (etapa 5): el tema lo decide data-theme en <html>, que fija el
+   script inline de index.html antes del primer pintado ("light" o "dark",
+   resuelto desde la preferencia guardada o, si no hay, desde el sistema).
+   Antes era @media (prefers-color-scheme: dark); los valores no cambian. */
+:root[data-theme="dark"] {
+    color-scheme: dark;
+    --color-surface-canvas: #0c1e2b;
+    --color-surface-panel: #142c3d;
+    --color-surface-subtle: #0f2534;
+    --color-surface-raised: #173346;
+    --color-surface-hover: #1b3a4f;
+    --color-surface-selected: #163c3c;
+
+    --color-text-strong: #e4edf1;
+    --color-text-default: #c3d3db;
+    --color-text-muted: #8ba3b0;
+
+    /* Bordes (corrección de contraste, parte 1). Antes: subtle 1.21:1 y
+       default 1.63:1 contra panel — las tarjetas se fundían con el fondo.
+       Ahora subtle 1.65:1/1.95:1 y default 2.30:1/2.71:1 contra
+       panel/canvas; control >= 3:1 contra panel, raised y hover (antes
+       2.71/2.47/2.24). Valores y ratios exactos en scripts/contrast-smoke.mjs. */
+    --color-border-subtle: #2c4f64;
+    --color-border-default: #3a6580;
+    --color-border-control: #5f8aa6;
+
+    /* Marca semántica en oscuro: brand-400 (>= 4.92:1 contra las 6
+       superficies y 5.45:1 contra surface-brand) para texto, foco y enlaces;
+       hover un paso más claro (brand-300); surface-brand es un tinte oscuro
+       de marca sobre el que text-strong/default/muted miden 11.1/8.6/5.0:1;
+       el texto sobre fondo text-strong (claro en oscuro) pasa a oscuro. */
+    --color-text-brand: #45b8a8;
+    --color-text-brand-accent: #45b8a8;
+    --color-text-brand-hover: #7fd0c2;
+    --color-surface-brand: #10353a;
+    --color-focus: #45b8a8;
+    --color-text-on-strong: #0c1e2b;
+    /* 5.74:1 contra panel, 4.74:1 contra hover, 6.54:1 contra info-50. */
+    --color-text-expense: #86a6cf;
+
+    --color-logo-accent: #ffd24d;
+
+    --color-success-50: #0f2b20;
+    --color-success-200: #348a5f;
+    --color-success-300: #3a9a6c;
+    --color-success-700: #6fe3a8;
+
+    --color-warning-50: #2c210c;
+    --color-warning-200: #96702a;
+    --color-warning-300: #a67f2b;
+    --color-warning-800: #f0c05a;
+
+    --color-danger-50: #2c1414;
+    --color-danger-200: #c25b50;
+    --color-danger-600: #f2685f;
+    --color-danger-700: #ff8a83;
+
+    --color-info-50: #0f2036;
+    --color-info-200: #4779b3;
+    --color-info-700: #7fb2f5;
+
+    /* Agregado en el paso 5 (etapa 5): quedó pendiente en el paso 2 (una
+       de las 5 excepciones sin decidir). Se usa 11 veces en
+       receptions.css/sales.css (badges de alerta de stock/proveedor);
+       decisión: variante oscura, mismo criterio que success/warning/
+       danger/info, midiendo -200 (borde) contra su propia -50 Y contra
+       --color-surface-panel desde el inicio (para no repetir el error
+       encontrado en el paso 4). */
+    --color-stock-alert-50: #2c1d0f;
+    --color-stock-alert-200: #b3652b;
+    --color-stock-alert-500: #e08a3f;
+    --color-stock-alert-800: #f2b876;
+
+    /* Agregado en el paso 7 (etapa 5): encontrado al implementar la
+       sincronización de gráficos JS que --color-data-* nunca había
+       tenido valor oscuro pese a que el paso 2 lo daba por hecho — sus
+       valores claros (navy/slate oscuros) miden 1.25:1-2.87:1 contra
+       --color-surface-panel/--color-surface-canvas, casi invisibles
+       como relleno de gráfico. Corregidos aquí (contraste medido contra
+       ambos fondos, el más bajo de los dos reportado):
+         --color-data-expense: 3.30:1 (panel)
+         --color-data-net: 5.92:1 (panel)
+         --color-data-pending-700: 5.99:1 (panel)
+       --color-data-pending NO se toca: ya medía 4.52:1 contra panel sin
+       cambios. --color-data-paid tampoco: 7.64:1 sin cambios (ver su
+       declaración en claro). */
+    --color-data-expense: #5b7ba3;
+    --color-data-net: #9aa8b3;
+    --color-data-pending-700: #e0983f;
+
+    /* Mismo motivo para --color-data-cost-*: aunque cost-direct/-indirect
+       ya pasaban 3:1 de sobra por poco margen (3.96/3.03 contra panel),
+       se suben para dar más margen y quedar visualmente consistentes con
+       -materials/-labor, que si fallaban (2.63:1/1.25:1). */
+    --color-data-cost-materials: #45b8a8;
+    --color-data-cost-labor: #5b7ba3;
+    --color-data-cost-direct: #d1943f;
+    --color-data-cost-indirect: #93a3ac;
+
+    /* --color-quote-status-*: "aceptada" y "archivada" fallaban 3:1
+       contra panel (2.63:1/3.03:1, este último con margen demasiado
+       fino); "borrador"/"emitida"/"vencida" ya pasaban bien (5.62:1+) y
+       no se tocan. */
+    --color-quote-status-accepted: #45b8a8;
+    --color-quote-status-archived: #93a3ac;
+}
+
+/* Corrección posterior al paso 2 (encontrada en el paso 4, etapa 5, al
+   auditar interior.css): los -200/-300 de arriba se eligieron a ojo como
+   bordes de badge, sin medir contraste no-textual (WCAG 1.4.11, umbral
+   3:1) — el paso 2 solo midió el texto -700/-800. Contra su propia -50
+   (el fondo real donde viven, p. ej. --color-success-200 sobre
+   --color-success-50 en un badge) daban 1.42:1-1.92:1, muy por debajo
+   de 3:1: un borde prácticamente invisible. Corregidos aquí a valores
+   que sí pasan 3:1 tanto contra su -50 como contra --color-surface-panel
+   (por si el borde toca directamente el panel en vez del tinte -50):
+     success-200: 3.57:1 (-50) / 3.39:1 (panel)
+     success-300: 4.34:1 (-50) / 4.13:1 (panel)
+     warning-200: 3.49:1 (-50) / 3.19:1 (panel)
+     warning-300: 4.28:1 (-50) / 3.91:1 (panel)
+     danger-200:  4.03:1 (-50) / 3.37:1 (panel)
+     info-200:    3.64:1 (-50) / 3.19:1 (panel)
+   Afecta a todo consumidor ya migrado (components.css, layout.css) y a
+   interior.css; no requirió tocar ningún archivo de feature porque son
+   los mismos tokens, ya consumidos por var(). */

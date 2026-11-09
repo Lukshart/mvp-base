@@ -1,3 +1,4 @@
+import {incrementScannedItem} from "./barcode.mjs";
 import {adaptStoredFiscalIdentifier} from "./fiscalIdentifier.mjs";
 
 export const SALE_MODEL_VERSION = 1;
@@ -29,6 +30,7 @@ export const SALE_DOCUMENT_TYPE_LABELS = Object.freeze({
 });
 
 const STATUS_SET = new Set(SALE_STATUSES);
+const CONFIRMED_STATUS_ALIASES = new Set(["confirmado", "activa", "activo"]);
 const DOCUMENT_SET = new Set(SALE_DOCUMENT_TYPES);
 const ITEM_TYPES = new Set(["producto", "servicio", "actividad"]);
 const MAXIMUM_AMOUNT_MESSAGE = "El monto de la venta supera el máximo permitido.";
@@ -127,6 +129,12 @@ export function buildSaleMutationPayload(raw = {}) {
   calculateSaleTotals(raw.items, descuento, {afectaIva});
   return {
     clienteId: id(raw.clienteId, "El cliente"),
+    // SPEC 020 §16: sólo se acepta cuando ya viene fijado (p. ej. desde
+    // WorksPage al abrir "Nueva venta" desde un Proyecto); no existe ningún
+    // selector de Proyecto genérico en Ventas. Igual que origenAdicionalId
+    // por línea, el backend nunca confía en esto más allá del formato: la
+    // pertenencia real se revalida en Functions (crearVenta/confirmarVenta).
+    trabajoId: id(raw.trabajoId, "El proyecto", {optional: true}),
     descuento,
     afectaIva,
     fechaVenta: text(raw.fechaVenta, 10),
@@ -143,6 +151,10 @@ export function buildSaleMutationPayload(raw = {}) {
         cantidad: values.cantidad,
         precioUnitario: values.precioUnitario,
         descuentoPct: values.descuentoPct,
+        // SPEC 020 §5/§17: referencia histórica opcional hacia el adicional
+        // de origen (Works). Sólo formato aquí; confirmarVenta es la única
+        // autoridad que valida existencia/estado/pertenencia/ítem.
+        origenAdicionalId: id(item.origenAdicionalId, `Ítem ${index + 1}: adicional de origen`, {optional: true}),
       };
     }),
   };
@@ -176,6 +188,7 @@ function storedLine(raw = {}, index = 0) {
     tipoItem: ITEM_TYPES.has(tipo) ? tipo : "producto",
     unidad: text(raw.unidad || snapshot.unidad, 80) || "unidad",
     cantidadCotizada: raw.cantidadCotizada == null ? null : Number(raw.cantidadCotizada),
+    origenAdicionalId: text(raw.origenAdicionalId, 160),
     ...calculateSaleLine(raw, index),
   };
 }
@@ -206,7 +219,11 @@ export function adaptStoredSale(raw = {}) {
     id: text(raw.id || raw.ventaId, 160),
     ventaId: text(raw.ventaId || raw.id, 160),
     numero: text(raw.numero, 120),
-    estado: STATUS_SET.has(estado) ? estado : "borrador",
+    estado: STATUS_SET.has(estado)
+      ? estado
+      : CONFIRMED_STATUS_ALIASES.has(estado)
+        ? "confirmada"
+        : "borrador",
     clienteId: text(raw.clienteId || cliente.clienteId, 160),
     clienteSnapshot: cliente,
     cotizacionId: text(raw.cotizacionId, 160),
@@ -224,6 +241,21 @@ export function adaptStoredSale(raw = {}) {
     items,
     ...totals,
   };
+}
+
+// Decide qué hacer con una lectura: suma 1 si el producto ya está en una línea
+// propia de la venta, o agrega una línea nueva. Las líneas que vienen de
+// adicionales (origenAdicionalId) nunca se tocan.
+export function resolveSaleScan(items, itemId, createItem) {
+  const source = Array.isArray(items) ? items : [];
+  const own = source.filter((item) => !item?.origenAdicionalId);
+  const result = incrementScannedItem(own, itemId, createItem);
+  const byLine = new Map(result.map((item) => [item.lineaId, item]));
+  const merged = source.map((item) => item?.origenAdicionalId ? item : byLine.get(item.lineaId) ?? item);
+  if (result.length > own.length) {
+    return {action: "added", items: [...merged, result[result.length - 1]]};
+  }
+  return {action: "incremented", items: merged};
 }
 
 export function canManageSales(role) {

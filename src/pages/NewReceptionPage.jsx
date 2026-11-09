@@ -2,13 +2,16 @@ import React, {useEffect, useRef, useState} from "react";
 import {useNavigate, useParams} from "react-router-dom";
 import {sileo} from "sileo";
 import Button from "../components/ui/Button";
+import LoadingState from "../components/ui/LoadingState";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
 import SupplyTrace from "../components/ui/SupplyTrace";
+import BarcodeInput from "../components/barcode/BarcodeInput";
 import {
   canManageReceptions,
   getReceptionConfirmationImpact,
   getReceptionStatusLabel,
   getSupplierResponseLabel,
+  resolveReceptionScan,
   shouldReconcileReceptionConfirmation,
 } from "../domain/receptionModel.mjs";
 import {
@@ -19,6 +22,7 @@ import {
   obtenerRecepcion,
 } from "../services/receptionService";
 import {obtenerCompra} from "../services/purchaseService";
+import {findActiveProductByBarcode} from "../services/inventoryService";
 import {formatMoney} from "../utils/formatters";
 import ReceptionDocumentImportDialog from "../features/receptions/ReceptionDocumentImportDialog";
 import "../features/receptions/receptions.css";
@@ -42,6 +46,8 @@ export default function NewReceptionPage({businessId, role}) {
   const [message, setMessage] = useState("");
   const confirmId = useRef(createReceptionRequestId("reception-confirm"));
   const confirmGuard = useRef(false);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
   const canManage = canManageReceptions(role);
   const readOnly = !canManage || reception?.estado !== "borrador";
   const receivedProducts = reception?.items?.some((line) => line.tipoItem === "producto" && Number(line.cantidad) > 0);
@@ -110,7 +116,22 @@ export default function NewReceptionPage({businessId, role}) {
     sileo.success({title: "Propuesta aplicada", description: `${aplicadas} línea${aplicadas === 1 ? "" : "s"} rellenada${aplicadas === 1 ? "" : "s"}${omitidas ? `; ${omitidas} quedaron sin asociar.` : "."} Aún no se modificó el stock.`});
   };
 
-  if (loading) return <p className="muted">Cargando recepción...</p>;
+  // Suma 1 a la línea de producto de la OC; nunca crea líneas nuevas (SPEC 011).
+  const scanReceivedProduct = async (barcode) => {
+    const product = await findActiveProductByBarcode(businessId, barcode);
+    if (!product) throw new Error("Producto no encontrado para este código.");
+    const current = draftRef.current;
+    const result = resolveReceptionScan(current.items, product.id);
+    if (result.status === "not_in_reception") throw new Error("Este producto no está en la recepción.");
+    if (result.status === "completed") throw new Error(`Ya se completó lo pendiente de ${result.line.nombre}.`);
+    const {line, cantidad: next} = result;
+    const items = current.items.map((item) => item.lineaId === line.lineaId ? {...item, cantidad: next} : item);
+    draftRef.current = {...current, items};
+    setDraft((latest) => ({...latest, items: latest.items.map((item) => item.lineaId === line.lineaId ? {...item, cantidad: next} : item)}));
+    return {key: line.lineaId, label: line.nombre};
+  };
+
+  if (loading) return <LoadingState variant="page" label="Cargando recepción..." />;
   if (!reception) return <p className="po-message po-message--error">{message}</p>;
   return <main className="po-workspace">
     <header className="po-header"><div className="po-header__copy"><span className="po-kicker">Recepción</span><div className="po-header__title-row"><h1>{reception.numero}</h1><span className={`po-status po-status--${reception.estado}`}>{getReceptionStatusLabel(reception.estado)}</span></div><div className="po-header__meta"><strong>{reception.proveedorSnapshot?.razonSocial}</strong><span>{draft.fechaRecepcion}</span></div></div><div className="po-header__actions"><button type="button" className="po-button po-button--secondary" onClick={() => navigate("/recepciones")}>Volver al historial</button></div></header>
@@ -127,7 +148,7 @@ export default function NewReceptionPage({businessId, role}) {
 
     <section className="po-panel"><h2>Datos de recepción</h2><div className="reception-grid"><label>Fecha de recepción<input type="date" disabled={readOnly} value={draft.fechaRecepcion} onChange={(event) => setDraft({...draft, fechaRecepcion: event.target.value})} /></label><label className="reception-grid__wide">Observaciones<textarea disabled={readOnly} value={draft.observaciones} onChange={(event) => setDraft({...draft, observaciones: event.target.value})} /></label></div></section>
     <section className="po-panel">
-      <div className="reception-items-heading"><div><h2>Ítems de la recepción</h2><p>Registra productos recibidos y confirma servicios o actividades prestadas.</p></div>{!readOnly && <button type="button" className="po-button po-button--secondary" disabled={processing} onClick={() => setImportOpen(true)}>Importar factura o documento</button>}</div>
+      <div className="reception-items-heading"><div><h2>Ítems de la recepción</h2><p>Registra productos recibidos y confirma servicios o actividades prestadas.</p></div>{!readOnly && <div className="po-header__actions"><BarcodeInput actionOnly continuous actionLabel="Escanear producto" disabled={processing} onSubmit={scanReceivedProduct} /><button type="button" className="po-button po-button--secondary" disabled={processing} onClick={() => setImportOpen(true)}>Importar factura o documento</button></div>}</div>
       {draft.documentoOrigen && <div className="reception-document-source"><div><span>Documento conciliado</span><strong>{draft.documentoOrigen.nombreArchivo}</strong></div><div><span>Documento</span><strong>{draft.documentoOrigen.tipoDocumento === "factura" ? "Factura" : draft.documentoOrigen.tipoDocumento === "boleta" ? "Boleta" : "Documento"}{draft.documentoOrigen.numeroDocumento ? ` N° ${draft.documentoOrigen.numeroDocumento}` : ""}</strong></div>{hasDocumentValue(draft.documentoOrigen.neto) && <div><span>Neto</span><strong>{formatMoney(draft.documentoOrigen.neto, draft.documentoOrigen.moneda || reception.moneda, reception.locale)}</strong></div>}{hasDocumentValue(draft.documentoOrigen.impuestoMonto) && <div><span>{hasDocumentValue(draft.documentoOrigen.impuestoPorcentaje) ? `IVA (${draft.documentoOrigen.impuestoPorcentaje}%)` : "IVA"}</span><strong>{formatMoney(draft.documentoOrigen.impuestoMonto, draft.documentoOrigen.moneda || reception.moneda, reception.locale)}</strong></div>}{hasDocumentValue(draft.documentoOrigen.total) && <div><span>Total</span><strong>{formatMoney(draft.documentoOrigen.total, draft.documentoOrigen.moneda || reception.moneda, reception.locale)}</strong></div>}<div><span>Conciliación</span><strong>{draft.documentoOrigen.lineasAplicadas || 0} de {draft.documentoOrigen.lineasDetectadas || 0} líneas aplicadas</strong></div></div>}
       <div className="erp-table-region"><table className="erp-table reception-items-table"><thead><tr><th>Ítem</th><th>Solicitado</th><th>Recibido / confirmado antes</th><th>Pendiente</th><th>Cantidad actual</th><th>Costo unitario</th><th>Desc. %</th></tr></thead><tbody>{draft.items.map((line) => {
         const pending = Math.max(0, line.cantidadSolicitada - line.cantidadRecibidaAnterior);
@@ -136,10 +157,10 @@ export default function NewReceptionPage({businessId, role}) {
     </section>
     <div className="po-header__actions">{reception.estado === "borrador" && canManage && <><button type="button" className="po-button po-button--secondary" disabled={processing} onClick={save}>Guardar</button><button type="button" className="po-button po-button--primary" disabled={processing} onClick={() => setDialog("confirm")}>Confirmar recepción</button><button type="button" className="po-button po-button--danger" disabled={processing} onClick={() => setDialog("cancel")}>Cancelar</button></>}</div>
 
-    <ResponsiveDialog open={dialog === "confirm"} onClose={() => !processing && setDialog("")} eyebrow="Lista para confirmar" title="Confirma el impacto de esta recepción" description="Al confirmar, ValoraCloud registrará esta recepción, actualizará el stock de los productos recibidos y generará automáticamente la compra correspondiente. Los servicios y actividades no modificarán existencias." size="small" footer={<><Button type="button" variant="secondary" disabled={processing} onClick={() => setDialog("")}>Volver</Button><Button type="button" aria-busy={processing} disabled={processing} onClick={confirm}>{processing ? "Confirmando recepción…" : "Confirmar recepción y registrar compra"}</Button></>}>
+    <ResponsiveDialog open={dialog === "confirm"} onClose={() => !processing && setDialog("")} eyebrow="Lista para confirmar" title="Confirma el impacto de esta recepción" description="Al confirmar, ValoraCloud registrará esta recepción, actualizará el stock de los productos recibidos y generará automáticamente la compra correspondiente. Los servicios y actividades no modificarán existencias." size="small" footer={<><Button type="button" variant="secondary" disabled={processing} onClick={() => setDialog("")}>Volver</Button><Button type="button" loading={processing} onClick={confirm}>{processing ? "Confirmando recepción…" : "Confirmar recepción y registrar compra"}</Button></>}>
       <div className="reception-confirm-impact"><div><span>Productos que actualizan stock</span><strong>{plural(confirmationImpact.productos, "producto", "productos")}</strong></div><div><span>Servicios sin movimiento de stock</span><strong>{plural(confirmationImpact.servicios, "servicio", "servicios")}</strong></div><div><span>Actividades sin movimiento de stock</span><strong>{plural(confirmationImpact.actividades, "actividad", "actividades")}</strong></div><div><span>Total estimado de la compra</span><strong>{formatMoney(confirmationImpact.totalCompraEstimado, reception.moneda, reception.locale)}</strong></div></div>
     </ResponsiveDialog>
-    <ResponsiveDialog open={dialog === "cancel"} onClose={() => !processing && setDialog("")} eyebrow="Cancelar recepción" title="Cancelar recepción" description="La recepción quedará cancelada sin modificar stock." size="small" footer={<><Button type="button" variant="secondary" disabled={processing} onClick={() => setDialog("")}>Volver</Button><Button type="button" variant="danger" disabled={processing} onClick={cancel}>{processing ? "Cancelando..." : "Cancelar recepción"}</Button></>}><p>Esta acción no se puede deshacer.</p></ResponsiveDialog>
+    <ResponsiveDialog open={dialog === "cancel"} onClose={() => !processing && setDialog("")} eyebrow="Cancelar recepción" title="Cancelar recepción" description="La recepción quedará cancelada sin modificar stock." size="small" footer={<><Button type="button" variant="secondary" disabled={processing} onClick={() => setDialog("")}>Volver</Button><Button type="button" variant="danger" loading={processing} onClick={cancel}>{processing ? "Cancelando..." : "Cancelar recepción"}</Button></>}><p>Esta acción no se puede deshacer.</p></ResponsiveDialog>
     <ReceptionDocumentImportDialog open={importOpen} onClose={() => setImportOpen(false)} onApply={applyImport} businessId={businessId} providerSnapshot={reception.proveedorSnapshot} receptionItems={draft.items} />
   </main>;
 }

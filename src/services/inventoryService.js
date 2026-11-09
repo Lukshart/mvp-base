@@ -32,7 +32,7 @@ import {
   adaptInventoryItem,
   calculateInventoryPriceFormation,
 } from "../domain/inventoryMvp.mjs";
-import {normalizeBarcode} from "../domain/barcode.mjs";
+import {getBarcodeLookupCandidates, normalizeBarcode} from "../domain/barcode.mjs";
 import {formatChileanRut} from "../domain/fiscalIdentifier.mjs";
 
 const VALID_TYPES = ["producto", "servicio", "actividad"];
@@ -441,12 +441,12 @@ export async function getInventoryItems(uid) {
 }
 
 export async function findActiveProductByBarcode(businessId, rawBarcode) {
-  const barcode = normalizeBarcode(rawBarcode);
-  if (!businessId || !barcode) return null;
+  const candidates = getBarcodeLookupCandidates(rawBarcode);
+  if (!businessId || !candidates.length) return null;
   const inventoryRef = inventoryCollectionRef(businessId);
   const [canonicalSnapshot, legacySnapshot] = await Promise.all([
-    getDocs(query(inventoryRef, where("barcode", "==", barcode))),
-    getDocs(query(inventoryRef, where("codigoBarras", "==", barcode))),
+    getDocs(query(inventoryRef, where("barcode", "in", candidates))),
+    getDocs(query(inventoryRef, where("codigoBarras", "in", candidates))),
   ]);
   const matches = new Map();
   [...canonicalSnapshot.docs, ...legacySnapshot.docs].forEach((itemDoc) => {

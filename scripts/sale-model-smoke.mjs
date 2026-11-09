@@ -12,6 +12,7 @@ import {
   getSaleStatusLabel,
   getSaleStockStatusLabel,
   matchesSaleSearch,
+  resolveSaleScan,
   SALE_STATUSES,
   shouldReconcileSaleConfirmation,
 } from "../src/domain/saleModel.mjs";
@@ -41,7 +42,7 @@ console.log("OK ventas modelo: líneas, descuentos, IVA, totales y overflow");
 
 const sale = (count) => ({clienteId: "client-1", fechaVenta: "2026-08-07", items: Array.from({length: count}, (_, index) => line({lineaId: `linea-${index + 1}`, itemId: `item-${index + 1}`}))});
 const payload = buildSaleMutationPayload({...sale(1), numero: "VTA-FAKE", estado: "confirmada", clienteSnapshot: {nombreRazonSocial: "Falso"}, stockAplicado: true, total: 1});
-assert.deepEqual(payload.items[0], {lineaId: "linea-1", itemId: "item-1", cantidad: 2, precioUnitario: 1000, descuentoPct: 10});
+assert.deepEqual(payload.items[0], {lineaId: "linea-1", itemId: "item-1", cantidad: 2, precioUnitario: 1000, descuentoPct: 10, origenAdicionalId: ""});
 assert.equal(payload.descuento, 0);
 assert.equal(payload.afectaIva, true);
 const exemptPayload = buildSaleMutationPayload({...sale(1), descuento: 300, afectaIva: false});
@@ -59,6 +60,9 @@ console.log("OK ventas modelo: payload mínimo y máximo de 200 líneas en front
 const stored = adaptStoredSale({ventaId: "sale-1", numero: "VTA-2026-0001", estado: "confirmada", clienteId: "client-1", clienteSnapshot: {clienteId: "client-1", nombreRazonSocial: "Cliente Uno", rut: "76.000.000-0"}, cotizacionId: "quote-1", cotizacionNumero: "COT-2026-0001", trabajoId: "work-1", trabajoNumero: "TRB-2026-0001", trabajoTitulo: "Diagnóstico", tipoDocumento: "factura", numeroDocumento: "F-100", items: [{...line(), nombre: "Producto", tipoItem: "producto", unidad: "unidad"}]});
 assert.equal(stored.id, "sale-1"); assert.equal(stored.total, 2142); assert.equal(stored.clienteSnapshot.nombreRazonSocial, "Cliente Uno");
 assert.equal(stored.trabajoId, "work-1"); assert.equal(stored.trabajoNumero, "TRB-2026-0001");
+for (const estado of ["confirmado", "activa", "activo"]) {
+  assert.equal(adaptStoredSale({...stored, estado}).estado, "confirmada");
+}
 assert.equal(matchesSaleSearch(stored, "COT-2026-0001"), true); assert.equal(matchesSaleSearch(stored, "76.000.000-0"), true); assert.equal(matchesSaleSearch(stored, "nada"), false);
 assert.equal(canManageSales("OWNER"), true); assert.equal(canManageSales("ADMIN"), true); assert.equal(canManageSales("VENTAS"), true); assert.equal(canManageSales("COMPRAS"), false); assert.equal(canManageSales("MEMBER"), false);
 assert.deepEqual(SALE_STATUSES, ["borrador", "confirmada", "cancelada"]);
@@ -91,7 +95,11 @@ assert.doesNotMatch(salePage, /globalThis\.confirm|window\.confirm/);
 assert.doesNotMatch(salesHistory, /globalThis\.confirm|window\.confirm/);
 assert.match(salePage, /ResponsiveDialog/);
 assert.match(salesHistory, /`\/ventas\/\$\{sale\.id\}\/editar`/);
-assert.match(salesHistory, /`\/cotizaciones\/\$\{sale\.cotizacionId\}\/editar`/);
+// La cotización de origen ya fue aceptada: se abre su detalle de solo lectura, no el editor.
+assert.match(salesHistory, /navigate\("\/cotizaciones", \{state: \{openQuoteId: sale\.cotizacionId\}\}\)/);
+assert.doesNotMatch(salesHistory, /\/cotizaciones\/\$\{sale\.cotizacionId\}\/editar/);
+assert.match(salePage, /navigate\("\/cotizaciones", \{state: \{openQuoteId: sale\.cotizacionId\}\}\)/);
+assert.doesNotMatch(salePage, /\/cotizaciones\/\$\{sale\.cotizacionId\}\/editar/);
 assert.doesNotMatch(salesHistory, />Editar<|>Ver</);
 assert.doesNotMatch(salesHistory, /confirmarVenta|Confirmar venta/);
 assert.match(salesHistory, /<th>Número<\/th><th>Cliente<\/th><th>Total<\/th><th>Origen<\/th><th>Estado<\/th><th>Stock<\/th><th>Fecha<\/th>/);
@@ -119,4 +127,18 @@ assert.match(salePage, /previewOpen \&\& <div className="sale-preview-body">/);
 assert.match(salePage, /Ver vista previa/);
 assert.doesNotMatch(salePage, />Ver cotización</);
 console.log("OK ventas modelo: defensas backend y reglas declaradas");
+const scanLine = (overrides = {}) => ({lineaId: "a", itemId: "p1", cantidad: 1, ...overrides});
+const scanCreate = () => scanLine({lineaId: "nueva", itemId: "p2"});
+const summed = resolveSaleScan([scanLine()], "p1", scanCreate);
+assert.equal(summed.action, "incremented");
+assert.deepEqual(summed.items.map((item) => [item.lineaId, item.cantidad]), [["a", 2]]);
+const appended = resolveSaleScan([scanLine()], "p2", scanCreate);
+assert.equal(appended.action, "added");
+assert.deepEqual(appended.items.map((item) => item.lineaId), ["a", "nueva"]);
+const withAdditional = [scanLine({lineaId: "ad", origenAdicionalId: "adic-1"})];
+const untouched = resolveSaleScan(withAdditional, "p1", () => scanLine({lineaId: "nueva"}));
+assert.equal(untouched.action, "added");
+assert.deepEqual(untouched.items.map((item) => [item.lineaId, item.cantidad]), [["ad", 1], ["nueva", 1]]);
+const mixed = resolveSaleScan([scanLine({lineaId: "ad", origenAdicionalId: "adic-1"}), scanLine()], "p1", scanCreate);
+assert.deepEqual(mixed.items.map((item) => [item.lineaId, item.cantidad]), [["ad", 1], ["a", 2]]);
 console.log("Smoke del modelo de Ventas completado.");

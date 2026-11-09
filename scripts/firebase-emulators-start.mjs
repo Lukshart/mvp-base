@@ -9,7 +9,6 @@ const metadataFile = resolve(
   dataDirectory,
   "firebase-export-metadata.json"
 );
-
 const args = [
   "emulators:start",
   "--only",

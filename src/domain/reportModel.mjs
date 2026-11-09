@@ -1,3 +1,5 @@
+import {isLowStockByRule} from "./inventoryLowStock.mjs";
+
 export const REPORT_TABS = Object.freeze([
   "overview",
   "commercial",
@@ -62,6 +64,22 @@ function safeAmount(value) {
   return Number.isFinite(number) ? number : 0;
 }
 
+// Monto sin IVA de una venta o compra. Mismo criterio que operationalNetProfit
+// y workBalance: un neto válido es un número finito ≥ 0 y nunca se sustituye por
+// `total`. En boleta de compra (SPEC 023 §5.2) `neto` ya es lo pagado.
+function hasValidNet(record) {
+  const value = record?.neto;
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
+function netAmount(record) {
+  return hasValidNet(record) ? record.neto : 0;
+}
+
+function amountOf(record, field) {
+  return field === "neto" ? netAmount(record) : safeAmount(record?.[field]);
+}
+
 export function normalizeReportCurrency(value, fallback = "CLP") {
   const normalized = text(value).toUpperCase();
   if (/^[A-Z]{3}$/.test(normalized)) return normalized;
@@ -89,7 +107,7 @@ export function groupAmountsByCurrency(
     const currency = resolveReportCurrency(record, fallbackCurrency);
     const current = buckets.get(currency) || {currency, count: 0, total: 0};
     current.count += 1;
-    current.total += safeAmount(record?.[amountField]);
+    current.total += amountOf(record, amountField);
     buckets.set(currency, current);
   });
   return [...buckets.values()]
@@ -145,11 +163,13 @@ export function filterSales(
 export function getSalesMetrics(sales, range, options = {}) {
   const confirmed = filterSales(sales, {range, ...options, status: "todos"})
     .filter((sale) => VALID_SALE_STATES.has(text(sale.estado).toLowerCase()));
-  const totalsByCurrency = groupAmountsByCurrency(confirmed, options);
+  const totalsByCurrency = groupAmountsByCurrency(confirmed, {...options, amountField: "neto"});
   const total = singleCurrencyValue(totalsByCurrency);
   return {
     confirmed,
     count: confirmed.length,
+    // Documentos que aportan 0 a la suma por no traer un neto válido.
+    withoutNetCount: confirmed.filter((sale) => !hasValidNet(sale)).length,
     total,
     average: singleCurrencyValue(totalsByCurrency, "average"),
     totalsByCurrency,
@@ -185,11 +205,12 @@ export function filterPurchases(
 export function getPurchaseMetrics(purchases, range, options = {}) {
   const confirmed = filterPurchases(purchases, {range, ...options, status: "todos"})
     .filter((purchase) => VALID_PURCHASE_STATES.has(text(purchase.estado).toLowerCase()));
-  const totalsByCurrency = groupAmountsByCurrency(confirmed, options);
+  const totalsByCurrency = groupAmountsByCurrency(confirmed, {...options, amountField: "neto"});
   const total = singleCurrencyValue(totalsByCurrency);
   return {
     confirmed,
     count: confirmed.length,
+    withoutNetCount: confirmed.filter((purchase) => !hasValidNet(purchase)).length,
     total,
     average: singleCurrencyValue(totalsByCurrency, "average"),
     totalsByCurrency,
@@ -325,6 +346,84 @@ export function getSimplifiedReportSummary({
   };
 }
 
+// Agrupadores "top N" para las subvistas de Ventas/Compras/Inventario del
+// centro de reportes. Se agrupan primero por moneda (igual que
+// groupAmountsByCurrency) y sólo luego se rankean dentro de cada moneda, para
+// no comparar ni sumar montos de monedas distintas al ordenar un top N.
+function rankTopByCurrency(records, {counterpartyIdField, counterpartyNameField, fallbackCurrency, limit}) {
+  const currencyBuckets = new Map();
+  (Array.isArray(records) ? records : []).forEach((record) => {
+    const currency = resolveReportCurrency(record, fallbackCurrency);
+    if (!currencyBuckets.has(currency)) currencyBuckets.set(currency, new Map());
+    const bucket = currencyBuckets.get(currency);
+    const id = text(counterpartyIdField(record)) || "sin-identificar";
+    const name = text(counterpartyNameField(record)) || "Histórico";
+    const current = bucket.get(id) || {id, name, count: 0, total: 0};
+    current.count += 1;
+    current.total += netAmount(record);
+    bucket.set(id, current);
+  });
+  return [...currencyBuckets.entries()]
+    .map(([currency, bucket]) => ({
+      currency,
+      entries: [...bucket.values()]
+        .sort((left, right) => right.total - left.total)
+        .slice(0, limit),
+    }))
+    .sort((left, right) => left.currency.localeCompare(right.currency));
+}
+
+function rankTopLinesByCurrency(records, {fallbackCurrency, limit}) {
+  const currencyBuckets = new Map();
+  (Array.isArray(records) ? records : []).forEach((record) => {
+    const currency = resolveReportCurrency(record, fallbackCurrency);
+    if (!currencyBuckets.has(currency)) currencyBuckets.set(currency, new Map());
+    const bucket = currencyBuckets.get(currency);
+    (Array.isArray(record.items) ? record.items : []).forEach((line) => {
+      const id = text(line.itemId) || text(line.codigo) || "sin-identificar";
+      const name = text(line.nombre) || "Ítem histórico";
+      const current = bucket.get(id) || {id, name, quantity: 0, total: 0};
+      current.quantity += safeAmount(line.cantidad);
+      current.total += safeAmount(line.totalLinea);
+      bucket.set(id, current);
+    });
+  });
+  return [...currencyBuckets.entries()]
+    .map(([currency, bucket]) => ({
+      currency,
+      entries: [...bucket.values()]
+        .sort((left, right) => right.total - left.total)
+        .slice(0, limit),
+    }))
+    .sort((left, right) => left.currency.localeCompare(right.currency));
+}
+
+export function getTopSalesClients(confirmedSales, {fallbackCurrency = "CLP", limit = 5} = {}) {
+  return rankTopByCurrency(confirmedSales, {
+    counterpartyIdField: (sale) => sale.clienteId || sale.clienteSnapshot?.clienteId,
+    counterpartyNameField: (sale) => sale.clienteSnapshot?.nombreRazonSocial,
+    fallbackCurrency,
+    limit,
+  });
+}
+
+export function getTopSalesProducts(confirmedSales, {fallbackCurrency = "CLP", limit = 5} = {}) {
+  return rankTopLinesByCurrency(confirmedSales, {fallbackCurrency, limit});
+}
+
+export function getTopPurchaseSuppliers(confirmedPurchases, {fallbackCurrency = "CLP", limit = 5} = {}) {
+  return rankTopByCurrency(confirmedPurchases, {
+    counterpartyIdField: (purchase) => purchase.proveedorId || purchase.proveedorSnapshot?.proveedorId,
+    counterpartyNameField: (purchase) => purchase.proveedorSnapshot?.razonSocial,
+    fallbackCurrency,
+    limit,
+  });
+}
+
+export function getTopPurchaseProducts(confirmedPurchases, {fallbackCurrency = "CLP", limit = 5} = {}) {
+  return rankTopLinesByCurrency(confirmedPurchases, {fallbackCurrency, limit});
+}
+
 export function filterQuotes(
   quotes,
   {range, status = "todos", search = "", currency = "todos", fallbackCurrency = "CLP"} = {}
@@ -370,7 +469,9 @@ export function getQuoteMetrics(quotes, range, options = {}) {
   };
 }
 
-export function getInventoryMetrics(items, {fallbackCurrency = "CLP"} = {}) {
+// lowStockSettings: configuración de inventario del negocio
+// ({alertasStockBajo, umbralStockBajo}); la regla vive en inventoryLowStock.mjs.
+export function getInventoryMetrics(items, {fallbackCurrency = "CLP", lowStockSettings} = {}) {
   const activeProducts = (Array.isArray(items) ? items : []).filter(
     (item) =>
       item.tipoItem === "producto" && (item.estado || "activo") === "activo"
@@ -380,11 +481,9 @@ export function getInventoryMetrics(items, {fallbackCurrency = "CLP"} = {}) {
     const stock = Number(item.stock);
     return Number.isFinite(cost) && cost > 0 && Number.isFinite(stock) && stock >= 0;
   });
-  const lowStockProducts = activeProducts.filter((item) => {
-    const stock = Number(item.stock);
-    const minimum = Number(item.stockMinimo);
-    return Number.isFinite(stock) && Number.isFinite(minimum) && stock <= minimum;
-  });
+  const lowStockProducts = activeProducts.filter((item) =>
+    isLowStockByRule(item, lowStockSettings)
+  );
   const coverage = activeProducts.length
     ? (coveredProducts.length / activeProducts.length) * 100
     : 0;
@@ -583,7 +682,7 @@ export function filterWorkCosts(
 
 export function aggregateOperationalTimeline(
   documents,
-  {range, dateField, amountField = "total", fallbackCurrency = "CLP"}
+  {range, dateField, amountField = "neto", fallbackCurrency = "CLP"}
 ) {
   const byKey = new Map();
   const useMonths = Number(range?.days || 0) > 92;
@@ -595,7 +694,7 @@ export function aggregateOperationalTimeline(
     const bucketKey = `${currency}__${key}`;
     const current = byKey.get(bucketKey) || {key, currency, count: 0, value: 0};
     current.count += 1;
-    current.value += safeAmount(document?.[amountField]);
+    current.value += amountOf(document, amountField);
     byKey.set(bucketKey, current);
   });
   return [...byKey.values()].sort((left, right) =>
@@ -627,6 +726,8 @@ export function combineOperationalTimelines(salesTimeline, purchasesTimeline) {
   );
 }
 
+// Cada fila es un documento y enlaza a su detalle, así que muestra el `total`
+// del documento (con IVA); no es una suma del período.
 export function getRecentOperationalActivity(sales, purchases, range, limit = 5) {
   const salesActivity = getSalesMetrics(sales, range).confirmed.map((sale) => ({
     id: text(sale.id || sale.ventaId),
@@ -783,9 +884,9 @@ export function buildReportCsv(tab, data = {}) {
       (groups || []).map((group) => [area, indicator, group.currency, group[field]]);
     return csv([
       ["Área", "Indicador", "Moneda", "Valor"],
-      ...monetaryRows("Ventas", "Total vendido confirmado", data.sales?.totalsByCurrency),
+      ...monetaryRows("Ventas", "Total vendido confirmado (sin IVA)", data.sales?.totalsByCurrency),
       ["Ventas", "Cantidad confirmada", "", data.sales?.count || 0],
-      ...monetaryRows("Compras", "Total comprado confirmado", data.purchases?.totalsByCurrency),
+      ...monetaryRows("Compras", "Total comprado confirmado (sin IVA)", data.purchases?.totalsByCurrency),
       ["Compras", "Cantidad confirmada", "", data.purchases?.count || 0],
       ["Cotizaciones", "Cantidad del periodo", "", data.quotes?.count || 0],
       ["Cotizaciones", "Aceptadas (estado actual)", "", data.quotes?.counts?.aceptada || 0],

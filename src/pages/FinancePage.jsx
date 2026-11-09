@@ -17,6 +17,7 @@ import FinancialPeriodSelector from "../components/finance/FinancialPeriodSelect
 import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
+import {SkeletonRegion, SkeletonTable} from "../components/ui/Skeleton";
 import StatusBadge from "../components/ui/StatusBadge";
 import {
   FINANCIAL_CATEGORIES,
@@ -37,7 +38,8 @@ import {
   deleteFinancialMovement,
   updateFinancialMovement,
 } from "../services/financialService";
-import { formatCLP, formatDate } from "../utils/formatters";
+import { useBusinessMoney } from "../hooks/useBusinessFormat";
+import { formatDate } from "../utils/formatters";
 
 const TABS = [
   { id: "all", label: "Todos" },
@@ -71,6 +73,7 @@ function downloadCsv(csv, filename) {
 }
 
 function FinancePage({ businessId, role }) {
+  const formatBusinessAmount = useBusinessMoney();
   const [searchParams, setSearchParams] = useSearchParams();
   const today = getSantiagoDateKey();
   const selectedPeriod = VALID_PERIODS.has(searchParams.get("period"))
@@ -188,9 +191,6 @@ function FinancePage({ businessId, role }) {
   return (
     <section className="erp-page financial-page">
       <div className="financial-page-heading">
-        <div className="erp-page-intro">
-          <p>Registra y consulta el dinero que entró, salió o sigue pendiente. Esta vista operativa no reemplaza la contabilidad formal.</p>
-        </div>
         <div className="financial-page-actions no-print">
           <Button variant="secondary" icon={Download} onClick={exportFiltered} disabled={!filteredItems.length}>
             Exportar CSV
@@ -294,8 +294,10 @@ function FinancePage({ businessId, role }) {
         </div>
 
         {loading ? (
-          <div className="erp-empty-state" role="status">Cargando movimientos del periodo...</div>
-        ) : visibleItems.length === 0 ? (
+          <SkeletonRegion label="Cargando movimientos del periodo...">
+            <SkeletonTable className="financial-table-region" columns={8} twoLine />
+          </SkeletonRegion>
+        ) : error && visibleItems.length === 0 ? null : visibleItems.length === 0 ? (
           <div className="erp-empty-state financial-empty-state">
             <ReceiptText size={28} aria-hidden="true" />
             <h3>No hay movimientos para estos filtros</h3>
@@ -323,7 +325,7 @@ function FinancePage({ businessId, role }) {
                         <td><span className={`financial-type-label financial-type-label--${movement.type}`}><AppIcon icon={movement.type === "income" ? ArrowDownLeft : ArrowUpRight} size={14} />{getFinancialTypeLabel(movement.type)}</span></td>
                         <td><StatusBadge variant={movement.status === "paid" ? "success" : "warning"}>{getFinancialStatusLabel(movement.status)}</StatusBadge></td>
                         <td>{getPaymentMethodLabel(movement.paymentMethodId)}</td>
-                        <td className={`financial-amount financial-amount--${movement.type}`}><span aria-hidden="true">{movement.type === "income" ? "+" : "−"}</span>{formatCLP(movement.amount)}</td>
+                        <td className={`financial-amount financial-amount--${movement.type}`}><span aria-hidden="true">{movement.type === "income" ? "+" : "−"}</span>{formatBusinessAmount(movement.amount)}</td>
                         <td>
                           {canManage && isManual ? (
                             <div className="financial-row-actions">
@@ -360,9 +362,9 @@ function FinancePage({ businessId, role }) {
         title="Eliminar movimiento"
         description="Esta acción afecta solamente al negocio activo y no se puede deshacer."
         size="small"
-        footer={<><Button variant="secondary" onClick={() => setDeleteCandidate(null)} disabled={deleting}>Cancelar</Button><Button variant="danger" onClick={confirmDelete} disabled={deleting}>{deleting ? "Eliminando..." : "Eliminar"}</Button></>}
+        footer={<><Button variant="secondary" onClick={() => setDeleteCandidate(null)} disabled={deleting}>Cancelar</Button><Button variant="danger" onClick={confirmDelete} loading={deleting}>{deleting ? "Eliminando..." : "Eliminar"}</Button></>}
       >
-        <p>¿Confirmas que deseas eliminar <strong>{deleteCandidate?.concept}</strong> por {formatCLP(deleteCandidate?.amount)}?</p>
+        <p>¿Confirmas que deseas eliminar <strong>{deleteCandidate?.concept}</strong> por {formatBusinessAmount(deleteCandidate?.amount)}?</p>
       </ResponsiveDialog>
     </section>
   );

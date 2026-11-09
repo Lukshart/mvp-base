@@ -140,20 +140,23 @@ ledger, sin modificar `costoBase`, margen o precio de venta.
 - **IMPLEMENTADO:** ficha con nombre, cliente y cotización opcionales,
   responsable, participantes reales, prioridad y fechas; tareas con subtareas;
   HH, gastos, materiales, documentación textual y balance autoritativo.
-- **CONFIRMADO PENDIENTE:** selector de cotización buscable, menor contaminación
-  visual y separación clara entre ficha administrativa/comercial y operación.
-- **CONFIRMADO PENDIENTE:** el tablero se abrirá para un Proyecto y mostrará sus
-  tareas. El tablero vigente de `/trabajos` todavía representa Proyectos como
-  tarjetas.
-- **CONFIRMADO PENDIENTE:** distinguir costos internos no facturables de
-  materiales/adicionales facturables solicitados por cliente.
-- **CONFIRMADO PENDIENTE:** un adicional facturable consumirá stock e
-  incrementará el cobro asociado; HH, comida, combustible y gastos internos no
-  se cobrarán automáticamente.
-- **PENDIENTE DE DISEÑO:** cómo modificar el cobro/Cotización/Venta sin duplicar
-  documentos, ingresos, costos ni movimientos.
-- **CONFIRMADO PENDIENTE:** un gasto interno conservará evidencia/boleta y
-  autoría. Storage, retención, permisos y contrato documental no están definidos.
+- **IMPLEMENTADO (SPEC 019, `ea203c1`):** selector de cotización buscable.
+- **IMPLEMENTADO (SPEC 019, `ea203c1`):** tablero de tareas dentro de la ficha de
+  un Proyecto abierto, como vista Lista/Tablero. El tablero de `/trabajos`
+  conserva las fichas de Proyectos como tarjetas.
+- **CONFIRMADO PENDIENTE:** menor contaminación visual y separación clara entre
+  ficha administrativa/comercial y operación. La revisión visual de lo
+  implementado en las SPEC 019 y 020 sigue diferida a `PENDING_GLOBAL_QA`.
+- **IMPLEMENTADO (SPEC 020, `a2fdeb7`):** Adicionales facturables, distintos de
+  los costos internos. Un adicional `PENDIENTE_COBRO` se incorpora como línea de
+  una Venta confirmada; el stock y el ingreso se registran al confirmar esa
+  Venta. HH, comida, combustible y gastos internos no se cobran automáticamente.
+- **RESUELTO (SPEC 020):** cómo modificar el cobro sin duplicar documentos,
+  ingresos, costos ni movimientos: cierre atómico dentro de `confirmarVenta`,
+  sin crear Ventas automáticas ni editar documentos emitidos.
+- **IMPLEMENTADO (SPEC 020, `a2fdeb7`):** un gasto interno conserva
+  evidencia/boleta y autoría, con Storage Rules y Callable
+  `adjuntarEvidenciaGastoTrabajo`.
 - Ningún PDF propio se denomina “factura electrónica” sin integración tributaria
   oficial.
 
@@ -241,7 +244,8 @@ Ficha administrativa → tareas/subtareas → costos/materiales/adicionales
 
 - QA móvil HTTPS del scanner por cámara.
 - Margen comercial y evolución de Reportes.
-- UX/tablero por Proyecto, adicionales facturables y evidencia de gastos.
+- QA visual de UX/tablero por Proyecto, adicionales facturables y evidencia de
+  gastos, ya implementados (SPEC 019 y 020; diferido a `PENDING_GLOBAL_QA`).
 - Vertical Taller para automotriz/movilidad.
 
 ### Futuro/experimental

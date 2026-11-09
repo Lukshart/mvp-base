@@ -1,0 +1,309 @@
+{
+  "$schema": "Ratchet de literales de diseño (colores, radios, sombras, duraciones) fuera de tokens.css. Ver scripts/design-smoke.mjs.",
+  "generatedFrom": "e38b7c4",
+  "generatedAt": "2026-09-23",
+  "literals": {
+    "src/components/barcode/barcode.css": {
+      "color": 9,
+      "radius": 3,
+      "shadow": 1,
+      "duration": 0,
+      "category": "mixed",
+      "note": "El negro de overlay de escaneo es excepción; el resto (paneles, bordes) es deuda sin registrar. +3 (etapa 5, paso 6): contraparte oscura de los botones/etiqueta de formulario (border #5a86a0, color #c9d6dd/#a9bcc6) dentro de @media (prefers-color-scheme: dark); el negro del visor de cámara (#0f172a, rgb(15 23 42/.72), #000) se confirmó como excepción que sigue igual en oscuro, no se tocó."
+    },
+    "src/components/DashboardDonutChart.jsx": {
+      "color": 10,
+      "radius": 2,
+      "shadow": 0,
+      "duration": 0,
+      "category": "b",
+      "note": "Colores de gráfico (Chart.js) no sincronizados con --color-data-*; deuda conocida."
+    },
+    "src/components/finance/FinancialCharts.jsx": {
+      "color": 18,
+      "radius": 0,
+      "shadow": 0,
+      "duration": 0,
+      "category": "b",
+      "note": "Sincronizado en la etapa 5, paso 7: los colores de datos (DATA_COLORS) reflejan a mano --color-brand-600/--color-data-expense/--color-data-pending/--color-data-paid, y los de \"chrome\" (CHROME_COLORS) reflejan --color-text-muted/--color-border-subtle/--color-surface-panel, elegidos según usePrefersDarkMode(). +7 color: el par oscuro completo (antes solo existía el claro)."
+    },
+    "src/components/reports/CostCompositionChart.jsx": {
+      "color": 10,
+      "radius": 0,
+      "shadow": 0,
+      "duration": 0,
+      "category": "b",
+      "note": "Sincronizado en la etapa 5, paso 7: COLORS.light/dark reflejan a mano --color-data-cost-materials/-labor/-direct/-indirect, elegido según usePrefersDarkMode(). +5 color: el par oscuro completo (antes solo existía el claro) más el borderColor de panel oscuro."
+    },
+    "src/components/reports/OperationalComparisonChart.jsx": {
+      "color": 10,
+      "radius": 0,
+      "shadow": 0,
+      "duration": 0,
+      "category": "b",
+      "note": "Sincronizado en la etapa 5, paso 7: DATA_COLORS refleja --color-brand-600/--color-data-expense, CHROME_COLORS refleja --color-text-muted/--color-border-subtle, elegido según usePrefersDarkMode(). +4 color: el par oscuro completo (antes solo existía el claro)."
+    },
+    "src/features/inventory/inventory.css": {
+      "color": 15,
+      "radius": 5,
+      "shadow": 2,
+      "duration": 0,
+      "category": "mixed",
+      "note": "Verdes/rojos/ámbar/grises de estado sin registrar (sin coincidencia exacta a un token actual, salvo el ya tokenizado abajo). -1 (etapa 5, paso 6): .inventory-stock-low tokenizó su background (#fff7ed) a var(--color-stock-alert-50), coincidencia exacta confirmada — investigado primero: NINGÚN selector de este archivo usaba el token por var() todavía pese a que ya tenía valor oscuro desde el paso 5; ahora tiene 1 uso real. +1 shadow (etapa 5, paso 6): .inventory-catalog-list li.is-selected repite su box-shadow dentro de @media (dark), mismo selector, solo cambia --color-brand-600 (falla contra --color-surface-selected) a --color-brand-400 — mismo patrón ya visto en interior.css/purchase-orders.css."
+    },
+    "src/features/inventory/InventoryAiImporter.jsx": {
+      "color": 82,
+      "radius": 20,
+      "shadow": 0,
+      "duration": 0,
+      "category": "a",
+      "note": "Código de IA existente (se conserva, no se amplía ni elimina sin autorización); excepción, no se migra."
+    },
+    "src/features/purchaseOrders/purchase-orders.css": {
+      "color": 6,
+      "radius": 22,
+      "shadow": 7,
+      "duration": 0,
+      "category": "a",
+      "note": "Paleta de documento impreso de orden de compra (--color-document-* equivalente); excepción documentada. +2 (etapa 5, paso 2): --color-surface-panel/--color-border-default fijados a su valor claro dentro de @media (prefers-color-scheme: dark) { .po-document-preview { ... } }, para que el documento no herede el modo oscuro de tokens.css (:root único). No se puede usar var() para evitar el literal: var(--color-surface-panel) dentro de una regla que redefine esa misma variable es una referencia cíclica (cae al valor heredado oscuro, lo opuesto de lo buscado). +1 shadow (etapa 5, paso 5): .po-history-card.po-history__recent repite su box-shadow dentro de @media (dark), mismo selector, solo cambia color-mix(...--color-brand-600...) (2.20:1, falla) a color-mix(...--color-brand-400...) — se cuenta como segunda declaración de box-shadow, mismo patrón ya visto en interior.css paso 4."
+    },
+    "src/features/purchases/purchases.css": {
+      "color": 1,
+      "radius": 8,
+      "shadow": 0,
+      "duration": 0,
+      "category": "a",
+      "note": "Mismo color de la paleta de documento impreso (#5f6b7c); excepción documentada."
+    },
+    "src/features/quotes/public-quote.css": {
+      "color": 14,
+      "radius": 0,
+      "shadow": 0,
+      "duration": 0,
+      "category": "mixed",
+      "note": "1 rgb() de acento sin registrar (deuda, bajo volumen, no priorizado). +13 (etapa 5, paso 2): esta página la ve un tercero externo sin sesión y debe verse igual sin importar el tema del sistema (como un documento formal); se fijan en .public-proposal, dentro de @media (prefers-color-scheme: dark), los mismos 13 valores claros que tokens.css ya define, para que no hereden el modo oscuro de la fundación (:root único). No se puede usar var() para evitarlos: sería una referencia cíclica dentro de la misma regla que redefine esas variables."
+    },
+    "src/features/quotes/quote-workspace.css": {
+      "color": 0,
+      "radius": 13,
+      "shadow": 3,
+      "duration": 0,
+      "category": "c",
+      "note": "Solo radios/sombras sin registrar, sin colores."
+    },
+    "src/features/quotes/QuotePrintView.jsx": {
+      "color": 11,
+      "radius": 0,
+      "shadow": 0,
+      "duration": 0,
+      "category": "a",
+      "note": "Vista de impresión de cotización; paleta de documento formal, excepción documentada (--color-document-*)."
+    },
+    "src/features/receptions/receptions.css": {
+      "color": 1,
+      "radius": 22,
+      "shadow": 0,
+      "duration": 0,
+      "category": "a",
+      "note": "rgba(255,255,255,a) de overlay; excepción."
+    },
+    "src/features/references/MarketPriceReferencesView.jsx": {
+      "color": 0,
+      "radius": 2,
+      "shadow": 0,
+      "duration": 0,
+      "category": "c",
+      "note": "Etapa 5, paso 8: los 2 literales restantes (border/color genericos) migrados a var(--color-border-default)/var(--color-text-muted); el resto del objeto styles ya estaba tokenizado de una migracion previa."
+    },
+    "src/features/sales/SalePrintView.jsx": {
+      "color": 29,
+      "radius": 0,
+      "shadow": 0,
+      "duration": 0,
+      "category": "a",
+      "note": "Vista de impresión de venta; paleta de documento formal, excepción documentada (--color-document-*)."
+    },
+    "src/features/sales/sales.css": {
+      "color": 0,
+      "radius": 15,
+      "shadow": 1,
+      "duration": 0,
+      "category": "c",
+      "note": "Solo radios/sombras sin registrar, sin colores."
+    },
+    "src/features/works/works.css": {
+      "color": 14,
+      "radius": 1,
+      "shadow": 0,
+      "duration": 0,
+      "category": "c",
+      "note": "Paleta de badges de estado sin registrar; varios valores coinciden con --color-tag-*/--color-warning-*/--color-danger-*. +2 (etapa 5, paso 6): .works-task-state--en_progreso (índigo, sin familia equivalente en tokens.css) define su contraparte oscura propia (#1c2350/#a9b6f0, 7.57:1) dentro de @media (prefers-color-scheme: dark). El resto de los estados/prioridades reutiliza tokens ya existentes por var() (surface-subtle/text-muted para 'baja'; success-50/700 para 'completada'; warning-50/800 para 'alta'/'en_espera'/wait-reason, en vez de --color-stock-alert-* pese a la coincidencia exacta en claro, para no cruzar el dominio de inventario — ver commit)."
+    },
+    "src/pages/DashboardPage.jsx": {
+      "color": 12,
+      "radius": 0,
+      "shadow": 0,
+      "duration": 0,
+      "category": "b",
+      "note": "Sincronizado en la etapa 5, paso 7: QUOTE_STATUS (antes QUOTE_CHART) es su propia familia --color-quote-status-* (no --color-data-*, son estados de documento, no categorías financieras), elegida según usePrefersDarkMode(). +6 color: cada uno de los 6 estados ahora declara su par {light, dark} explícito (3 cambian de verdad: aceptada/rechazada/archivada; 3 repiten el mismo hex en ambos por claridad: borrador/emitida/vencida, ya pasaban bien sin cambio)."
+    },
+    "src/pages/NewQuotePage.jsx": {
+      "color": 1,
+      "radius": 52,
+      "shadow": 0,
+      "duration": 1,
+      "category": "b",
+      "note": "Etapa 5, paso 8: los ~193 literales de color del objeto styles se migraron a var(--color-*)/var(--shadow-*) (mecanismo de reuso-por-rol para paginas legacy, aprobado en la tarea). Queda 1 literal (rgba(15,23,42,0.45), backdrop del modal, ya congelado a proposito, mismo mecanismo de pin de scrims). radius/duration no son reactivos al tema, no se tocaron."
+    },
+    "src/pages/PricingPage.jsx": {
+      "color": 0,
+      "radius": 10,
+      "shadow": 0,
+      "duration": 0,
+      "category": "b",
+      "note": "Etapa 5, paso 8: statusStyles, differenceMetricStyles y el objeto styles inline migrados a var(--color-*) (reuso por rol, mismo mecanismo que NewQuotePage.jsx/QuoteHistoryPage.jsx). El destino a largo plazo de la pagina sigue sin decidir, pero hoy es una pagina real montada en rutas autenticadas."
+    },
+    "src/pages/QuoteHistoryPage.jsx": {
+      "color": 1,
+      "radius": 12,
+      "shadow": 0,
+      "duration": 0,
+      "category": "c",
+      "note": "Etapa 5, paso 8: statusStyles y el objeto styles inline se migraron a var(--color-*)/var(--shadow-*) (reuso por rol, mismo mecanismo que NewQuotePage.jsx). Queda 1 literal intencional: #128c7e en whatsappButton es el verde de marca de WhatsApp, no reacciona al tema por diseno (no es color de la app). -3 radius: el menú Más acciones pasó a components/ui/MoreActionsMenu.jsx (clases ui-more-actions con tokens en components.css)."
+    },
+    "src/styles/components.css": {
+      "color": 59,
+      "radius": 6,
+      "shadow": 14,
+      "duration": 37,
+      "category": "mixed",
+      "note": "Mezcla: rgb() de marca/scrim (excepción, ver --color-brand-600 y --shadow-*) + hex/rgb sin token (deuda sin registrar) en badges y superficies. +26 color / +3 shadow (etapa 5, paso 3, dentro de @media (prefers-color-scheme: dark)): (1) .ui-button--danger/:hover y .ui-badge-count fijan su relleno al rojo de siempre (#dc2626/#b91c1c) porque --color-danger-600/700 ya cambiaron de valor en el paso 2 para servir como TEXTO, no como fondo con texto blanco encima (blanco sobre el valor oscuro nuevo da 2.28-3.03:1, no pasa AA); (2) contrapartes oscuras de los fondos decorativos de .onboarding-screen/.onboarding-card/.auth-panel (gradientes/glows, sin texto encima, no aplica contraste AA, primer valor razonable a validar en pantalla); (3) familia cian sin token de los avisos 'QA local' (.quote-email-dialog__qa-notice*), contraste verificado contra su propio fondo. No cuenta el arreglo de --color-brand-600/700/800 como texto (selector por selector, ver el bloque): eso son var(), no literales."
+    },
+    "src/styles/globals.css": {
+      "color": 3,
+      "radius": 1,
+      "shadow": 0,
+      "duration": 2,
+      "category": "a",
+      "note": "#ffffff dentro de @media print y 0.01ms de prefers-reduced-motion; ambos son excepciones legítimas. +2 (etapa 5, paso 3): color: #3a4744 agregado al mismo bloque @media print (le faltaba fijar el color de texto además del fondo — sin esto, imprimir con el SO en oscuro daría texto claro sobre el papel blanco fijo, casi ilegible); background: #1c4a4a en ::selection dentro de @media (prefers-color-scheme: dark), porque el par claro (--color-brand-200 sin cambio + --color-text-strong que en oscuro sí cambia a un color claro) queda roto (1.19:1) — se define un fondo propio para oscuro, verificado en 8.31:1 contra el --color-text-strong oscuro."
+    },
+    "src/styles/interior.css": {
+      "color": 1,
+      "radius": 5,
+      "shadow": 2,
+      "duration": 0,
+      "category": "c",
+      "note": "Solo radios/sombras sin registrar, sin colores. +1 color (etapa 5, paso 4, pasada 1/6): .responsive-dialog-overlay fija su scrim a rgb(2 6 12 / 0.6) dentro de @media (prefers-color-scheme: dark), en vez de seguir usando color-mix(in srgb, var(--color-text-strong) 50%, transparent) — ese patrón se rompe en oscuro porque --color-text-strong pasa a ser un color CLARO (el scrim se volvería un velo claro en vez de oscurecer). Mismo mecanismo ya usado en layout.css (paso 3) para .business-discard-confirm/.mobile-nav-overlay. Era el único uso de ese patrón en todo el archivo (grep completo antes de tocar nada). +1 shadow (pasada 4/6): .company-settings-page .settings-subnav button.is-active repite su box-shadow: inset 3px 0 0 var(--color-brand-400) dentro de @media (dark) — mismo selector, solo cambia el color de --color-brand-600 (falla 3:1 no-textual ahí) a --color-brand-400; se cuenta como una segunda declaración de box-shadow porque el escáner cuenta por declaración de texto, no por valor final."
+    },
+    "src/styles/layout.css": {
+      "color": 9,
+      "radius": 1,
+      "shadow": 0,
+      "duration": 1,
+      "category": "mixed",
+      "note": "rgb() de scrim/overlay son excepción; el resto (colores de estado en el sidebar) es deuda sin registrar. +4 (etapa 5, paso 3, dentro de @media (prefers-color-scheme: dark)): .environment-notice reutiliza la misma familia cian sin token que components.css (mismos valores, misma verificación de contraste); .business-discard-confirm/.mobile-nav-overlay fijan su scrim a rgb(2 6 12 / 0.6) en vez de migrarlo al patrón canónico color-mix(...--color-text-strong...) — ese patrón se rompe en oscuro porque --color-text-strong pasa a ser un color CLARO (el scrim se volvería un velo claro en vez de oscurecer); mismo hallazgo pendiente para interior.css, fuera de alcance de este paso."
+    },
+    "src/styles/platform.css": {
+      "color": 5,
+      "radius": 0,
+      "shadow": 2,
+      "duration": 3,
+      "category": "a",
+      "note": "rgb() de scrim/overlay del layout de plataforma; excepción."
+    }
+  },
+  "cssCrossFeatureImports": [
+    {
+      "from": "src/features/purchases/PurchaseDocumentImportDialog.jsx",
+      "to": "src/features/receptions/receptions.css",
+      "type": "js-import",
+      "note": "Diálogo de compras reutiliza estilos de recepciones."
+    },
+    {
+      "from": "src/pages/PurchaseOrdersPage.jsx",
+      "to": "src/features/receptions/receptions.css",
+      "type": "js-import",
+      "note": "Página de órdenes de compra reutiliza estilos de recepciones."
+    },
+    {
+      "from": "src/features/sales/sales.css",
+      "to": "src/features/purchases/purchases.css",
+      "type": "css-@import",
+      "note": "sales.css importa la hoja de compras."
+    },
+    {
+      "from": "src/features/purchases/purchases.css",
+      "to": "src/features/purchaseOrders/purchase-orders.css",
+      "type": "css-@import",
+      "note": "purchases.css importa la hoja de órdenes de compra."
+    },
+    {
+      "from": "src/features/receptions/receptions.css",
+      "to": "src/features/purchaseOrders/purchase-orders.css",
+      "type": "css-@import",
+      "note": "receptions.css importa la hoja de órdenes de compra (cadena con purchases.css)."
+    }
+  ],
+  "uiClassExceptions": {
+    "ui-button": {
+      "files": [
+        "src/styles/interior.css",
+        "src/features/works/works.css",
+        "src/styles/platform.css",
+        "src/styles/layout.css",
+        "src/features/employees/employees.css",
+        "src/features/receptions/receptions.css",
+        "src/features/quotes/public-quote.css",
+        "src/features/inventory/inventory.css"
+      ],
+      "note": "Overrides históricos de .ui-button por feature/sección, no definiciones nuevas del componente."
+    },
+    "ui-status-badge": {
+      "files": [
+        "src/styles/interior.css",
+        "src/styles/platform.css",
+        "src/features/employees/employees.css",
+        "src/features/works/works.css"
+      ],
+      "note": "Overrides históricos de .ui-status-badge por feature/sección."
+    },
+    "ui-page-header": {
+      "files": [
+        "src/styles/layout.css"
+      ],
+      "note": "Definido en layout.css en vez de components.css; deuda histórica del shell de layout."
+    },
+    "ui-page-header__eyebrow": {
+      "files": [
+        "src/styles/layout.css"
+      ],
+      "note": "Ídem ui-page-header."
+    },
+    "ui-page-header__title": {
+      "files": [
+        "src/styles/layout.css"
+      ],
+      "note": "Ídem ui-page-header."
+    },
+    "ui-spinner": {
+      "files": [
+        "src/features/quotes/public-quote.css"
+      ],
+      "note": "Override histórico para la vista pública de cotización."
+    },
+    "ui-reveal-delay": {
+      "files": [
+        "src/styles/tokens.css"
+      ],
+      "note": "Definido también en tokens.css además de components.css (token de animación, no de color)."
+    }
+  },
+  "uiClassMarkers": {
+    "ui-skeleton-table": {
+      "usedIn": [
+        "src/components/ui/Skeleton.jsx"
+      ],
+      "note": "Marcador de clase en JSX sin regla CSS propia (hereda estilos de erp-table); no se audita como definición nueva."
+    }
+  }
+}

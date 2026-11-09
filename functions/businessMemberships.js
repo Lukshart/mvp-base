@@ -11,14 +11,6 @@ function safeText(value, maxLength = 180) {
   return String(value || "").trim().replace(/\s+/g, " ").slice(0, maxLength);
 }
 
-function validateEmail(value, HttpsError) {
-  const email = safeText(value, 320).toLowerCase();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    throw new HttpsError("invalid-argument", "Ingresa un correo válido.");
-  }
-  return email;
-}
-
 function validateUid(value, HttpsError) {
   const uid = safeText(value, 160);
   if (!/^[a-zA-Z0-9_-]{1,160}$/.test(uid)) {
@@ -186,103 +178,90 @@ async function listarMiembrosNegocioHandler(
   return {miembros: members};
 }
 
-async function asociarUsuarioExistenteHandler(
-  request,
-  {db, auth, HttpsError, FieldValue, requireBusinessAccess}
-) {
-  const context = await requireBusinessAccess(
-    request,
-    {db, HttpsError},
-    {roles: ["OWNER", "ADMIN"]}
-  );
-  const email = validateEmail(request?.data?.correo, HttpsError);
-  const role = safeText(request?.data?.rol || "TECNICO", 20).toUpperCase();
-  const profileId = safeText(request?.data?.profileId, 160);
+function normalizeMembershipGrant(data, HttpsError) {
+  const role = safeText(data?.rol || "TECNICO", 20).toUpperCase();
+  const profileId = safeText(data?.profileId, 160);
   if (!MANAGEABLE_ROLES.includes(role)) {
     throw new HttpsError("invalid-argument", "Selecciona un perfil válido.");
   }
-  let authUser;
-  try {
-    authUser = await auth.getUserByEmail(email);
-  } catch (error) {
-    if (String(error?.code || "").includes("user-not-found")) {
-      throw new HttpsError(
-        "not-found",
-        "No existe una cuenta de ValoraCloud con ese correo."
-      );
-    }
-    throw error;
-  }
-  if (authUser.disabled) {
-    throw new HttpsError(
-      "failed-precondition",
-      "La cuenta de usuario está deshabilitada."
-    );
-  }
+  return {role, profileId};
+}
 
-  const targetUid = validateUid(authUser.uid, HttpsError);
-  if (targetUid === context.uid) {
+function assertGrantAllowed(actor, role, HttpsError) {
+  if (actor.rol === "ADMIN" && role === "ADMIN") {
+    throw new HttpsError("permission-denied", "Un administrador no puede asignar otro administrador.");
+  }
+}
+
+function assertEmployeeProfileAvailable(
+  profileSnapshot,
+  {businessId, profileId, role},
+  HttpsError
+) {
+  if (!profileId) return;
+  const employeeProfile = profileSnapshot?.data() || {};
+  if (!profileSnapshot?.exists || employeeProfile.negocioId !== businessId ||
+      employeeProfile.estado !== ACTIVE_STATUS || role !== "MEMBER") {
+    throw new HttpsError("invalid-argument", "El perfil seleccionado no está disponible.");
+  }
+}
+
+// Crea la membresía de una cuenta en una empresa. Es la única vía de alta de
+// miembros: la usa responderInvitacion al aceptar. Debe llamarse dentro de una
+// transacción y antes de cualquier escritura de esa transacción.
+async function createMembershipForUser(
+  transaction,
+  {db, HttpsError, FieldValue},
+  {businessId, targetUid, actorUid, role, profileId = ""}
+) {
+  validateUid(targetUid, HttpsError);
+  if (targetUid === actorUid) {
     throw new HttpsError("failed-precondition", "No puedes modificar tu propio perfil.");
   }
-  const targetRef = db
-    .collection("membresias")
-    .doc(membershipDocumentId(context.businessId, targetUid));
-
-  await db.runTransaction(async (transaction) => {
-    const profileRef = profileId
-      ? db.collection("negocios").doc(context.businessId)
-        .collection("perfilesEmpleados").doc(profileId)
-      : null;
-    const [businessSnapshot, actorSnapshot, targetSnapshot, profileSnapshot] = await Promise.all([
-      transaction.get(context.businessRef),
-      transaction.get(context.membershipRef),
-      transaction.get(targetRef),
-      profileRef ? transaction.get(profileRef) : Promise.resolve(null),
-    ]);
-    validateBusinessSnapshot(businessSnapshot, HttpsError);
-    const actor = validateActorSnapshot(actorSnapshot, context, HttpsError);
-    if (actor.rol === "ADMIN" && role === "ADMIN") {
-      throw new HttpsError("permission-denied", "Un administrador no puede asignar otro administrador.");
-    }
-    if (profileId) {
-      const employeeProfile = profileSnapshot?.data() || {};
-      if (!profileSnapshot?.exists || employeeProfile.negocioId !== context.businessId ||
-          employeeProfile.estado !== ACTIVE_STATUS || role !== "MEMBER") {
-        throw new HttpsError("invalid-argument", "El perfil seleccionado no está disponible.");
-      }
-    }
-    if (targetSnapshot.exists) {
-      const existing = targetSnapshot.data() || {};
-      if (!isCanonicalMembership(targetSnapshot, context.businessId)) {
-        throw new HttpsError(
-          "failed-precondition",
-          "La membresía existente es inconsistente y requiere revisión."
-        );
-      }
+  const targetRef = db.collection("membresias").doc(membershipDocumentId(businessId, targetUid));
+  const actorRef = db.collection("membresias").doc(membershipDocumentId(businessId, actorUid));
+  const profileRef = profileId
+    ? db.collection("negocios").doc(businessId).collection("perfilesEmpleados").doc(profileId)
+    : null;
+  const [businessSnapshot, actorSnapshot, targetSnapshot, profileSnapshot] = await Promise.all([
+    transaction.get(db.collection("negocios").doc(businessId)),
+    transaction.get(actorRef),
+    transaction.get(targetRef),
+    profileRef ? transaction.get(profileRef) : Promise.resolve(null),
+  ]);
+  validateBusinessSnapshot(businessSnapshot, HttpsError);
+  const actor = validateActorSnapshot(actorSnapshot, {businessId, uid: actorUid}, HttpsError);
+  assertGrantAllowed(actor, role, HttpsError);
+  assertEmployeeProfileAvailable(profileSnapshot, {businessId, profileId, role}, HttpsError);
+  if (targetSnapshot.exists) {
+    const existing = targetSnapshot.data() || {};
+    if (!isCanonicalMembership(targetSnapshot, businessId)) {
       throw new HttpsError(
-        "already-exists",
-        existing.estado === ACTIVE_STATUS
-          ? "La cuenta ya tiene acceso activo a esta empresa."
-          : "La cuenta ya está asociada. Reactívala desde el directorio."
+        "failed-precondition",
+        "La membresía existente es inconsistente y requiere revisión."
       );
     }
-    const now = FieldValue.serverTimestamp();
-    transaction.create(targetRef, {
-      negocioId: context.businessId,
-      uid: targetUid,
-      rol: role,
-      estado: ACTIVE_STATUS,
-      creadoPorUid: context.uid,
-      actualizadoPorUid: context.uid,
-      creadoEn: now,
-      actualizadoEn: now,
-      ...(profileId ? {profileId} : {}),
-    });
+    throw new HttpsError(
+      "already-exists",
+      existing.estado === ACTIVE_STATUS
+        ? "La cuenta ya tiene acceso activo a esta empresa."
+        : "La cuenta ya está asociada. Reactívala desde el directorio.",
+      {membershipEstado: existing.estado}
+    );
+  }
+  const now = FieldValue.serverTimestamp();
+  transaction.create(targetRef, {
+    negocioId: businessId,
+    uid: targetUid,
+    rol: role,
+    estado: ACTIVE_STATUS,
+    creadoPorUid: actorUid,
+    actualizadoPorUid: actorUid,
+    creadoEn: now,
+    actualizadoEn: now,
+    ...(profileId ? {profileId} : {}),
   });
-
-  return {
-    miembro: {uid: targetUid, rol: role, profileId, estado: ACTIVE_STATUS},
-  };
+  return {uid: targetUid, rol: role, profileId, estado: ACTIVE_STATUS};
 }
 
 async function actualizarMembresiaNegocioHandler(
@@ -398,7 +377,13 @@ module.exports = {
   MANAGEABLE_ROLES,
   MEMBERSHIP_STATUSES,
   actualizarMembresiaNegocioHandler,
-  asociarUsuarioExistenteHandler,
+  assertEmployeeProfileAvailable,
+  assertGrantAllowed,
+  createMembershipForUser,
+  isCanonicalMembership,
   listarMiembrosNegocioHandler,
   membershipDocumentId,
+  normalizeMembershipGrant,
+  validateActorSnapshot,
+  validateBusinessSnapshot,
 };

@@ -2,6 +2,7 @@ import React, {useEffect, useMemo, useRef, useState} from "react";
 import {useLocation, useNavigate, useParams} from "react-router-dom";
 import {sileo} from "sileo";
 import Button from "../components/ui/Button";
+import LoadingState from "../components/ui/LoadingState";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
 import SupplyTrace from "../components/ui/SupplyTrace";
 import {
@@ -32,7 +33,7 @@ import {
 import {formatDate, formatMoney} from "../utils/formatters";
 import "../features/purchases/purchases.css";
 
-const EMPTY_TOTALS = {subtotal: 0, descuentoTotal: 0, neto: 0, iva: 0, total: 0};
+const EMPTY_TOTALS = {subtotal: 0, descuentoTotal: 0, neto: 0, montoExento: 0, iva: 0, total: 0};
 const today = () => new Intl.DateTimeFormat("en-CA", {
   timeZone: "America/Santiago",
 }).format(new Date());
@@ -163,14 +164,25 @@ export default function NewPurchasePage({businessId, role}) {
   }, [businessId, compraId]);
 
   const totals = useMemo(() => {
+    // Un documento que ya no se edita muestra sus totales guardados.
+    if (readOnly && purchase) {
+      return {subtotal: purchase.subtotal, descuentoTotal: purchase.descuentoTotal, neto: purchase.neto, montoExento: purchase.montoExento || 0, iva: purchase.iva, total: purchase.total};
+    }
     try {
-      return draft.items.length ? calculatePurchaseTotals(draft.items, {
-        tasaIva: purchase?.tasaIva ?? Number(company?.impuestoPredeterminadoTasa ?? 19) / 100,
-      }) : EMPTY_TOTALS;
+      // SPEC 023 §5.2: un borrador se guarda con boleta y exentos, y Functions
+      // copia la marca vigente de cada producto; la vista previa hace lo mismo.
+      const taxIdByItem = new Map(inventory.map((item) => [item.id, item.impuestoId]));
+      return draft.items.length ? calculatePurchaseTotals(
+        draft.items.map((line) => ({...line, impuestoId: taxIdByItem.get(line.itemId) ?? line.impuestoId})),
+        {
+          tasaIva: purchase?.tasaIva ?? Number(company?.impuestoPredeterminadoTasa ?? 19) / 100,
+          tipoDocumento: draft.tipoDocumento,
+        }
+      ) : EMPTY_TOTALS;
     } catch {
       return EMPTY_TOTALS;
     }
-  }, [company?.impuestoPredeterminadoTasa, draft.items, purchase?.tasaIva]);
+  }, [company?.impuestoPredeterminadoTasa, draft.items, draft.tipoDocumento, inventory, purchase, readOnly]);
 
   const printable = useMemo(() => ({
     ...(purchase || {}),
@@ -239,7 +251,6 @@ export default function NewPurchasePage({businessId, role}) {
         sileo.success({title: "Compra actualizada", description: `${stored.numero} continúa preparada para confirmar.`});
       }
     } catch (error) {
-      setMessage(error.message);
       sileo.error({title: "No se pudo guardar la compra", description: error.message});
     } finally {
       setProcessing(false);
@@ -257,7 +268,6 @@ export default function NewPurchasePage({businessId, role}) {
         setPurchase(stored);
       }
     } catch (error) {
-      setMessage(error.message);
       sileo.error({title: "No se pudo preparar la compra", description: error.message});
       setProcessing(false);
       return;
@@ -286,7 +296,6 @@ export default function NewPurchasePage({businessId, role}) {
     } catch (error) {
       if (!shouldReconcilePurchaseConfirmation(error)) {
         pendingConfirmationPurchaseId.current = "";
-        setMessage(error.message);
         sileo.error({title: "No se pudo confirmar la compra", description: error.message});
       } else {
         try {
@@ -321,7 +330,6 @@ export default function NewPurchasePage({businessId, role}) {
         state: {message: "Compra cancelada", description: `${purchase.numero} quedó cancelada sin modificar stock.`},
       });
     } catch (error) {
-      setMessage(error.message);
       sileo.error({title: "No se pudo cancelar la compra", description: error.message});
     } finally {
       setProcessing(false);
@@ -334,7 +342,7 @@ export default function NewPurchasePage({businessId, role}) {
     ...(tipoDocumento === "sin_documento" ? {numeroDocumentoProveedor: "", fechaDocumento: ""} : {}),
   }));
 
-  if (loading) return <p className="muted">Cargando compra...</p>;
+  if (loading) return <LoadingState variant="page" label="Cargando compra..." />;
 
   return (
     <main className="po-workspace">
@@ -500,10 +508,10 @@ export default function NewPurchasePage({businessId, role}) {
         providers={providers}
         taxName={purchase?.impuestoNombre || company?.impuestoPredeterminadoNombre || "Impuesto"}
       />
-      <ResponsiveDialog open={actionDialog === "confirm"} onClose={() => !processing && setActionDialog("")} eyebrow="Compra preparada" title="Confirmar compra" description="Al confirmar, se registrará el documento económico del proveedor." size="small" footer={<><Button type="button" variant="secondary" disabled={processing} onClick={() => setActionDialog("")}>Volver</Button><Button type="button" disabled={processing} onClick={confirm}>{processing ? "Confirmando..." : "Confirmar compra"}</Button></>}>
+      <ResponsiveDialog open={actionDialog === "confirm"} onClose={() => !processing && setActionDialog("")} eyebrow="Compra preparada" title="Confirmar compra" description="Al confirmar, se registrará el documento económico del proveedor." size="small" footer={<><Button type="button" variant="secondary" disabled={processing} onClick={() => setActionDialog("")}>Volver</Button><Button type="button" loading={processing} onClick={confirm}>{processing ? "Confirmando..." : "Confirmar compra"}</Button></>}>
         <p>{stockSemantics.confirmationMessage}</p>
       </ResponsiveDialog>
-      <ResponsiveDialog open={actionDialog === "cancel"} onClose={() => !processing && setActionDialog("")} eyebrow="Más acciones" title="Cancelar compra" description="La compra preparada quedará cancelada y ya no podrá editarse." size="small" footer={<><Button type="button" variant="secondary" disabled={processing} onClick={() => setActionDialog("")}>Volver</Button><Button type="button" variant="danger" disabled={processing} onClick={cancel}>{processing ? "Cancelando..." : "Cancelar compra"}</Button></>}><p>Cancelar una compra preparada no modifica stock.</p></ResponsiveDialog>
+      <ResponsiveDialog open={actionDialog === "cancel"} onClose={() => !processing && setActionDialog("")} eyebrow="Más acciones" title="Cancelar compra" description="La compra preparada quedará cancelada y ya no podrá editarse." size="small" footer={<><Button type="button" variant="secondary" disabled={processing} onClick={() => setActionDialog("")}>Volver</Button><Button type="button" variant="danger" loading={processing} onClick={cancel}>{processing ? "Cancelando..." : "Cancelar compra"}</Button></>}><p>Cancelar una compra preparada no modifica stock.</p></ResponsiveDialog>
     </main>
   );
 }

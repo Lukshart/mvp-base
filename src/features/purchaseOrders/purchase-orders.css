@@ -1,11 +1,5 @@
 .po-workspace,
 .po-history {
-  --po-teal: #087f78;
-  --po-teal-dark: #066b66;
-  --po-navy: #173f68;
-  --po-ink: #102433;
-  --po-muted: #667985;
-  --po-border: #dce5ea;
   display: grid;
   gap: 14px;
   min-width: 0;
@@ -14,15 +8,15 @@
 .po-header,
 .po-panel,
 .po-history__toolbar {
-  background: #fff;
-  border: 1px solid var(--po-border);
+  background: var(--color-surface-panel);
+  border: 1px solid var(--color-border-subtle);
   border-radius: 11px;
-  box-shadow: 0 2px 5px rgba(16, 36, 51, 0.04);
+  box-shadow: 0 2px 5px color-mix(in srgb, var(--color-text-strong) 4%, transparent);
 }
 
 .po-header {
   align-items: center;
-  background: #fff;
+  background: var(--color-surface-panel);
   display: flex;
   gap: 14px;
   justify-content: space-between;
@@ -43,7 +37,7 @@
 
 .po-header h1,
 .po-panel h2 {
-  color: var(--po-ink);
+  color: var(--color-text-strong);
   font-size: 18px;
   font-weight: 850;
   margin: 0;
@@ -55,7 +49,7 @@
 
 .po-header__meta {
   align-items: baseline;
-  color: #6d7f89;
+  color: var(--color-text-muted);
   display: flex;
   flex-wrap: wrap;
   font-size: 12px;
@@ -64,12 +58,12 @@
 }
 
 .po-header__meta strong {
-  color: #29495c;
+  color: var(--color-text-strong);
   font-size: 13px;
 }
 
 .po-kicker {
-  color: var(--po-teal);
+  color: var(--color-brand-600);
   display: block;
   font-size: 11px;
   font-weight: 850;
@@ -86,21 +80,21 @@
 }
 
 .po-status--borrador {
-  background: #fff7d6;
-  border: 1px solid #ead58a;
-  color: #73591b;
+  background: var(--color-warning-50);
+  border: 1px solid var(--color-warning-200);
+  color: var(--color-warning-800);
 }
 
 .po-status--emitida {
-  background: #e7f7f5;
-  border: 1px solid #a9ddd8;
-  color: var(--po-teal);
+  background: var(--color-surface-hover);
+  border: 1px solid var(--color-brand-200);
+  color: var(--color-brand-600);
 }
 
 .po-status--cancelada {
-  background: #fff0f1;
-  border: 1px solid #efb7bd;
-  color: #a31d2d;
+  background: var(--color-danger-50);
+  border: 1px solid var(--color-danger-200);
+  color: var(--color-danger-700);
 }
 
 .po-header__actions,
@@ -130,7 +124,7 @@
 }
 
 .po-action-help {
-  color: var(--po-muted);
+  color: var(--color-text-muted);
   display: block;
   font-size: 12px;
   font-weight: 600;
@@ -140,7 +134,7 @@
 .po-back-link {
   background: none;
   border: 0;
-  color: #526873;
+  color: var(--color-text-muted);
   cursor: pointer;
   font: inherit;
   font-size: 13px;
@@ -150,15 +144,15 @@
 }
 
 .po-back-link:hover {
-  color: var(--po-teal);
+  color: var(--color-brand-600);
   text-decoration: underline;
 }
 
 .po-next-step,
 .po-linked-purchase {
   align-items: center;
-  background: #fff;
-  border: 1px solid var(--po-border);
+  background: var(--color-surface-panel);
+  border: 1px solid var(--color-border-subtle);
   border-radius: 9px;
   display: flex;
   gap: 8px 14px;
@@ -167,7 +161,7 @@
 
 .po-next-step strong,
 .po-linked-purchase span {
-  color: var(--po-teal);
+  color: var(--color-brand-600);
   font-size: 11px;
   font-weight: 850;
   letter-spacing: 0.04em;
@@ -175,7 +169,7 @@
 }
 
 .po-next-step span {
-  color: #526873;
+  color: var(--color-text-muted);
   font-size: 13px;
 }
 
@@ -189,13 +183,13 @@
 }
 
 .po-linked-purchase strong {
-  color: var(--po-ink);
+  color: var(--color-text-strong);
   font-size: 16px;
 }
 
 .supply-trace {
-  background: #f8fafc;
-  border: 1px solid var(--po-border);
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border-subtle);
   border-radius: 9px;
   display: grid;
   gap: 9px;
@@ -203,7 +197,7 @@
 }
 
 .supply-trace__title {
-  color: var(--po-teal);
+  color: var(--color-brand-600);
   font-size: 11px;
   font-weight: 850;
   letter-spacing: .06em;
@@ -213,15 +207,15 @@
 .supply-trace__rows { display: grid; gap: 8px; }
 .supply-trace__row { align-items: center; display: flex; flex-wrap: wrap; gap: 7px; }
 .supply-trace__step { align-items: center; display: flex; gap: 7px; }
-.supply-trace__arrow { color: #94a3b8; }
-.supply-trace__document { background: transparent; border: 0; color: var(--po-teal-dark); display: grid; font: inherit; gap: 1px; padding: 0; text-align: left; }
+.supply-trace__arrow { color: var(--color-text-muted); }
+.supply-trace__document { background: transparent; border: 0; color: var(--color-brand-700); display: grid; font: inherit; gap: 1px; padding: 0; text-align: left; }
 button.supply-trace__document { cursor: pointer; }
 button.supply-trace__document:hover strong { text-decoration: underline; text-underline-offset: 2px; }
 .supply-trace__document strong { font-size: 14px; }
-.supply-trace__document small { color: #64748b; font-size: 10px; font-weight: 650; }
-.supply-trace__document.is-current { color: var(--po-ink); }
-.supply-trace__document.is-current strong { background: #dff6f2; border-radius: 5px; padding: 2px 5px; }
-.supply-trace__document.is-pending { color: #64748b; }
+.supply-trace__document small { color: var(--color-text-muted); font-size: 10px; font-weight: 650; }
+.supply-trace__document.is-current { color: var(--color-text-strong); }
+.supply-trace__document.is-current strong { background: var(--color-surface-hover); border-radius: 5px; padding: 2px 5px; }
+.supply-trace__document.is-pending { color: var(--color-text-muted); }
 
 .po-button {
   align-items: center;
@@ -241,7 +235,7 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
 .po-details summary:focus-visible,
 .po-line__remove:focus-visible,
 .po-history__actions button:focus-visible {
-  outline: 3px solid rgba(15, 157, 148, 0.3);
+  outline: 3px solid color-mix(in srgb, var(--color-brand-500) 30%, transparent);
   outline-offset: 2px;
 }
 
@@ -251,66 +245,61 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
 }
 
 .po-button--primary {
-  background: var(--po-teal);
-  color: #fff;
+  background: var(--color-brand-600);
+  color: var(--color-text-inverse);
 }
 
 .po-button--primary:hover:not(:disabled) {
-  background: var(--po-teal-dark);
+  background: var(--color-brand-700);
 }
 
 .po-button--danger-subtle {
-  background: #fff;
-  border-color: #e5a8af;
-  color: #a31d2d;
+  background: var(--color-surface-panel);
+  border-color: var(--color-danger-200);
+  color: var(--color-danger-700);
 }
 
 .po-button--danger-subtle:hover:not(:disabled) {
-  background: #fff0f1;
-  border-color: #d47782;
+  background: var(--color-danger-50);
+  border-color: var(--color-danger-300);
 }
 
 .po-button--quiet {
   background: transparent;
   border-color: transparent;
-  color: #526873;
+  color: var(--color-text-muted);
   min-height: 32px;
   padding: 5px 8px;
 }
 
 .po-button--quiet:hover:not(:disabled) {
-  background: #eef4f6;
-  color: var(--po-teal);
+  background: var(--color-surface-hover);
+  color: var(--color-brand-600);
 }
 
 .po-button--secondary {
-  background: #fff;
-  border-color: #aebdc7;
-  color: #183242;
-}
-
-.po-button--issued {
-  background: var(--po-navy);
-  color: #fff;
+  background: var(--color-surface-panel);
+  border-color: var(--color-border-control);
+  color: var(--color-text-strong);
 }
 
 .po-button--danger {
-  background: #fff;
-  border-color: #efb7bd;
-  color: #a31d2d;
+  background: var(--color-surface-panel);
+  border-color: var(--color-danger-200);
+  color: var(--color-danger-700);
 }
 
 .po-message {
-  background: #eaf8f5;
+  background: var(--color-surface-hover);
   border-radius: 8px;
-  color: var(--po-teal);
+  color: var(--color-brand-600);
   margin: 0;
   padding: 10px 12px;
 }
 
 .po-message--error {
-  background: #fff1f2;
-  color: #a31d2d;
+  background: var(--color-danger-50);
+  color: var(--color-danger-700);
 }
 
 .po-panel {
@@ -333,10 +322,10 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
 }
 
 .po-provider__badge {
-  background: #e7f7f5;
-  border: 1px solid #b9e2de;
+  background: var(--color-surface-hover);
+  border: 1px solid var(--color-brand-200);
   border-radius: 999px;
-  color: var(--po-teal);
+  color: var(--color-brand-600);
   font-size: 10px;
   font-weight: 850;
   padding: 3px 7px;
@@ -345,12 +334,12 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
 }
 
 .po-provider__name {
-  color: #17313f;
+  color: var(--color-text-strong);
   font-size: 17px;
 }
 
 .po-provider__metadata {
-  color: #697b86;
+  color: var(--color-text-muted);
   display: flex;
   flex-wrap: wrap;
   font-size: 12px;
@@ -370,10 +359,10 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
 }
 
 .po-more-actions > div {
-  background: #fff;
-  border: 1px solid var(--po-border);
+  background: var(--color-surface-panel);
+  border: 1px solid var(--color-border-subtle);
   border-radius: 8px;
-  box-shadow: 0 12px 28px rgba(16, 36, 51, 0.15);
+  box-shadow: 0 12px 28px color-mix(in srgb, var(--color-text-strong) 15%, transparent);
   display: grid;
   min-width: 210px;
   padding: 6px;
@@ -384,10 +373,10 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
 }
 
 .po-more-actions > div button {
-  background: #fff;
+  background: var(--color-surface-panel);
   border: 0;
   border-radius: 6px;
-  color: #304956;
+  color: var(--color-text-muted);
   cursor: pointer;
   font: inherit;
   font-size: 13px;
@@ -396,7 +385,7 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
 }
 
 .po-more-actions > div button:hover {
-  background: #f4f8fa;
+  background: var(--color-surface-subtle);
 }
 
 .po-more-actions > div button:disabled {
@@ -405,13 +394,13 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
 }
 
 .po-provider__snapshot {
-  color: #70818b;
+  color: var(--color-text-muted);
   font-size: 11px;
   font-style: normal;
 }
 
 .po-provider p {
-  color: var(--po-muted);
+  color: var(--color-text-muted);
   margin: 2px 0 0;
 }
 
@@ -438,16 +427,16 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
 }
 
 .po-panel__header p {
-  color: var(--po-muted);
+  color: var(--color-text-muted);
   font-size: 13px;
   margin: 3px 0 0;
 }
 
 .po-empty {
-  background: #f7fafb;
-  border: 1px dashed #bfd0d8;
+  background: var(--color-surface-subtle);
+  border: 1px dashed var(--color-border-default);
   border-radius: 9px;
-  color: #607580;
+  color: var(--color-text-muted);
   padding: 24px;
   text-align: center;
 }
@@ -460,7 +449,7 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
 }
 
 .po-lines__head {
-  color: #71828d;
+  color: var(--color-text-muted);
   font-size: 10px;
   font-weight: 850;
   letter-spacing: 0.05em;
@@ -470,7 +459,7 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
 
 .po-line {
   align-items: center;
-  border-top: 1px solid #e8eef1;
+  border-top: 1px solid var(--color-border-subtle);
   padding: 10px;
 }
 
@@ -479,7 +468,7 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
 }
 
 .po-line__identity strong {
-  color: #17313f;
+  color: var(--color-text-strong);
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -488,7 +477,7 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
 
 .po-line__identity small,
 .po-line label span {
-  color: #748691;
+  color: var(--color-text-muted);
   display: block;
   font-size: 11px;
   margin-top: 3px;
@@ -508,10 +497,10 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
 .po-catalog select,
 .po-history__toolbar input,
 .po-history__toolbar select {
-  background: #fff;
-  border: 1px solid #c8d5dd;
+  background: var(--color-surface-panel);
+  border: 1px solid var(--color-border-control);
   border-radius: 7px;
-  color: var(--po-ink);
+  color: var(--color-text-strong);
   font: inherit;
   min-width: 0;
   outline: none;
@@ -527,12 +516,12 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
 .po-catalog select:focus,
 .po-history__toolbar input:focus,
 .po-history__toolbar select:focus {
-  border-color: #0f9d94;
-  box-shadow: 0 0 0 3px rgba(15, 157, 148, 0.14);
+  border-color: var(--color-brand-500);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-brand-500) 14%, transparent);
 }
 
 .po-line__total {
-  color: #102f47;
+  color: var(--color-text-strong);
   font-size: 14px;
   white-space: nowrap;
 }
@@ -540,10 +529,10 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
 .po-line__remove,
 .po-history__actions button,
 .po-history__actions summary {
-  background: #fff;
-  border: 1px solid #c9d4da;
+  background: var(--color-surface-panel);
+  border: 1px solid var(--color-border-control);
   border-radius: 6px;
-  color: #405662;
+  color: var(--color-text-muted);
   cursor: pointer;
   padding: 6px;
 }
@@ -554,38 +543,38 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
 }
 
 .po-line__remove {
-  color: #b42334;
+  color: var(--color-danger-700);
   font-size: 11px;
   font-weight: 750;
 }
 
 .po-history__actions > .po-history__primary {
-  background: var(--po-teal);
-  border-color: var(--po-teal);
-  color: #fff;
+  background: var(--color-brand-600);
+  border-color: var(--color-brand-600);
+  color: var(--color-text-inverse);
   font-weight: 800;
   padding-inline: 9px;
 }
 
 .po-history__actions > .po-history__primary:hover:not(:disabled) {
-  background: var(--po-teal-dark);
+  background: var(--color-brand-700);
 }
 
 .po-history__actions > .po-history__danger {
-  border-color: #e5a8af;
-  color: #a31d2d;
+  border-color: var(--color-danger-200);
+  color: var(--color-danger-700);
 }
 
 .po-history__actions > .po-history__danger:hover:not(:disabled) {
-  background: #fff0f1;
-  border-color: #d47782;
+  background: var(--color-danger-50);
+  border-color: var(--color-danger-300);
 }
 
 .po-reception-complete {
   align-items: center;
-  background: #dcfce7;
+  background: var(--color-success-50);
   border-radius: 7px;
-  color: #166534;
+  color: var(--color-success-700);
   display: inline-flex;
   font-size: 12px;
   font-weight: 800;
@@ -593,11 +582,11 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
   padding: 6px 10px;
 }
 
-.po-secondary-state { color: #64748b; font-size: 12px; }
+.po-secondary-state { color: var(--color-text-muted); font-size: 12px; }
 .po-related-documents { display: flex; flex-wrap: wrap; gap: 4px 9px; margin-top: 5px; }
 
 .po-line > p {
-  color: var(--po-muted);
+  color: var(--color-text-muted);
   font-size: 12px;
   grid-column: 1 / -1;
   line-height: 1.4;
@@ -624,7 +613,7 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
 }
 
 .po-line__readonly dt {
-  color: #748691;
+  color: var(--color-text-muted);
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.04em;
@@ -632,14 +621,14 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
 }
 
 .po-line__readonly dd {
-  color: #17313f;
+  color: var(--color-text-strong);
   font-size: 13px;
   font-weight: 750;
   margin: 0;
 }
 
 .po-line__readonly-total dd {
-  color: var(--po-teal);
+  color: var(--color-brand-600);
   font-size: 15px;
   font-weight: 850;
 }
@@ -655,8 +644,8 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
 
 .po-summary__amounts > div {
   align-items: center;
-  border-bottom: 1px solid #e9eef1;
-  color: #526873;
+  border-bottom: 1px solid var(--color-border-subtle);
+  color: var(--color-text-muted);
   display: flex;
   font-size: 13px;
   gap: 10px;
@@ -665,18 +654,18 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
 }
 
 .po-summary__amounts strong {
-  color: #17313f;
+  color: var(--color-text-strong);
 }
 
 .po-summary__amounts .po-summary__total {
   border-bottom: 0;
-  color: var(--po-ink);
+  color: var(--color-text-strong);
   font-size: 17px;
   padding: 13px 0 8px;
 }
 
 .po-summary__total strong {
-  color: var(--po-teal);
+  color: var(--color-brand-600);
   font-size: 22px;
 }
 
@@ -687,7 +676,7 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
 }
 
 .po-summary__danger {
-  border-top: 1px solid #edf0f2;
+  border-top: 1px solid var(--color-border-subtle);
   display: grid;
   margin-top: 4px;
   padding-top: 10px;
@@ -700,7 +689,7 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
 
 .po-details summary {
   align-items: center;
-  color: #17313f;
+  color: var(--color-text-strong);
   cursor: pointer;
   display: flex;
   justify-content: space-between;
@@ -723,7 +712,7 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
 }
 
 .po-details summary small {
-  color: #70818b;
+  color: var(--color-text-muted);
   font-size: 12px;
   font-weight: 500;
   overflow: hidden;
@@ -733,9 +722,9 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
 
 .po-details__indicator {
   align-items: center;
-  background: #edf7f6;
+  background: var(--color-surface-hover);
   border-radius: 999px;
-  color: var(--po-teal);
+  color: var(--color-brand-600);
   display: inline-flex;
   flex: 0 0 auto;
   font-size: 20px;
@@ -753,9 +742,8 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
   content: "−";
 }
 
-.po-details > div,
-.po-details > .po-print {
-  border-top: 1px solid #e5ecef;
+.po-details > div {
+  border-top: 1px solid var(--color-border-subtle);
 }
 
 .po-fields {
@@ -766,7 +754,7 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
 }
 
 .po-fields label {
-  color: #526573;
+  color: var(--color-text-muted);
   display: grid;
   font-size: 12px;
   font-weight: 750;
@@ -780,21 +768,19 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
 
 .po-selector,
 .po-catalog {
-  --po-ink: #102433;
-  --po-muted: #667985;
   display: grid;
   gap: 12px;
 }
 
 .po-selector__list,
 .po-catalog__list {
-  border: 1px solid #dce5ea;
+  border: 1px solid var(--color-border-subtle);
   border-radius: 9px;
   overflow: hidden;
 }
 
 .po-selector__list button {
-  background: #fff;
+  background: var(--color-surface-panel);
   border: 0;
   cursor: pointer;
   display: grid;
@@ -805,23 +791,23 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
 
 .po-selector__list button:hover,
 .po-catalog__list article:hover {
-  background: #f7fbfb;
+  background: var(--color-surface-subtle);
 }
 
 .po-selector__list button + button,
 .po-catalog__list article + article {
-  border-top: 1px solid #e7edef;
+  border-top: 1px solid var(--color-border-subtle);
 }
 
 .po-selector__list span,
 .po-catalog small {
-  color: #71838e;
+  color: var(--color-text-muted);
   font-size: 11px;
 }
 
 .po-selector__list > p,
 .po-catalog__list > p {
-  color: var(--po-muted);
+  color: var(--color-text-muted);
   padding: 12px;
 }
 
@@ -883,14 +869,14 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
 }
 
 .po-history__table td small {
-  color: #71838e;
+  color: var(--color-text-muted);
   display: block;
 }
 
 .po-inline-link {
   background: none;
   border: 0;
-  color: var(--po-teal);
+  color: var(--color-brand-600);
   cursor: pointer;
   font: inherit;
   font-weight: 850;
@@ -902,17 +888,13 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
   text-decoration: underline;
 }
 
-.po-history__empty {
-  text-align: center;
-}
-
 .po-history__cards {
   display: none;
 }
 
 .po-history-card {
-  background: #fff;
-  border: 1px solid var(--po-border);
+  background: var(--color-surface-panel);
+  border: 1px solid var(--color-border-subtle);
   border-radius: 11px;
   display: grid;
   gap: 13px;
@@ -935,7 +917,7 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
 .po-history-card__label,
 .po-history-card__provider span,
 .po-history-card dt {
-  color: #71838e;
+  color: var(--color-text-muted);
   font-size: 11px;
 }
 
@@ -952,134 +934,24 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
 }
 
 .po-history-card dd {
-  color: #17313f;
+  color: var(--color-text-strong);
   font-weight: 800;
   margin: 0;
 }
 
-.po-history__cards-empty {
-  background: #fff;
-  border: 1px dashed #bfd0d8;
-  border-radius: 11px;
-  color: #607580;
-  padding: 24px;
-  text-align: center;
-}
-
-.po-print {
-  background: #fff;
-  color: #162d3a;
-  font-size: 12px;
-  padding: 26px;
-}
-
-.po-print__header {
-  align-items: flex-start;
-  border-bottom: 2px solid #264b5d;
-  display: flex;
-  gap: 24px;
-  justify-content: space-between;
-  padding-bottom: 16px;
-}
-
-.po-print__title small,
-.po-print__parties small {
-  color: #617580;
-  display: block;
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  margin-bottom: 4px;
-  text-transform: uppercase;
-}
-
-.po-print h1 {
-  font-size: 22px;
-  letter-spacing: 0.04em;
-  margin: 0 0 5px;
-}
-
-.po-print__company {
-  max-width: 320px;
-  text-align: right;
-}
-
-.po-print p {
-  line-height: 1.4;
-  margin: 3px 0;
-}
-
-.po-print__parties {
-  display: grid;
-  gap: 14px;
-  grid-template-columns: 1.35fr 1fr;
-  margin-top: 16px;
-}
-
-.po-print__parties section {
-  border: 1px solid #d7e0e5;
-  border-radius: 6px;
-  padding: 12px;
-}
-
-.po-print table {
-  border-collapse: collapse;
-  margin: 20px 0;
-  table-layout: fixed;
-  width: 100%;
-}
-
-.po-print th {
-  border-bottom: 1px solid #81939d;
-  color: #445c68;
-  font-size: 10px;
-  letter-spacing: 0.04em;
-  padding: 8px;
-  text-align: left;
-  text-transform: uppercase;
-}
-
-.po-print td {
-  border-bottom: 1px solid #dce4e8;
-  padding: 9px 8px;
-  text-align: left;
-  vertical-align: top;
-  overflow-wrap: anywhere;
-}
-
-.po-print td small {
-  color: #617580;
-  display: block;
-  margin-top: 3px;
-}
-
-.po-print__totals {
-  border-top: 1px solid #81939d;
-  margin-left: auto;
-  max-width: 250px;
-  padding-top: 8px;
-  text-align: right;
-}
-
-.po-print__totals strong {
-  display: block;
-  font-size: 17px;
-  margin-top: 7px;
-}
-
 .po-preview-body {
-  border-top: 1px solid var(--po-border);
+  border-top: 1px solid var(--color-border-subtle);
   margin: 0 -15px -15px;
   padding: 18px;
 }
 
 .po-document-preview {
-  --po-doc-navy: #123765;
-  --po-doc-red: #b5222d;
+  --po-doc-navy: var(--color-document-navy);
+  --po-doc-red: var(--color-document-red);
   --po-doc-ink: #182335;
   --po-doc-muted: #5f6b7c;
   --po-doc-border: #d8dee8;
-  background: #fff;
+  background: var(--color-surface-panel);
   border: 1px solid var(--po-doc-border);
   box-shadow: 0 16px 40px rgba(18, 55, 101, 0.08);
   color: var(--po-doc-ink);
@@ -1087,6 +959,22 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
   margin: 0 auto;
   max-width: 920px;
   padding: 38px 42px;
+}
+
+/* Exención de modo oscuro (etapa 5, paso 2 de 10): esta es la vista
+   previa de un documento formal (orden de compra), debe verse igual sin
+   importar el tema del sistema, igual que QuotePrintView/SalePrintView.
+   Solo 2 propiedades de todo este bloque .po-document-preview* consumen
+   tokens generales (el resto ya usa --po-doc-* propios o literales del
+   documento): el fondo de este selector y el borde de
+   .po-document-preview__empty, heredado de aquí. Se fijan ambas al valor
+   claro para que tokens.css (:root único, ver hallazgo del paso 1) no las
+   enganche por accidente. */
+:where(:root[data-theme="dark"]) {
+  .po-document-preview {
+    --color-surface-panel: #ffffff;
+    --color-border-default: #d3cdc2;
+  }
 }
 
 .po-document-preview p {
@@ -1333,7 +1221,7 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
 }
 
 .po-document-preview__empty {
-  border: 1px dashed #9daabd;
+  border: 1px dashed var(--color-border-default);
   margin-top: 24px;
   padding: 18px;
   text-align: center;
@@ -1355,7 +1243,7 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
 }
 
 .po-trace ol {
-  border-left: 2px solid #c8d9e3;
+  border-left: 2px solid var(--color-border-subtle);
   display: grid;
   gap: 14px;
   list-style: none;
@@ -1370,10 +1258,10 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
 }
 
 .po-trace li::before {
-  background: var(--po-teal);
-  border: 3px solid #fff;
+  background: var(--color-text-brand-accent);
+  border: 3px solid var(--color-surface-panel);
   border-radius: 50%;
-  box-shadow: 0 0 0 1px #9ccac6;
+  box-shadow: 0 0 0 1px var(--color-brand-300);
   content: "";
   height: 10px;
   left: -24px;
@@ -1383,14 +1271,14 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
 }
 
 .po-trace li span {
-  color: var(--po-muted);
+  color: var(--color-text-muted);
   font-size: 12px;
 }
 
 .po-trace li button {
   background: none;
   border: 0;
-  color: var(--po-teal);
+  color: var(--color-brand-600);
   cursor: pointer;
   font: inherit;
   font-weight: 750;
@@ -1411,7 +1299,7 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
 
 .po-email-form input,
 .po-email-form textarea {
-  border: 1px solid #c8d5dd;
+  border: 1px solid var(--color-border-control);
   border-radius: 7px;
   font: inherit;
   min-height: 44px;
@@ -1425,18 +1313,18 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
 }
 
 .po-email-form p {
-  color: var(--po-muted);
+  color: var(--color-text-muted);
   font-size: 12px;
   margin: 0;
 }
 
 .po-email-form .po-email-form__error {
-  color: #a31d2d;
+  color: var(--color-danger-700);
 }
 
 .po-email-summary {
-  background: #f4f7fb;
-  border: 1px solid #d3dce9;
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border-subtle);
   border-radius: 7px;
   display: grid;
   gap: 8px;
@@ -1451,7 +1339,7 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
 }
 
 .po-email-summary span {
-  color: var(--po-muted);
+  color: var(--color-text-muted);
   font-size: 11px;
 }
 
@@ -1461,7 +1349,7 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
 }
 
 .po-email-form .po-email-attachment-note {
-  color: var(--po-ink);
+  color: var(--color-text-strong);
 }
 
 @media (max-width: 560px) {
@@ -1476,16 +1364,16 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
 }
 
 .po-history__table tr.po-history__recent > td {
-  background: #eef8f7;
+  background: var(--color-surface-hover);
 }
 
 .po-history-card.po-history__recent {
-  border-color: #5aa8a1;
-  box-shadow: 0 0 0 2px rgb(32 122 113 / 12%);
+  border-color: var(--color-brand-400);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-brand-600) 12%, transparent);
 }
 
 .po-order-preview-dialog .responsive-dialog__body {
-  background: #eef2f6;
+  background: var(--color-surface-subtle);
   padding: 18px;
 }
 
@@ -1525,8 +1413,8 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
   }
 
   .po-line {
-    background: #fff;
-    border: 1px solid #dfe7eb;
+    background: var(--color-surface-panel);
+    border: 1px solid var(--color-border-subtle);
     border-radius: 9px;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     margin-top: 9px;
@@ -1654,29 +1542,6 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
     max-width: 250px;
   }
 
-  .po-print {
-    padding: 16px;
-  }
-
-  .po-print th,
-  .po-print td {
-    font-size: 9px;
-    padding: 5px 3px;
-  }
-
-  .po-print__header,
-  .po-print__parties {
-    grid-template-columns: 1fr;
-  }
-
-  .po-print__header {
-    display: grid;
-  }
-
-  .po-print__company {
-    text-align: left;
-  }
-
   .po-more-actions > div {
     left: 0;
     right: auto;
@@ -1735,10 +1600,6 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
     display: block;
   }
 
-  .po-print {
-    padding: 0;
-  }
-
   .po-document-preview {
     border: 0;
     box-shadow: none;
@@ -1761,3 +1622,55 @@ button.supply-trace__document:hover strong { text-decoration: underline; text-un
     break-inside: avoid;
   }
 }
+
+/* Modo oscuro (etapa 5, paso 5 de 10: cadena de compras, base
+   purchase-orders.css). Sin scrims/overlays en este archivo (grep
+   completo de "overlay|scrim|backdrop": cero resultados) — los 2
+   color-mix(...--color-text-strong...) que tiene (líneas ~14 y ~365) son
+   sombras de elevación de tarjeta/menú, no telones de fondo de diálogo;
+   mismo criterio ya establecido en el paso 3/4 (efecto halo reportado,
+   no se toca, no bloquea nada funcional aquí tampoco). */
+:where(:root[data-theme="dark"]) {
+  /* --color-brand-600/700/800 sin cambio (paso 2) como texto/ícono sobre
+     una superficie que sí reacciona al tema, cada uno verificado contra
+     su fondo real antes de tocar. Corregido con --color-brand-400
+     (mínimo 4.92:1 ya verificado en el paso 3). */
+  .po-kicker,
+  .po-status--emitida,
+  .po-back-link:hover,
+  .po-next-step strong,
+  .po-linked-purchase span,
+  .supply-trace__title,
+  .supply-trace__document,
+  .po-button--quiet:hover:not(:disabled),
+  .po-message,
+  .po-provider__badge,
+  .po-line__readonly-total dd,
+  .po-summary__total strong,
+  .po-details__indicator,
+  .po-inline-link,
+  .po-trace li button {
+    color: var(--color-brand-400);
+  }
+
+  /* .po-history-card.po-history__recent ya usa border-color:
+     var(--color-brand-400) en claro (sin cambio, ya seguro); su anillo
+     box-shadow acompañante seguía en brand-600 (2.20:1 contra
+     --color-surface-selected, falla) — se alinea al mismo brand-400 del
+     borde para que ambas propiedades de la misma regla usen el mismo
+     tono. */
+  .po-history-card.po-history__recent {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-brand-400) 12%, transparent);
+  }
+
+  /* Excepciones NO tocadas, confirmadas leyendo el contexto:
+     --color-brand-600 como fondo con --color-text-inverse encima
+     (.po-button--primary, .po-history__actions > .po-history__primary)
+     ya funciona igual que en claro (5.47:1, verificado en el paso 2/3).
+     Los focus rings con color-mix(...--color-brand-500...) (líneas ~238,
+     ~520) no se tocan, mismo criterio que --focus-ring de tokens.css. */
+}
+
+/* Registro de tokens faltantes encontrados en esta pasada (etapa 5,
+   barrido acumulado, NO resueltos aquí — ver entrega del paso 5):
+   ninguno nuevo en purchase-orders.css. */

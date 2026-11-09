@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
+import {createHash} from "node:crypto";
 import {createRequire} from "node:module";
 import {deleteApp, initializeApp} from "firebase/app";
 import {
   connectAuthEmulator,
   createUserWithEmailAndPassword,
   getAuth,
+  getIdToken,
+  signInWithEmailAndPassword,
 } from "firebase/auth";
 import {
   collection,
@@ -102,6 +105,35 @@ async function expectDenied(label, operation) {
 const requestId = (prefix) =>
   `${prefix}-${RUN_ID}-${Math.random().toString(36).slice(2, 10)}`;
 
+// Alta de miembros: desde SPEC 032 solo existe el flujo invitar + aceptar.
+const invite = (inviter, inviteBusinessId, correo, rol, profileId) =>
+  call(inviter, "invitarMiembroNegocio")({
+    businessId: inviteBusinessId,
+    correo,
+    rol,
+    requestId: requestId("invite"),
+    ...(profileId ? {profileId} : {}),
+  });
+const invitationIdFor = (inviteBusinessId, correo) =>
+  `${inviteBusinessId}__${createHash("sha256").update(correo.trim().toLowerCase()).digest("hex")}`;
+const accept = (invitee, inviteBusinessId) =>
+  call(invitee, "responderInvitacion")({
+    invitacionId: invitationIdFor(inviteBusinessId, invitee.email),
+    accion: "aceptar",
+  });
+async function addMember(inviter, inviteBusinessId, invitee, rol, profileId) {
+  await invite(inviter, inviteBusinessId, invitee.email, rol, profileId);
+  return accept(invitee, inviteBusinessId);
+}
+async function signInAs(label, email, password) {
+  const client = createClient(label);
+  const credential = await signInWithEmailAndPassword(client.auth, email, password);
+  client.uid = credential.user.uid;
+  client.email = email;
+  clients.push(client);
+  return client;
+}
+
 const owner = await authenticate(createClient("owner"), "owner");
 const admin = await authenticate(createClient("admin"), "admin");
 const member = await authenticate(createClient("member"), "member");
@@ -116,6 +148,10 @@ const adminDb = getAdminFirestore(adminApp);
 const adminAuth = getAdminAuth(adminApp);
 
 try {
+  await adminAuth.updateUser(target.uid, {emailVerified: true});
+  await getIdToken(target.auth.currentUser, true);
+  await adminAuth.updateUser(outsider.uid, {emailVerified: true});
+  await getIdToken(outsider.auth.currentUser, true);
   const mainBusiness = await call(owner, "createFirstBusiness")({
     nombreComercial: "Negocio miembros",
     rubroCodigo: "INGENIERIA_CONSULTORIA",
@@ -209,14 +245,9 @@ try {
   });
   console.log("OK compatibilidad: Colaborador existente conserva gestión de estado");
 
-  const added = await call(owner, "asociarUsuarioExistente")({
-    businessId,
-    correo: target.email,
-    rol: "TECNICO",
-  });
-  assert.equal(added.data.miembro.uid, target.uid);
-  assert.equal(added.data.miembro.rol, "TECNICO");
-  assert.equal(added.data.miembro.estado, "activo");
+  const added = await addMember(owner, businessId, target, "TECNICO");
+  assert.equal(added.data.estado, "aceptada");
+  assert.equal(added.data.businessId, businessId);
   const targetMembershipRef = adminDb.doc(
     `membresias/${businessId}__${target.uid}`
   );
@@ -231,11 +262,11 @@ try {
   assert.equal(targetDirectoryEntry.correo, target.email);
   assert.equal(targetDirectoryEntry.telefonoPersonal, undefined);
   assert.equal(targetDirectoryEntry.numeroDocumento, undefined);
-  console.log("OK asociación: OWNER agrega cuenta existente como TECNICO activo");
+  console.log("OK asociación: OWNER invita y la cuenta acepta como TECNICO activo");
 
   await expectCallableError(
-    "MEMBER no asocia usuarios",
-    () => call(member, "asociarUsuarioExistente")({businessId, correo: outsider.email}),
+    "MEMBER no invita usuarios",
+    () => invite(member, businessId, outsider.email),
     ["permission-denied"]
   );
   await call(admin, "actualizarMembresiaNegocio")({
@@ -265,14 +296,11 @@ try {
     }),
     ["permission-denied"]
   );
-  await expectCallableError(
-    "cuenta inexistente",
-    () => call(owner, "asociarUsuarioExistente")({
-      businessId,
-      correo: `missing-${RUN_ID}@example.test`,
-    }),
-    ["not-found"]
-  );
+  const missingInvite = await invite(owner, businessId, `missing-${RUN_ID}@example.test`);
+  const knownInvite = await invite(owner, businessId, outsider.email);
+  assert.deepEqual(Object.keys(missingInvite.data), Object.keys(knownInvite.data));
+  assert.equal(missingInvite.data.estado, knownInvite.data.estado);
+  console.log("OK invitación: cuenta inexistente y existente reciben la misma respuesta");
 
   const disabledEmail = `disabled-${RUN_ID}@example.test`;
   const disabledUser = await adminAuth.createUser({
@@ -280,18 +308,49 @@ try {
     password: `Disabled-${RUN_ID}-Pass!`,
     disabled: true,
   });
-  await expectCallableError(
-    "cuenta Auth deshabilitada",
-    () => call(owner, "asociarUsuarioExistente")({businessId, correo: disabledEmail}),
-    ["failed-precondition"]
-  );
+  await invite(owner, businessId, disabledEmail);
   assert.equal(
     (await adminDb.doc(`membresias/${businessId}__${disabledUser.uid}`).get()).exists,
     false
   );
+  const verifiedEmail = `verified-${RUN_ID}@example.test`;
+  const verifiedUser = await adminAuth.createUser({
+    email: verifiedEmail,
+    password: `Verified-${RUN_ID}-Pass!`,
+    emailVerified: true,
+  });
+  const verifiedClient = await signInAs("verified", verifiedEmail, `Verified-${RUN_ID}-Pass!`);
+  await invite(owner, businessId, verifiedEmail, "TECNICO");
+  const verifiedAdded = await accept(verifiedClient, businessId);
+  assert.equal(verifiedAdded.data.estado, "aceptada");
+  assert.equal(
+    (await adminDb.doc(`membresias/${businessId}__${verifiedUser.uid}`).get()).exists,
+    true
+  );
+  console.log("OK asociación: cuenta con correo verificado acepta y se agrega");
+
+  const unverifiedEmail = `unverified-${RUN_ID}@example.test`;
+  const unverifiedUser = await adminAuth.createUser({
+    email: unverifiedEmail,
+    password: `Unverified-${RUN_ID}-Pass!`,
+    emailVerified: false,
+  });
+  const unverifiedClient = await signInAs("unverified", unverifiedEmail, `Unverified-${RUN_ID}-Pass!`);
+  await invite(owner, businessId, unverifiedEmail, "TECNICO");
+  await assert.rejects(
+    () => accept(unverifiedClient, businessId),
+    (error) => String(error?.code || "").includes("failed-precondition") &&
+      error.message === "Verifica tu correo para responder invitaciones."
+  );
+  assert.equal(
+    (await adminDb.doc(`membresias/${businessId}__${unverifiedUser.uid}`).get()).exists,
+    false
+  );
+  console.log("OK rechazo: cuenta sin correo verificado no acepta");
+
   await expectCallableError(
     "asociación activa duplicada",
-    () => call(owner, "asociarUsuarioExistente")({businessId, correo: target.email}),
+    () => invite(owner, businessId, target.email),
     ["already-exists"]
   );
 
@@ -331,8 +390,8 @@ try {
   assert.equal(memberWithoutInactive.data.miembros.some((item) => item.uid === target.uid), false);
   await expectCallableError(
     "membresía inactiva no se duplica",
-    () => call(owner, "asociarUsuarioExistente")({businessId, correo: target.email}),
-    ["already-exists"]
+    () => invite(owner, businessId, target.email),
+    ["failed-precondition"]
   );
   await call(owner, "actualizarMembresiaNegocio")({
     businessId,
@@ -452,12 +511,7 @@ try {
 
   await expectCallableError(
     "profileId de otra empresa",
-    () => call(outsider, "asociarUsuarioExistente")({
-      businessId: otherBusinessId,
-      correo: target.email,
-      rol: "MEMBER",
-      profileId,
-    }),
+    () => invite(outsider, otherBusinessId, target.email, "MEMBER", profileId),
     ["invalid-argument"]
   );
   const otherProfile = await call(outsider, "crearPerfilEmpleado")({
@@ -465,12 +519,7 @@ try {
     nombre: "Consulta de ventas",
     modulos: ["ventas"],
   });
-  await call(outsider, "asociarUsuarioExistente")({
-    businessId: otherBusinessId,
-    correo: target.email,
-    rol: "MEMBER",
-    profileId: otherProfile.data.perfil.id,
-  });
+  await addMember(outsider, otherBusinessId, target, "MEMBER", otherProfile.data.perfil.id);
   const multiBusinessSession = await call(target, "getBusinessSession")({});
   const mainAccess = multiBusinessSession.data.businesses.find((item) => item.id === businessId);
   const otherAccess = multiBusinessSession.data.businesses.find((item) => item.id === otherBusinessId);

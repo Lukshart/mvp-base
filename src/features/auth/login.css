@@ -1,0 +1,564 @@
+/* Ingreso y espera (SPEC 029). Solo estilos de este feature; el resto del
+   ingreso (.auth-*) vive en components.css. Como este archivo se empaqueta
+   antes que components.css, lo que sobrescribe una regla de allí lleva un
+   selector más específico (.auth-card ...). Sin colores, radios, sombras ni
+   duraciones literales: todo sale de tokens.css. */
+
+/* ---- Panel izquierdo animado (AuthStage) ---- */
+
+.auth-stage {
+  background: linear-gradient(
+    155deg,
+    var(--color-dark-ink) 0%,
+    var(--color-dark-panel) 55%,
+    color-mix(in srgb, var(--color-brand-800) 80%, var(--color-dark-panel)) 100%
+  );
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  isolation: isolate;
+  justify-content: flex-end;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  padding: var(--space-10);
+  position: relative;
+}
+
+.auth-stage__decor {
+  box-sizing: border-box;
+  display: grid;
+  inset: 0;
+  overflow: hidden;
+  padding: var(--space-10) var(--space-8) 8rem;
+  place-items: center;
+  position: absolute;
+}
+
+.auth-stage__orb {
+  animation: auth-stage-drift var(--motion-stage-drift-duration) ease-in-out
+    infinite;
+  border-radius: var(--radius-pill);
+  filter: blur(40px);
+  opacity: 0.5;
+  position: absolute;
+}
+
+.auth-stage__orb--one {
+  background: var(--color-brand-500);
+  height: 280px;
+  left: -60px;
+  top: -80px;
+  width: 280px;
+}
+
+.auth-stage__orb--two {
+  animation-delay: calc(var(--motion-stage-drift-duration) * -0.36);
+  background: var(--color-info-700);
+  bottom: 60px;
+  height: 220px;
+  right: -70px;
+  width: 220px;
+}
+
+.auth-stage__orb--three {
+  animation-delay: calc(var(--motion-stage-drift-duration) * -0.64);
+  background: var(--color-accent-500);
+  height: 160px;
+  left: 55%;
+  opacity: 0.18;
+  top: 42%;
+  width: 160px;
+}
+
+.auth-stage__chip {
+  align-items: center;
+  animation: auth-stage-float var(--motion-stage-float-duration) ease-in-out
+    infinite;
+  background: color-mix(in srgb, var(--color-text-inverse) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-text-inverse) 24%, transparent);
+  border-radius: var(--radius-lg);
+  color: var(--color-dark-text-strong);
+  display: flex;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  gap: var(--space-2);
+  padding: 0.625rem 0.875rem;
+  position: absolute;
+  z-index: 2;
+}
+
+.auth-stage__chip-dot {
+  background: var(--color-dark-accent);
+  border-radius: var(--radius-pill);
+  display: block;
+  height: 8px;
+  width: 8px;
+}
+
+.auth-stage__chip--1 {
+  left: 13%;
+  top: 22%;
+}
+
+.auth-stage__chip--2 {
+  animation-delay: calc(var(--motion-stage-float-duration) * -0.33);
+  right: 13%;
+  top: 19%;
+}
+
+.auth-stage__chip--3 {
+  animation-delay: calc(var(--motion-stage-float-duration) * -0.66);
+  bottom: 37%;
+  left: 11%;
+}
+
+.auth-stage__chip--4 {
+  animation-delay: calc(var(--motion-stage-float-duration) * -0.17);
+  bottom: 34%;
+  right: 11%;
+}
+
+.auth-stage__art {
+  height: auto;
+  max-width: 680px;
+  position: relative;
+  width: 100%;
+  z-index: 1;
+}
+
+.auth-stage__stop-cloud-top {
+  stop-color: var(--color-brand-400);
+}
+
+.auth-stage__stop-cloud-bottom {
+  stop-color: var(--color-brand-800);
+}
+
+.auth-stage__stop-bar-top {
+  stop-color: var(--color-dark-accent);
+}
+
+.auth-stage__stop-bar-bottom {
+  stop-color: var(--color-brand-500);
+}
+
+.auth-stage__gear {
+  animation: auth-stage-spin var(--motion-stage-gear-duration) linear infinite;
+  stroke: var(--color-dark-text-strong);
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+}
+
+.auth-stage__bar {
+  animation: auth-stage-grow var(--motion-stage-chart-duration) ease-in-out
+    infinite;
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+
+.auth-stage__bar--2 {
+  animation-delay: calc(var(--motion-stage-chart-duration) * 0.025);
+}
+
+.auth-stage__bar--3 {
+  animation-delay: calc(var(--motion-stage-chart-duration) * 0.05);
+}
+
+.auth-stage__bar--4 {
+  animation-delay: calc(var(--motion-stage-chart-duration) * 0.075);
+}
+
+.auth-stage__bar--5 {
+  animation-delay: calc(var(--motion-stage-chart-duration) * 0.1);
+}
+
+.auth-stage__line {
+  animation: auth-stage-draw var(--motion-stage-chart-duration) ease-in-out
+    infinite;
+  stroke: var(--color-accent-500);
+  stroke-dasharray: 420;
+  stroke-dashoffset: 420;
+}
+
+.auth-stage__tip {
+  animation: auth-stage-tip var(--motion-stage-chart-duration) ease-in-out
+    infinite;
+  fill: var(--color-accent-500);
+  opacity: 0;
+}
+
+.auth-stage__shadow {
+  fill: var(--color-dark-ink);
+  opacity: 0.35;
+}
+
+.auth-stage__headline {
+  color: var(--color-text-inverse);
+  font-size: clamp(1.5rem, 2.4vw, 2.125rem);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: -0.015em;
+  line-height: 1.2;
+  margin: 0;
+  max-width: 460px;
+  position: relative;
+  z-index: 2;
+}
+
+@keyframes auth-stage-drift {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+
+  50% {
+    transform: translate(30px, -24px);
+  }
+}
+
+@keyframes auth-stage-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes auth-stage-grow {
+  0% {
+    transform: scaleY(0);
+  }
+
+  25%,
+  85% {
+    transform: scaleY(1);
+  }
+
+  100% {
+    transform: scaleY(0);
+  }
+}
+
+@keyframes auth-stage-draw {
+  0% {
+    stroke-dashoffset: 420;
+  }
+
+  40%,
+  85% {
+    stroke-dashoffset: 0;
+  }
+
+  100% {
+    stroke-dashoffset: 420;
+  }
+}
+
+@keyframes auth-stage-tip {
+  0%,
+  38% {
+    opacity: 0;
+  }
+
+  45%,
+  85% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes auth-stage-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Franja compacta (la altura la fija .auth-screen en components.css): solo la
+   ilustración, sin titular ni etiquetas. */
+@media (max-width: 900px) {
+  .auth-stage {
+    padding: 0;
+  }
+
+  .auth-stage__headline,
+  .auth-stage__chip {
+    display: none;
+  }
+
+  .auth-stage__decor {
+    padding: var(--space-3) 0;
+  }
+
+  .auth-stage__art {
+    height: 100%;
+    max-width: 100%;
+    width: auto;
+  }
+}
+
+@media (max-width: 680px), (max-width: 900px) and (max-height: 600px) {
+  .auth-stage {
+    display: none;
+  }
+}
+
+/* Sin animación y con el estado final visible: gráfico completo, línea
+   dibujada y punta de flecha a la vista. */
+@media (prefers-reduced-motion: reduce) {
+  .auth-stage__orb,
+  .auth-stage__chip,
+  .auth-stage__gear,
+  .auth-stage__bar,
+  .auth-stage__line,
+  .auth-stage__tip {
+    animation: none;
+  }
+
+  .auth-stage__line {
+    stroke-dashoffset: 0;
+  }
+
+  .auth-stage__tip {
+    opacity: 1;
+  }
+}
+
+/* ---- Selector de acceso, Google y bloques del formulario ---- */
+
+.auth-card .auth-tabs {
+  gap: var(--space-6);
+}
+
+.auth-card .auth-tabs [role="tab"] {
+  padding-inline: var(--space-1);
+}
+
+.auth-card .auth-tabpanel {
+  display: block;
+  padding-top: var(--space-6);
+}
+
+.auth-card .auth-body {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.auth-card .auth-body > .auth-actions,
+.auth-card .auth-body > .auth-legal {
+  margin-top: 0;
+}
+
+.auth-card .auth-body__title .auth-card__title {
+  margin: 0 0 var(--space-2);
+}
+
+/* El subtítulo existe en las dos pestañas aunque vaya vacío: su altura mínima
+   es una línea de texto, así que "Mi empresa" y "Soy colaborador" ocupan lo
+   mismo y el título, Google y el formulario no se mueven al cambiar. */
+.auth-card .auth-body__title .auth-card__subtitle {
+  min-height: calc(var(--font-size-md) * var(--line-height-default));
+}
+
+.auth-card .auth-google {
+  border-radius: var(--radius-pill);
+  font-size: var(--font-size-md);
+  min-height: 48px;
+  width: 100%;
+}
+
+.auth-google__label {
+  align-items: center;
+  display: inline-flex;
+  gap: var(--space-3);
+}
+
+.auth-google__logo {
+  display: block;
+  flex: 0 0 auto;
+  height: 20px;
+  width: 20px;
+}
+
+.auth-google[aria-busy="true"] .auth-google__logo {
+  display: none;
+}
+
+.auth-divider {
+  align-items: center;
+  color: var(--color-text-muted);
+  display: flex;
+  font-size: var(--font-size-xs);
+  gap: var(--space-3);
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  background: var(--color-border-default);
+  content: "";
+  flex: 1;
+  height: 1px;
+}
+
+.auth-legal__text {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-default);
+  margin: 0;
+  text-align: center;
+}
+
+/* ---- Pantalla de espera (BusinessWaitingPage) ---- */
+
+.auth-wait__email {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.auth-wait__email-row {
+  align-items: center;
+  display: flex;
+  gap: var(--space-3);
+}
+
+.auth-wait__email-value {
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  color: var(--color-text-strong);
+  flex: 1 1 auto;
+  font-size: var(--font-size-sm);
+  min-width: 0;
+  overflow-wrap: anywhere;
+  padding: 0.75rem var(--space-3);
+  user-select: all;
+}
+
+.auth-card .auth-wait__copy {
+  border-radius: var(--radius-pill);
+  flex: 0 0 auto;
+  min-height: 44px;
+}
+
+.auth-wait__copy-feedback {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  min-height: 1.25rem;
+}
+
+.auth-wait__status {
+  color: var(--color-text-default);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-default);
+  margin: 0;
+}
+
+.auth-wait__invitations {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.auth-wait__actions {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: center;
+}
+
+.auth-card .auth-wait__create {
+  border-radius: var(--radius-pill);
+  min-height: 48px;
+  width: 100%;
+}
+
+/* ---- Aviso de correo sin verificar (BusinessWaitingPage) ---- */
+
+.auth-wait__notice {
+  background: var(--color-warning-50);
+  border: 1px solid var(--color-warning-300);
+  border-radius: var(--radius-md);
+  color: var(--color-warning-800);
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+}
+
+.auth-wait__notice-text {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-default);
+  margin: 0;
+}
+
+.auth-wait__notice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.auth-card .auth-wait__notice-button {
+  border-radius: var(--radius-pill);
+  flex: 1 1 auto;
+}
+
+.auth-wait__notice-feedback {
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-default);
+  min-height: 1.25rem;
+}
+
+/* ---- Navegador integrado: sin botón de Google ---- */
+
+.auth-inapp {
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.auth-inapp__text {
+  color: var(--color-text-default);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-default);
+  margin: 0;
+}
+
+.auth-card .auth-inapp__copy {
+  border-radius: var(--radius-pill);
+  min-height: 48px;
+  width: 100%;
+}
+
+.auth-inapp__feedback {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-default);
+  min-height: 1.25rem;
+  overflow-wrap: anywhere;
+}
+
+/* ---- Ingreso con Google apagado (GOOGLE_LOGIN_ENABLED) ---- */
+
+.auth-google-group {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.auth-google--disabled .auth-google__logo {
+  filter: grayscale(1);
+  opacity: 0.6;
+}
+
+.auth-google__note {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-default);
+  margin: 0;
+  text-align: center;
+}

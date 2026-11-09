@@ -202,6 +202,17 @@ export function getOrderReceptionProgress(order, receptions = []) {
   return {received, requested};
 }
 
+// Decide qué hacer con una lectura de código: suma 1 a la línea de producto con
+// el mismo itemId, sin superar lo pendiente y sin crear líneas nuevas (SPEC 011).
+export function resolveReceptionScan(items = [], itemId) {
+  const line = items.find((item) => item.tipoItem === "producto" && item.itemId === itemId);
+  if (!line) return {status: "not_in_reception"};
+  const pending = Math.max(0, Number(line.cantidadSolicitada) - Number(line.cantidadRecibidaAnterior));
+  const cantidad = (Number(line.cantidad) || 0) + 1;
+  if (cantidad > pending) return {status: "completed", line};
+  return {status: "added", line, cantidad};
+}
+
 export function canManageReceptions(role) {
   return ["OWNER", "ADMIN", "COMPRAS"].includes(String(role || "").toUpperCase());
 }

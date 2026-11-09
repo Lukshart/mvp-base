@@ -30,6 +30,9 @@ const {
   updateInventoryItemHandler,
 } = require("./inventoryModel");
 const {
+  searchInventoryMarketReferencesHandler,
+} = require("./marketReferences");
+const {
   createQuoteWithNumberHandler,
   duplicateQuoteAsDraftHandler,
   updateQuoteDraftHandler,
@@ -149,6 +152,7 @@ const {
   updateBusinessProfileHandler,
   validateBusinessProfileInput,
 } = require("./businessOnboarding");
+const {acceptLegalTermsHandler} = require("./legalAcceptance");
 const {
   updateBusinessInformationHandler,
   updateBusinessSettingsHandler,
@@ -161,6 +165,7 @@ const {
 const {
   cambiarEstadoEmpresaPlataformaHandler,
   cambiarEstadoUsuarioPlataformaHandler,
+  cambiarModulosEmpresaPlataformaHandler,
   eliminarEmpresaPermanentePlataformaHandler,
   listarEmpresasPlataformaHandler,
   listarUsuariosPlataformaHandler,
@@ -169,11 +174,18 @@ const {
   obtenerResumenPlataformaHandler,
   obtenerUsuarioPlataformaHandler,
 } = require("./platformAdmin");
+const {VERTICAL_MODULES} = require("./verticalModules");
 const {
   actualizarMembresiaNegocioHandler,
-  asociarUsuarioExistenteHandler,
   listarMiembrosNegocioHandler,
 } = require("./businessMemberships");
+const {
+  invitarMiembroNegocioHandler,
+  listarInvitacionesNegocioHandler,
+  listarMisInvitacionesHandler,
+  responderInvitacionHandler,
+  revocarInvitacionNegocioHandler,
+} = require("./teamInvitations");
 const {
   actualizarPerfilEmpleadoHandler,
   crearPerfilEmpleadoHandler,
@@ -183,13 +195,16 @@ const {
 const {
   actualizarTrabajoHandler,
   actualizarSubtareaTrabajoHandler,
+  adjuntarEvidenciaGastoTrabajoHandler,
   agregarNotaTrabajoHandler,
   agregarSubtareaTrabajoHandler,
+  anularAdicionalTrabajoHandler,
   anularGastoTrabajoHandler,
   anularHorasHombreTrabajoHandler,
   asignarTareaTrabajoHandler,
   cambiarEstadoTareaTrabajoV2Handler,
   cambiarEstadoTrabajoHandler,
+  crearAdicionalTrabajoHandler,
   crearTrabajoHandler,
   crearTareaTrabajoV2Handler,
   documentarTareaTrabajoHandler,
@@ -241,6 +256,7 @@ function onCall(optionsOrHandler, maybeHandler) {
  * Para desarrollo local tambien puede venir desde process.env.GEMINI_API_KEY.
  */
 const GEMINI_API_KEY_SECRET = defineSecret("GEMINI_API_KEY");
+const SERPER_API_KEY_SECRET = defineSecret("SERPER_API_KEY");
 const RESEND_API_KEY_SECRET = defineSecret("RESEND_API_KEY");
 const RESEND_FROM_EMAIL_SECRET = defineSecret("RESEND_FROM_EMAIL");
 const ALLOWED_QUOTE_ITEM_TYPES = ["producto", "servicio", "actividad"];
@@ -2460,6 +2476,7 @@ exports.liberarPlazaOT = onCall(vehicleCallableOptions, (request) =>
   liberarPlazaOTHandler(request, workOrderPersistenceDependencies));
 
 const workPersistenceDependencies = {
+  bucket: adminStorageBucket,
   db,
   auth: adminAuth,
   HttpsError,
@@ -2524,6 +2541,18 @@ exports.registrarGastoTrabajo = onCall(workCallableOptions, async (request) =>
 
 exports.anularGastoTrabajo = onCall(workCallableOptions, async (request) =>
   anularGastoTrabajoHandler(request, workPersistenceDependencies)
+);
+
+exports.crearAdicionalTrabajo = onCall(workCallableOptions, async (request) =>
+  crearAdicionalTrabajoHandler(request, workPersistenceDependencies)
+);
+
+exports.anularAdicionalTrabajo = onCall(workCallableOptions, async (request) =>
+  anularAdicionalTrabajoHandler(request, workPersistenceDependencies)
+);
+
+exports.adjuntarEvidenciaGastoTrabajo = onCall(workCallableOptions, async (request) =>
+  adjuntarEvidenciaGastoTrabajoHandler(request, workPersistenceDependencies)
 );
 
 exports.registrarHorasHombreTrabajo = onCall(workCallableOptions, async (request) =>
@@ -2617,6 +2646,16 @@ async function getCompanyProfileForQuote(businessRef, quote) {
     business: businessSnapshot.data() || {},
     profile: profileSnapshot.data() || {},
   });
+}
+
+function getSerperApiKey() {
+  if (process.env.SERPER_API_KEY) return process.env.SERPER_API_KEY;
+
+  try {
+    return SERPER_API_KEY_SECRET.value();
+  } catch {
+    return null;
+  }
 }
 
 function escapeHtml(value) {
@@ -4000,8 +4039,21 @@ const inventoryModelDependencies = {
   FieldValue,
   requireBusinessAccess: requireOperationalBusinessAccess,
 };
+const marketReferenceDependencies = {
+  db,
+  FieldValue,
+  HttpsError,
+  getApiKey: getSerperApiKey,
+  isEmulatorEnvironment,
+  requireBusinessAccess: requireOperationalBusinessAccess,
+};
 const businessOnboardingDependencies = {
   auth: adminAuth,
+  db,
+  HttpsError,
+  FieldValue,
+};
+const legalAcceptanceDependencies = {
   db,
   HttpsError,
   FieldValue,
@@ -4031,6 +4083,7 @@ const platformAdminDependencies = {
   FieldPath,
   FieldValue,
   HttpsError,
+  verticalModules: VERTICAL_MODULES,
 };
 const businessMembershipDependencies = {
   db,
@@ -4038,6 +4091,10 @@ const businessMembershipDependencies = {
   HttpsError,
   FieldValue,
   requireBusinessAccess: requireOperationalBusinessAccess,
+};
+const teamInvitationDependencies = {
+  ...businessMembershipDependencies,
+  Timestamp,
 };
 
 exports.getBusinessSession = onCall(
@@ -4049,6 +4106,17 @@ exports.getBusinessSession = onCall(
   },
   async (request) =>
     getBusinessSessionHandler(request, businessOnboardingDependencies)
+);
+
+exports.acceptLegalTerms = onCall(
+  {
+    maxInstances: 10,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    acceptLegalTermsHandler(request, legalAcceptanceDependencies)
 );
 
 exports.createFirstBusiness = onCall(
@@ -4207,6 +4275,11 @@ exports.cambiarEstadoUsuarioPlataforma = onCall(
   async (request) => cambiarEstadoUsuarioPlataformaHandler(request, platformAdminDependencies)
 );
 
+exports.cambiarModulosEmpresaPlataforma = onCall(
+  {maxInstances: 10, memory: "256MiB", region: DEFAULT_FUNCTION_REGION, timeoutSeconds: 30},
+  async (request) => cambiarModulosEmpresaPlataformaHandler(request, platformAdminDependencies)
+);
+
 exports.eliminarEmpresaPermanentePlataforma = onCall(
   {maxInstances: 2, memory: "512MiB", region: DEFAULT_FUNCTION_REGION, timeoutSeconds: 300},
   async (request) => eliminarEmpresaPermanentePlataformaHandler(
@@ -4226,7 +4299,7 @@ exports.listarMiembrosNegocio = onCall(
     listarMiembrosNegocioHandler(request, businessMembershipDependencies)
 );
 
-exports.asociarUsuarioExistente = onCall(
+exports.invitarMiembroNegocio = onCall(
   {
     maxInstances: 10,
     memory: "256MiB",
@@ -4234,7 +4307,51 @@ exports.asociarUsuarioExistente = onCall(
     timeoutSeconds: 30,
   },
   async (request) =>
-    asociarUsuarioExistenteHandler(request, businessMembershipDependencies)
+    invitarMiembroNegocioHandler(request, teamInvitationDependencies)
+);
+
+exports.listarInvitacionesNegocio = onCall(
+  {
+    maxInstances: 10,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    listarInvitacionesNegocioHandler(request, teamInvitationDependencies)
+);
+
+exports.revocarInvitacionNegocio = onCall(
+  {
+    maxInstances: 10,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    revocarInvitacionNegocioHandler(request, teamInvitationDependencies)
+);
+
+exports.listarMisInvitaciones = onCall(
+  {
+    maxInstances: 10,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    listarMisInvitacionesHandler(request, teamInvitationDependencies)
+);
+
+exports.responderInvitacion = onCall(
+  {
+    maxInstances: 10,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    timeoutSeconds: 30,
+  },
+  async (request) =>
+    responderInvitacionHandler(request, teamInvitationDependencies)
 );
 
 exports.actualizarMembresiaNegocio = onCall(
@@ -4603,6 +4720,18 @@ exports.normalizeInventoryDocument = onCall(
       HttpsError,
     });
   }
+);
+
+exports.searchInventoryMarketReferences = onCall(
+  {
+    maxInstances: 10,
+    memory: "256MiB",
+    region: DEFAULT_FUNCTION_REGION,
+    secrets: [SERPER_API_KEY_SECRET],
+    timeoutSeconds: 15,
+  },
+  async (request) =>
+    searchInventoryMarketReferencesHandler(request, marketReferenceDependencies)
 );
 
 /**

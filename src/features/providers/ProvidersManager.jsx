@@ -8,9 +8,11 @@ import {
   Search,
   Truck,
 } from "lucide-react";
+import ContactLinks from "../../components/contacts/ContactLinks";
 import AppIcon from "../../components/ui/AppIcon";
 import Button from "../../components/ui/Button";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
+import {SkeletonCards, SkeletonRegion, SkeletonTable} from "../../components/ui/Skeleton";
 import StatusBadge from "../../components/ui/StatusBadge";
 import {
   canManageProviders,
@@ -35,8 +37,15 @@ const PAYMENT_LABELS = {
   otro: "Otro",
 };
 
-function contactSummary(provider) {
-  return provider.personaContacto || provider.email || provider.telefono || "Sin datos de contacto";
+function ProviderContact({countryCode, provider}) {
+  return (
+    <>
+      {provider.personaContacto && <span>{provider.personaContacto}</span>}
+      {(provider.email || provider.telefono || !provider.personaContacto) && (
+        <ContactLinks countryCode={countryCode} email={provider.email} name={provider.razonSocial} telefono={provider.telefono} />
+      )}
+    </>
+  );
 }
 
 function locationSummary(provider) {
@@ -195,12 +204,11 @@ function ProvidersManager({businessId, countryCode = "CL", role}) {
 
   return (
     <section className="erp-page clients-page providers-page">
-      <div className="erp-module-intro">
-        <div className="erp-page-intro">
-          <p>Mantén una ficha única por {fiscalLabel} para cada proveedor del negocio activo.</p>
+      {canManage && (
+        <div className="erp-module-intro">
+          <Button icon={Plus} onClick={openCreate}>Nuevo proveedor</Button>
         </div>
-        {canManage && <Button icon={Plus} onClick={openCreate}>Nuevo proveedor</Button>}
-      </div>
+      )}
 
       {!canManage && (
         <div className="client-message client-message--warning" role="status">
@@ -250,7 +258,10 @@ function ProvidersManager({businessId, countryCode = "CL", role}) {
         </div>
 
         {loading ? (
-          <div className="erp-empty-state" role="status">Cargando proveedores del negocio activo...</div>
+          <SkeletonRegion label="Cargando proveedores del negocio activo...">
+            <SkeletonTable className="erp-desktop-only" columns={6} twoLine />
+            <SkeletonCards className="erp-card-list erp-mobile-only" />
+          </SkeletonRegion>
         ) : !loadError && visibleProviders.length === 0 ? (
           <div className="erp-empty-state clients-empty-state">
             <AppIcon icon={Truck} size={28} />
@@ -276,7 +287,7 @@ function ProvidersManager({businessId, countryCode = "CL", role}) {
                         <strong className="clients-table__name">{provider.razonSocial}</strong>
                         <span className="clients-table__secondary">{provider.identificadorFiscalValor || provider.rut}{provider.nombreFantasia ? ` · ${provider.nombreFantasia}` : ""}</span>
                       </td>
-                      <td><span>{contactSummary(provider)}</span>{provider.email && <span className="clients-table__secondary">{provider.email}</span>}{provider.telefono && <span className="clients-table__secondary">{provider.telefono}</span>}</td>
+                      <td><ProviderContact countryCode={countryCode} provider={provider} /></td>
                       <td>{locationSummary(provider)}</td>
                       <td>{paymentSummary(provider)}</td>
                       <td><StatusBadge variant={provider.estado === "activo" ? "success" : "neutral"}>{provider.estado === "activo" ? "Activo" : "Archivado"}</StatusBadge></td>
@@ -297,7 +308,7 @@ function ProvidersManager({businessId, countryCode = "CL", role}) {
                     <StatusBadge variant={provider.estado === "activo" ? "success" : "neutral"}>{provider.estado === "activo" ? "Activo" : "Archivado"}</StatusBadge>
                   </header>
                   <dl className="client-card__details">
-                    <div><dt>Contacto</dt><dd>{contactSummary(provider)}</dd></div>
+                    <div><dt>Contacto</dt><dd><ProviderContact countryCode={countryCode} provider={provider} /></dd></div>
                     <div><dt>Ubicación</dt><dd>{locationSummary(provider)}</dd></div>
                     <div><dt>Condiciones</dt><dd>{paymentSummary(provider)}</dd></div>
                   </dl>
@@ -318,7 +329,7 @@ function ProvidersManager({businessId, countryCode = "CL", role}) {
         footer={(
           <>
             <Button type="button" variant="secondary" disabled={changingStatus} onClick={() => setConfirmation(null)}>Cancelar</Button>
-            <Button type="button" variant={confirmationIsArchive ? "danger" : "primary"} disabled={changingStatus} onClick={confirmStatusChange}>
+            <Button type="button" variant={confirmationIsArchive ? "danger" : "primary"} loading={changingStatus} onClick={confirmStatusChange}>
               {changingStatus ? "Procesando..." : confirmationIsArchive ? "Archivar proveedor" : "Reactivar proveedor"}
             </Button>
           </>

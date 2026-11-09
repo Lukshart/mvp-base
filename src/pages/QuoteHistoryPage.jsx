@@ -1,8 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import {
   Download,
-  Ellipsis,
   Mail,
   MessageCircle,
   Plus,
@@ -15,17 +13,25 @@ import QuotePrintView from "../features/quotes/QuotePrintView";
 import SendQuoteEmailModal from "../features/quotes/SendQuoteEmailModal";
 import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
+import MoreActionsMenu from "../components/ui/MoreActionsMenu";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
+import SegmentedControl from "../components/ui/SegmentedControl";
+import {SkeletonCards, SkeletonRegion, SkeletonTable} from "../components/ui/Skeleton";
+import UiStatusBadge from "../components/ui/StatusBadge";
 import { getCompanyProfile } from "../services/companyService";
 import {
   canDuplicateQuotes,
+  DEFAULT_QUOTE_VALIDITY_DAYS,
+  getQuoteExpiryAlert,
   getQuoteStatusLabel,
+  matchesQuoteQuickFilter,
   QUOTE_STATUS_LABELS,
 } from "../domain/quoteModel.mjs";
 import {
   createQuoteDuplicateRequestId,
   createQuoteLifecycleRequestId,
   duplicateQuoteAsDraft,
+  getChileDateInputValue,
   getQuoteEvents,
   getQuoteDisplayNumber,
   getQuotes,
@@ -38,7 +44,7 @@ import {
   createQuoteDeliveryRequestId,
   prepareQuoteWhatsAppShare,
 } from "../services/publicQuoteService";
-import { formatDate, formatMoney } from "../utils/formatters";
+import { formatDate, formatMoney, formatTimestamp } from "../utils/formatters";
 import { downloadQuotePdf, shareQuotePdf } from "../utils/quotePdf";
 import {
   BUSINESS_PERMISSIONS,
@@ -48,6 +54,7 @@ import {
 const STATUS_OPTIONS = [
   "borrador",
   "emitida",
+  "por_vencer",
   "aceptada",
   "rechazada",
   "vencida",
@@ -55,6 +62,20 @@ const STATUS_OPTIONS = [
 ];
 
 const statusLabels = QUOTE_STATUS_LABELS;
+
+// "Por vencer" no es un estado: emitidas que vencen en los próximos días o
+// que ya pasaron su fecha sin marcarse (ver getQuoteExpiryAlert).
+const filterLabels = {...QUOTE_STATUS_LABELS, por_vencer: "Por vencer"};
+
+const QUICK_FILTERS = [
+  ["todos", "Todas"],
+  ["borrador", "Pendientes"],
+  ["emitida", "Emitidas"],
+  ["por_vencer", "Por vencer"],
+  ["aceptada", "Aceptadas"],
+  ["rechazada", "Rechazadas"],
+  ["vencida", "Vencidas"],
+];
 
 const statusFeedbackTitles = {
   borrador: "Cotización restaurada como pendiente",
@@ -76,54 +97,42 @@ const REJECTION_REASON_LABELS = Object.freeze({
 
 const statusStyles = {
   borrador: {
-    background: "#e0f2fe",
-    color: "#0369a1",
+    background: "var(--color-info-50)",
+    color: "var(--color-info-700)",
   },
   emitida: {
-    background: "#dbeafe",
-    color: "#1d4ed8",
+    background: "var(--color-info-50)",
+    color: "var(--color-info-700)",
   },
   aceptada: {
-    background: "#dcfce7",
-    color: "#166534",
+    background: "var(--color-success-50)",
+    color: "var(--color-success-700)",
   },
   rechazada: {
-    background: "#fee2e2",
-    color: "#991b1b",
+    background: "var(--color-danger-50)",
+    color: "var(--color-danger-700)",
   },
   vencida: {
-    background: "#fef3c7",
-    color: "#92400e",
+    background: "var(--color-warning-50)",
+    color: "var(--color-warning-800)",
   },
   archivada: {
-    background: "#e5e7eb",
-    color: "#374151",
+    background: "var(--color-surface-subtle)",
+    color: "var(--color-text-default)",
   },
 };
 
-function formatTimestamp(value) {
-  if (!value) return "-";
-
-  const date =
-    typeof value?.toDate === "function"
-      ? value.toDate()
-      : value instanceof Date
-      ? value
-      : new Date(value);
-
-  if (Number.isNaN(date.getTime())) return "-";
-
-  return date.toLocaleString("es-CL", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+function getQuoteClientFiscalId(quote) {
+  return quote?.cliente?.identificadorFiscalValor || quote?.clienteRut || "";
 }
 
-function getQuoteTimestamp(quote) {
-  return quote?.actualizadoEn || quote?.creadoEn || null;
+function getExpiryAlertLabel(alert, quote) {
+  if (alert.kind === "vencida_sin_marcar") {
+    return `Venció el ${formatDate(quote.fechaVencimiento)}`;
+  }
+  if (alert.days === 0) return "Vence hoy";
+  if (alert.days === 1) return "Vence mañana";
+  return `Vence en ${alert.days} días`;
 }
 
 function getEmailActionHint(quote) {
@@ -153,6 +162,8 @@ function QuoteHistoryPage({ userId, role }) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("todos");
   const [error, setError] = useState("");
+  // Falló la CARGA de la lista (`error` también lleva errores de acciones).
+  const [loadFailed, setLoadFailed] = useState(false);
   const [success, setSuccess] = useState("");
   const [emailModalQuote, setEmailModalQuote] = useState(null);
   const [restoreDetailFocus, setRestoreDetailFocus] = useState(true);
@@ -170,6 +181,10 @@ function QuoteHistoryPage({ userId, role }) {
     role,
     BUSINESS_PERMISSIONS.INVENTORY_WRITE
   );
+  const canReadSales = hasBusinessPermission(
+    role,
+    BUSINESS_PERMISSIONS.SALES_READ
+  );
 
   useEffect(() => {
     if (!userId) {
@@ -185,11 +200,13 @@ function QuoteHistoryPage({ userId, role }) {
       .then((items) => {
         if (!active) return;
         setQuotes(items);
+        setLoadFailed(false);
       })
       .catch((err) => {
         console.error("Error al cargar cotizaciones:", err);
         if (active) {
           setError("No se pudieron cargar las cotizaciones.");
+          setLoadFailed(true);
         }
       })
       .finally(() => {
@@ -224,28 +241,37 @@ function QuoteHistoryPage({ userId, role }) {
     navigate(location.pathname, { replace: true, state: null });
   }, [location.pathname, location.state, navigate, quotes]);
 
-  const filteredQuotes = useMemo(() => {
+  const today = getChileDateInputValue();
+
+  const searchedQuotes = useMemo(() => {
     const query = search.trim().toLowerCase();
+    if (!query) return quotes;
 
     return quotes.filter((quote) => {
-      const estado = quote.estado || "borrador";
-
-      if (statusFilter === "todos" && estado === "archivada") {
-        return false;
-      }
-
-      if (statusFilter !== "todos" && estado !== statusFilter) {
-        return false;
-      }
-
-      if (!query) return true;
-
       const text = `${getQuoteDisplayNumber(quote, quote.id || "")} ${
         quote.clienteNombre || ""
       }`.toLowerCase();
       return text.includes(query);
     });
-  }, [quotes, search, statusFilter]);
+  }, [quotes, search]);
+
+  const filteredQuotes = useMemo(
+    () => searchedQuotes.filter((quote) =>
+      matchesQuoteQuickFilter(quote, statusFilter, today)
+    ),
+    [searchedQuotes, statusFilter, today]
+  );
+
+  // Las cantidades respetan la búsqueda, no el filtro de estado.
+  const quickFilterOptions = useMemo(
+    () => QUICK_FILTERS.map(([value, label]) => ({
+      value,
+      label: `${label} (${searchedQuotes.filter((quote) =>
+        matchesQuoteQuickFilter(quote, value, today)
+      ).length})`,
+    })),
+    [searchedQuotes, today]
+  );
 
   const selectedQuote = useMemo(
     () => {
@@ -286,6 +312,12 @@ function QuoteHistoryPage({ userId, role }) {
   };
 
   const handleCloseDetail = () => setSelectedQuoteId("");
+
+  // "Enviar"/"Reenviar": Correo y WhatsApp viven en el diálogo de detalle.
+  const handleOpenDetail = (quote) => {
+    setRestoreDetailFocus(true);
+    setSelectedQuoteId(quote.id);
+  };
 
   const handleChangeStatus = async (quoteId, estado, options = {}) => {
     const {
@@ -526,16 +558,13 @@ function QuoteHistoryPage({ userId, role }) {
 
   return (
     <section className="quote-history-page erp-page">
-      <div className="no-print erp-module-intro">
-        <div className="erp-page-intro">
-          <p>Consulta y administra las cotizaciones del negocio.</p>
-        </div>
-        {canDuplicate && quotes.length > 0 && (
+      {canDuplicate && quotes.length > 0 && (
+        <div className="no-print erp-module-intro">
           <Button type="button" icon={Plus} onClick={() => navigate("/cotizaciones/nueva")}>
             Nueva cotización
           </Button>
-        )}
-      </div>
+        </div>
+      )}
 
       {error && <div className="no-print client-message client-message--error" role="alert">{error}</div>}
       {success && <div className="no-print client-message" role="status">{success}</div>}
@@ -544,7 +573,7 @@ function QuoteHistoryPage({ userId, role }) {
         <div className="erp-panel-header">
           <div>
             <h2 className="erp-panel-title">Cotizaciones registradas</h2>
-            <p className="erp-secondary-text">{filteredQuotes.length} de {quotes.length} cotizaciones</p>
+            <p className="erp-secondary-text">{filteredQuotes.length} {filteredQuotes.length === 1 ? "cotización" : "cotizaciones"}</p>
           </div>
         </div>
 
@@ -572,7 +601,7 @@ function QuoteHistoryPage({ userId, role }) {
               <option value="todos">Todas excepto archivadas</option>
               {STATUS_OPTIONS.map((status) => (
                 <option key={status} value={status}>
-                  {statusLabels[status]}
+                  {filterLabels[status]}
                 </option>
               ))}
             </select>
@@ -580,9 +609,23 @@ function QuoteHistoryPage({ userId, role }) {
           </div>
         )}
 
+        {quotes.length > 0 && (
+          <SegmentedControl
+            className="quote-history-quick-filters"
+            legend="Filtrar cotizaciones por estado"
+            name="quote-history-quick-filter"
+            onChange={setStatusFilter}
+            options={quickFilterOptions}
+            value={statusFilter}
+          />
+        )}
+
         {loading ? (
-          <div className="erp-empty-state" role="status">Cargando cotizaciones...</div>
-        ) : quotes.length === 0 ? (
+          <SkeletonRegion label="Cargando cotizaciones...">
+            <SkeletonTable className="erp-desktop-only quote-history-skeleton" columns={canDuplicate ? 6 : 5} />
+            <SkeletonCards className="erp-card-list erp-mobile-only" />
+          </SkeletonRegion>
+        ) : loadFailed && quotes.length === 0 ? null : quotes.length === 0 ? (
           <div className="erp-empty-state quote-history-empty">
             <h3>Aún no hay cotizaciones</h3>
             <p>Crea una cotización para registrar una nueva propuesta comercial.</p>
@@ -629,9 +672,8 @@ function QuoteHistoryPage({ userId, role }) {
                   <th className="quote-history-table__client">Cliente</th>
                   <th className="quote-history-table__status">Estado</th>
                   <th className="quote-history-table__total">Total</th>
-                  <th className="quote-history-table__sale">Venta</th>
-                  <th className="quote-history-table__updated">Actualización</th>
-                  <th className="quote-history-table__actions">Acciones</th>
+                  <th className="quote-history-table__validity">Válida hasta</th>
+                  {canDuplicate && <th className="quote-history-table__actions">Acciones</th>}
                 </tr>
               </thead>
               <tbody>
@@ -640,7 +682,7 @@ function QuoteHistoryPage({ userId, role }) {
                     key={quote.id}
                     className={quote.id === selectedQuoteId ? "quote-history-table__row--selected" : undefined}
                   >
-                    <td>
+                    <td className="quote-history-table__number">
                       <button
                         type="button"
                         className="quote-record-link"
@@ -651,38 +693,42 @@ function QuoteHistoryPage({ userId, role }) {
                         {getQuoteDisplayNumber(quote, quote.id || "-")}
                       </button>
                     </td>
-                    <td
-                      className="quote-history-table__client-cell"
-                      title={quote.clienteNombre || ""}
-                    >
-                      {quote.clienteNombre || "-"}
-                    </td>
                     <td>
+                      <strong className="clients-table__name">{quote.clienteNombre || "-"}</strong>
+                      {getQuoteClientFiscalId(quote) && (
+                        <small className="clients-table__secondary">{getQuoteClientFiscalId(quote)}</small>
+                      )}
+                    </td>
+                    <td className="quote-history-table__status">
                       <StatusBadge status={quote.estado} />
+                      {/* Sin acciones en la fila no hay botón "Ver venta":
+                          el número de venta queda bajo el estado. */}
+                      {!canDuplicate && quote.estado === "aceptada" && quote.ventaId && quote.ventaNumero && (
+                        canReadSales ? (
+                          <button
+                            type="button"
+                            className="quote-record-link quote-history-sale-link"
+                            onClick={() => handleOpenSale(quote)}
+                          >
+                            {quote.ventaNumero}
+                          </button>
+                        ) : (
+                          <small className="clients-table__secondary">{quote.ventaNumero}</small>
+                        )
+                      )}
                     </td>
                     <td className="quote-history-table__total">
                       <strong>{formatMoney(quote.total, quote.moneda, quote.locale)}</strong>
                     </td>
-                    <td>
-                      {quote.ventaId && quote.ventaNumero ? (
-                        <button
-                          type="button"
-                          className="quote-record-link"
-                          onClick={() => handleOpenSale(quote)}
-                        >
-                          {quote.ventaNumero}
-                        </button>
-                      ) : (
-                        "—"
-                      )}
+                    <td className="quote-history-table__validity">
+                      <QuoteValidity quote={quote} today={today} />
                     </td>
-                    <td>
-                      {formatTimestamp(getQuoteTimestamp(quote))}
-                    </td>
+                    {/* Roles sin acciones: no se muestra la columna. */}
+                    {canDuplicate && (
                     <td className="quote-history-table__actions">
                       <div style={styles.rowActions}>
-                        {canDuplicate && (
                         <QuoteActions
+                          inRow
                           quote={quote}
                           disabled={savingStatus}
                           onChangeStatus={handleChangeStatus}
@@ -693,11 +739,14 @@ function QuoteHistoryPage({ userId, role }) {
                           duplicating={duplicatingQuoteId === quote.id}
                           onDuplicate={handleDuplicateQuote}
                           onAcceptQuote={handleAcceptQuote}
+                          onOpenSale={handleOpenSale}
                           onReopen={handleReopenQuote}
+                          onSend={handleOpenDetail}
                           accepting={acceptingQuoteId === quote.id}
-                        /> )}
+                        />
                       </div>
                     </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -718,7 +767,9 @@ function QuoteHistoryPage({ userId, role }) {
             onEditDraft={handleEditDraft}
             onReopen={handleReopenQuote}
             onRestore={handleRestoreQuote}
+            onSend={handleOpenDetail}
             acceptingQuoteId={acceptingQuoteId}
+            today={today}
           />
           </>
         )}
@@ -763,6 +814,7 @@ function QuoteHistoryPage({ userId, role }) {
                 duplicating={duplicatingQuoteId === selectedQuote.id}
                 onDuplicate={handleDuplicateQuote}
                 onAcceptQuote={handleAcceptQuote}
+                onOpenSale={handleOpenSale}
                 onReopen={handleReopenQuote}
                 accepting={acceptingQuoteId === selectedQuote.id}
               /> )}
@@ -809,7 +861,7 @@ function QuoteHistoryPage({ userId, role }) {
             </Button>
             <Button
               type="button"
-              disabled={savingStatus || Boolean(acceptingQuoteId)}
+              loading={savingStatus || Boolean(acceptingQuoteId)}
               onClick={handleConfirmAcceptance}
             >
               {savingStatus || acceptingQuoteId
@@ -854,6 +906,56 @@ function StatusBadge({ status }) {
     >
       {getQuoteStatusLabel(normalizedStatus)}
     </span>
+  );
+}
+
+function QuoteValidity({ quote, today }) {
+  const estado = quote.estado || "borrador";
+  const emissionLabel = quote.fechaEmision
+    ? `Emitida ${formatDate(quote.fechaEmision)}`
+    : `Creada ${formatDate(quote.fecha)}`;
+
+  if (estado === "borrador") {
+    return (
+      <>
+        <span>{quote.validezDias || DEFAULT_QUOTE_VALIDITY_DAYS} días al emitir</span>
+        <small className="clients-table__secondary">
+          Sin emitir · Creada {formatDate(quote.fecha)}
+        </small>
+      </>
+    );
+  }
+
+  // La vigencia solo tiene sentido en pendientes y emitidas. De los cierres,
+  // solo la aceptación tiene fecha confiable: ventaRegistradaEn se escribe
+  // junto con la venta y una aceptada con venta no se reabre. Rechazos y
+  // vencimientos manuales no guardan fecha, y respuestaClienteEn/vencidaEn
+  // no se limpian al reabrir.
+  if (estado !== "emitida") {
+    if (estado === "aceptada" && quote.ventaRegistradaEn) {
+      return (
+        <>
+          <span>Aceptada {formatDate(quote.ventaRegistradaEn)}</span>
+          <small className="clients-table__secondary">{emissionLabel}</small>
+        </>
+      );
+    }
+    return <span>{emissionLabel}</span>;
+  }
+
+  const alert = getQuoteExpiryAlert(quote, today);
+  return (
+    <>
+      <span className="quote-history-validity">
+        <span>{formatDate(quote.fechaVencimiento)}</span>
+        {alert.kind && (
+          <UiStatusBadge variant={alert.kind === "por_vencer" ? "warning" : "danger"}>
+            {getExpiryAlertLabel(alert, quote)}
+          </UiStatusBadge>
+        )}
+      </span>
+      <small className="clients-table__secondary">{emissionLabel}</small>
+    </>
   );
 }
 
@@ -902,7 +1004,9 @@ function QuoteCards({
   onEditDraft,
   onReopen,
   onRestore,
+  onSend,
   acceptingQuoteId,
+  today,
 }) {
   return (
     <div className="erp-card-list erp-mobile-only" aria-label="Cotizaciones">
@@ -924,13 +1028,16 @@ function QuoteCards({
               <p className="erp-record-card__subtitle">
                 {quote.clienteNombre || "Cliente sin nombre"}
               </p>
+              {getQuoteClientFiscalId(quote) && (
+                <small className="clients-table__secondary">{getQuoteClientFiscalId(quote)}</small>
+              )}
             </div>
             <StatusBadge status={quote.estado} />
           </div>
           <dl className="erp-meta-grid">
             <div className="erp-meta">
-              <dt className="erp-meta__label">Fecha</dt>
-              <dd className="erp-meta__value">{formatDate(quote.fecha)}</dd>
+              <dt className="erp-meta__label">Válida hasta</dt>
+              <dd className="erp-meta__value"><QuoteValidity quote={quote} today={today} /></dd>
             </div>
             <div className="erp-meta">
               <dt className="erp-meta__label">Total</dt>
@@ -964,6 +1071,7 @@ function QuoteCards({
           {canDuplicate && (
             <div className="erp-actions" style={styles.mobileCardActions}>
               <QuoteActions
+                inRow
                 quote={quote}
                 disabled={disabled}
                 onChangeStatus={onChangeStatus}
@@ -974,7 +1082,9 @@ function QuoteCards({
                 duplicating={duplicatingQuoteId === quote.id}
                 onDuplicate={onDuplicate}
                 onAcceptQuote={onAcceptQuote}
+                onOpenSale={onOpenSale}
                 onReopen={onReopen}
+                onSend={onSend}
                 accepting={acceptingQuoteId === quote.id}
               />
             </div>
@@ -996,10 +1106,17 @@ function QuoteActions({
   duplicating,
   onDuplicate,
   onAcceptQuote,
+  onOpenSale,
   onReopen,
+  onSend,
   accepting,
+  inRow = false,
 }) {
   const estado = quote.estado || "borrador";
+  // En las filas todas las acciones van en estilo secundario (el relleno
+  // queda para "Nueva cotización") y "Más acciones" es solo ícono. El
+  // diálogo de detalle conserva su presentación.
+  const mainActionStyle = inRow ? styles.secondaryButton : styles.primaryButton;
   const duplicateMenuAction = canDuplicate && estado !== "borrador"
     ? {
         label: duplicating ? "Creando copia..." : "Duplicar como pendiente",
@@ -1021,7 +1138,7 @@ function QuoteActions({
 
     return (
       <>
-        {estado === "archivada" && (
+        {estado === "archivada" ? (
           <button
             type="button"
             onClick={() => onRestore(quote)}
@@ -1030,9 +1147,20 @@ function QuoteActions({
           >
             Restaurar
           </button>
+        ) : onOpenSale && (
+          <button
+            type="button"
+            onClick={() => onOpenSale(quote)}
+            disabled={disabled}
+            style={styles.secondaryButton}
+          >
+            Ver venta
+          </button>
         )}
         {linkedSaleActions.length > 0 && (
           <MoreActionsMenu
+            iconOnly={inRow}
+            menuLabel="Más acciones de cotización"
             disabled={disabled || duplicating}
             actions={linkedSaleActions}
           />
@@ -1042,27 +1170,56 @@ function QuoteActions({
   }
 
   if (estado === "borrador") {
+    const editMenuAction = {
+      label: "Editar cotización",
+      disabled,
+      onSelect: () => onEditDraft(quote.id),
+    };
+    // Indica que la cotización fue enviada al cliente; no registra una venta.
+    const emitMenuAction = {
+      label: "Marcar como emitida",
+      disabled,
+      onSelect: () => onChangeStatus(quote.id, "emitida"),
+    };
+
+    // En el diálogo de detalle el envío ya está visible arriba (sin onSend):
+    // la acción principal ahí es editar.
+    if (!onSend) {
+      return (
+        <>
+          <button
+            type="button"
+            onClick={() => onEditDraft(quote.id)}
+            disabled={disabled}
+            style={styles.secondaryButton}
+          >
+            Editar cotización
+          </button>
+          <MoreActionsMenu
+            iconOnly={inRow}
+            menuLabel="Más acciones de cotización"
+            actions={[emitMenuAction, archiveMenuAction]}
+            disabled={disabled}
+          />
+        </>
+      );
+    }
+
     return (
       <>
         <button
           type="button"
-          onClick={() => onEditDraft(quote.id)}
+          onClick={() => onSend(quote)}
           disabled={disabled}
-          style={styles.secondaryButton}
+          style={mainActionStyle}
+          title="Abre la cotización para enviarla al cliente."
         >
-          Editar cotización
-        </button>
-        <button
-          type="button"
-          onClick={() => onChangeStatus(quote.id, "emitida")}
-          disabled={disabled}
-          style={styles.primaryButton}
-          title="Indica que la cotización fue enviada al cliente. Todavía no registra una venta."
-        >
-          Marcar como emitida
+          Enviar
         </button>
         <MoreActionsMenu
-          actions={[archiveMenuAction]}
+          iconOnly={inRow}
+          menuLabel="Más acciones de cotización"
+          actions={[editMenuAction, emitMenuAction, archiveMenuAction]}
           disabled={disabled}
         />
       </>
@@ -1076,13 +1233,19 @@ function QuoteActions({
           type="button"
           onClick={() => onAcceptQuote(quote)}
           disabled={disabled || accepting}
-          style={styles.primaryButton}
+          style={mainActionStyle}
         >
           {accepting ? "Registrando..." : "Aceptar cotización"}
         </button>
         <MoreActionsMenu
+          iconOnly={inRow}
+          menuLabel="Más acciones de cotización"
           disabled={disabled || accepting}
           actions={[
+            onSend && {
+              label: "Reenviar",
+              onSelect: () => onSend(quote),
+            },
             {
               label: "Rechazar",
               onSelect: () => onChangeStatus(quote.id, "rechazada"),
@@ -1103,6 +1266,8 @@ function QuoteActions({
     return (
       <>
         <MoreActionsMenu
+          iconOnly={inRow}
+          menuLabel="Más acciones de cotización"
           disabled={disabled}
           actions={[
             {
@@ -1129,6 +1294,8 @@ function QuoteActions({
           Reabrir como emitida
         </button>
         <MoreActionsMenu
+          iconOnly={inRow}
+          menuLabel="Más acciones de cotización"
           disabled={disabled}
           actions={[duplicateMenuAction, archiveMenuAction].filter(Boolean)}
         />
@@ -1149,6 +1316,8 @@ function QuoteActions({
         </button>
         {duplicateMenuAction && (
           <MoreActionsMenu
+            iconOnly={inRow}
+            menuLabel="Más acciones de cotización"
             disabled={disabled || duplicating}
             actions={[duplicateMenuAction]}
           />
@@ -1158,148 +1327,6 @@ function QuoteActions({
   }
 
   return null;
-}
-
-function MoreActionsMenu({ actions, disabled }) {
-  const [open, setOpen] = useState(false);
-  const [position, setPosition] = useState({ left: 0, top: 0 });
-  const triggerRef = useRef(null);
-  const menuRef = useRef(null);
-  const itemRefs = useRef([]);
-  const menuId = React.useId();
-
-  useEffect(() => {
-    if (!open) return undefined;
-
-    const closeMenu = () => setOpen(false);
-    const handlePointerDown = (event) => {
-      if (
-        !triggerRef.current?.contains(event.target) &&
-        !menuRef.current?.contains(event.target)
-      ) {
-        closeMenu();
-      }
-    };
-    const handleKeyDown = (event) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      closeMenu();
-      triggerRef.current?.focus();
-    };
-
-    document.addEventListener("pointerdown", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("resize", closeMenu);
-    window.addEventListener("scroll", closeMenu, true);
-    return () => {
-      document.removeEventListener("pointerdown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("resize", closeMenu);
-      window.removeEventListener("scroll", closeMenu, true);
-    };
-  }, [open]);
-
-  const openMenu = (focusLast = false) => {
-    const trigger = triggerRef.current;
-    if (!trigger || disabled) return;
-
-    const rect = trigger.getBoundingClientRect();
-    const menuWidth = 224;
-    const estimatedHeight = actions.length * 42 + 12;
-    const left = Math.max(
-      8,
-      Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8)
-    );
-    const below = rect.bottom + 6;
-    const top = below + estimatedHeight <= window.innerHeight - 8
-      ? below
-      : Math.max(8, rect.top - estimatedHeight - 6);
-
-    setPosition({ left, top });
-    setOpen(true);
-    window.requestAnimationFrame(() => {
-      const availableItems = itemRefs.current.filter(
-        (item) => item && !item.disabled
-      );
-      const targetIndex = focusLast ? availableItems.length - 1 : 0;
-      availableItems[targetIndex]?.focus();
-    });
-  };
-
-  const handleMenuKeyDown = (event) => {
-    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
-    event.preventDefault();
-    const availableItems = itemRefs.current.filter(
-      (item) => item && !item.disabled
-    );
-    if (!availableItems.length) return;
-    const currentIndex = availableItems.indexOf(document.activeElement);
-    const nextIndex = event.key === "Home"
-      ? 0
-      : event.key === "End"
-        ? availableItems.length - 1
-        : event.key === "ArrowDown"
-          ? (currentIndex + 1 + availableItems.length) % availableItems.length
-          : (currentIndex - 1 + availableItems.length) % availableItems.length;
-    availableItems[nextIndex]?.focus();
-  };
-
-  const handleSelect = (action) => {
-    setOpen(false);
-    triggerRef.current?.focus();
-    action.onSelect();
-  };
-
-  return (
-    <>
-      <button
-        ref={triggerRef}
-        type="button"
-        aria-controls={open ? menuId : undefined}
-        aria-expanded={open}
-        aria-haspopup="menu"
-        disabled={disabled}
-        onClick={() => (open ? setOpen(false) : openMenu())}
-        onKeyDown={(event) => {
-          if (!open && ["ArrowDown", "ArrowUp"].includes(event.key)) {
-            event.preventDefault();
-            openMenu(event.key === "ArrowUp");
-          }
-        }}
-        style={styles.moreActionsButton}
-      >
-        <span>Más acciones</span>
-        <AppIcon icon={Ellipsis} size={17} />
-      </button>
-      {open && typeof document !== "undefined" && createPortal(
-        <div
-          id={menuId}
-          ref={menuRef}
-          role="menu"
-          aria-label="Más acciones de cotización"
-          onKeyDown={handleMenuKeyDown}
-          style={{ ...styles.actionsMenu, ...position }}
-        >
-          {actions.map((action, index) => (
-            <button
-              key={action.label}
-              ref={(node) => {
-                itemRefs.current[index] = node;
-              }}
-              type="button"
-              role="menuitem"
-              disabled={action.disabled}
-              onClick={() => handleSelect(action)}
-              style={styles.actionsMenuItem}
-            >
-              {action.label}
-            </button>
-          ))}
-        </div>,
-        document.body
-      )}
-    </>
-  );
 }
 
 function QuoteDocumentActions({
@@ -1463,7 +1490,7 @@ function QuoteDocumentActions({
             </Button>
             <Button
               type="button"
-              disabled={confirmingWhatsApp}
+              loading={confirmingWhatsApp}
               onClick={confirmWhatsAppSent}
             >
               {confirmingWhatsApp ? "Registrando..." : "Sí, fue enviada"}
@@ -1710,8 +1737,8 @@ function CommercialStatusTimeline({ quote }) {
 
 const styles = {
   commercialStatus: {
-    background: "#f8fafc",
-    border: "1px solid #e2e8f0",
+    background: "var(--color-surface-subtle)",
+    border: "1px solid var(--color-border-default)",
     borderRadius: "6px",
     display: "grid",
     gap: "8px",
@@ -1719,7 +1746,7 @@ const styles = {
     padding: "11px 12px",
   },
   commercialStatusTitle: {
-    color: "#0f172a",
+    color: "var(--color-text-strong)",
     fontSize: "13px",
   },
   commercialStatusGrid: {
@@ -1728,30 +1755,30 @@ const styles = {
     gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
   },
   commercialStatusEvent: {
-    borderLeft: "2px solid #0f766e",
+    borderLeft: "2px solid var(--color-text-brand-accent)",
     display: "grid",
     gap: "2px",
     paddingLeft: "8px",
   },
   commercialStatusCurrent: {
-    background: "#ffffff",
-    border: "1px solid #cbd5e1",
-    borderLeft: "4px solid #0f766e",
+    background: "var(--color-surface-panel)",
+    border: "1px solid var(--color-border-control)",
+    borderLeft: "4px solid var(--color-text-brand-accent)",
     borderRadius: "5px",
     gridColumn: "1 / -1",
     padding: "9px 10px",
   },
   commercialStatusLabel: {
-    color: "#334155",
+    color: "var(--color-text-default)",
     fontSize: "12px",
     fontWeight: 700,
   },
   commercialStatusValue: {
-    color: "#64748b",
+    color: "var(--color-text-muted)",
     fontSize: "12px",
   },
   commercialStatusNote: {
-    color: "#0f766e",
+    color: "var(--color-text-brand-accent)",
     fontSize: "11px",
     fontWeight: 700,
   },
@@ -1765,11 +1792,11 @@ const styles = {
     gap: "1px",
   },
   commercialStatusDetailLabel: {
-    color: "#334155",
+    color: "var(--color-text-default)",
     fontSize: "11px",
   },
   commercialStatusDetailValue: {
-    color: "#475569",
+    color: "var(--color-text-default)",
     fontSize: "12px",
     overflowWrap: "anywhere",
     whiteSpace: "pre-wrap",
@@ -1779,14 +1806,14 @@ const styles = {
     fontSize: "17px",
   },
   helpText: {
-    color: "#64748b",
+    color: "var(--color-text-muted)",
     margin: 0,
     fontSize: "14px",
   },
   rowActions: {
     alignItems: "center",
     display: "flex",
-    flexWrap: "wrap",
+    flexWrap: "nowrap",
     gap: "8px",
     minWidth: 0,
   },
@@ -1794,60 +1821,21 @@ const styles = {
     marginTop: "12px",
   },
   primaryButton: {
-    background: "#0f766e",
-    border: "1px solid #0f766e",
+    background: "var(--color-brand-600)",
+    border: "1px solid var(--color-brand-600)",
     borderRadius: "4px",
-    color: "#ffffff",
+    color: "var(--color-text-inverse)",
     cursor: "pointer",
     fontSize: "13px",
     fontWeight: 800,
     minHeight: "38px",
     padding: "8px 11px",
   },
-  moreActionsButton: {
-    alignItems: "center",
-    background: "#f8fafc",
-    border: "1px solid #cbd5e1",
-    borderRadius: "4px",
-    color: "#334155",
-    cursor: "pointer",
-    display: "inline-flex",
-    fontSize: "13px",
-    fontWeight: 700,
-    gap: "6px",
-    minHeight: "38px",
-    padding: "8px 10px",
-  },
-  actionsMenu: {
-    background: "#ffffff",
-    border: "1px solid #cbd5e1",
-    borderRadius: "6px",
-    boxShadow: "0 12px 30px rgba(15, 23, 42, 0.18)",
-    display: "grid",
-    gap: "2px",
-    padding: "6px",
-    position: "fixed",
-    width: "224px",
-    zIndex: 1300,
-  },
-  actionsMenuItem: {
-    background: "transparent",
-    border: 0,
-    borderRadius: "4px",
-    color: "#334155",
-    cursor: "pointer",
-    fontSize: "13px",
-    fontWeight: 700,
-    minHeight: "40px",
-    padding: "9px 10px",
-    textAlign: "left",
-    width: "100%",
-  },
   secondaryButton: {
-    background: "#f8fafc",
-    border: "1px solid #cbd5e1",
+    background: "var(--color-surface-subtle)",
+    border: "1px solid var(--color-border-control)",
     borderRadius: "4px",
-    color: "#334155",
+    color: "var(--color-text-default)",
     cursor: "pointer",
     fontSize: "13px",
     fontWeight: 700,
@@ -1856,10 +1844,10 @@ const styles = {
   },
   printButton: {
     alignItems: "center",
-    background: "#111827",
+    background: "var(--color-text-strong)",
     border: 0,
     borderRadius: "4px",
-    color: "#ffffff",
+    color: "var(--color-text-on-strong)",
     cursor: "pointer",
     display: "inline-flex",
     fontSize: "13px",
@@ -1878,24 +1866,24 @@ const styles = {
     whiteSpace: "nowrap",
   },
   emailSent: {
-    background: "#dcfce7",
-    color: "#166534",
+    background: "var(--color-success-50)",
+    color: "var(--color-success-700)",
   },
   emailSimulated: {
-    background: "#fffbeb",
-    color: "#92400e",
+    background: "var(--color-warning-50)",
+    color: "var(--color-warning-800)",
   },
   emailError: {
-    background: "#fee2e2",
-    color: "#991b1b",
+    background: "var(--color-danger-50)",
+    color: "var(--color-danger-700)",
   },
   emailMuted: {
-    color: "#475569",
+    color: "var(--color-text-default)",
     fontSize: "13px",
     whiteSpace: "nowrap",
   },
   detailPanel: {
-    background: "#ffffff",
+    background: "var(--color-surface-panel)",
     minWidth: 0,
   },
   detailActions: {
@@ -1912,10 +1900,10 @@ const styles = {
   },
   emailButton: {
     alignItems: "center",
-    background: "#0f766e",
+    background: "var(--color-brand-600)",
     border: 0,
     borderRadius: "4px",
-    color: "#ffffff",
+    color: "var(--color-text-inverse)",
     cursor: "pointer",
     display: "inline-flex",
     fontSize: "13px",
@@ -1928,7 +1916,7 @@ const styles = {
   projectLinkButton: {
     background: "transparent",
     border: 0,
-    color: "#1d4ed8",
+    color: "var(--color-info-700)",
     cursor: "pointer",
     fontSize: "13px",
     fontWeight: 700,
@@ -1939,7 +1927,7 @@ const styles = {
     background: "#128c7e",
     border: 0,
     borderRadius: "4px",
-    color: "#ffffff",
+    color: "var(--color-text-inverse)",
     cursor: "pointer",
     display: "inline-flex",
     fontSize: "13px",
@@ -1951,10 +1939,10 @@ const styles = {
   },
   secondaryDocumentButton: {
     alignItems: "center",
-    background: "#f8fafc",
-    border: "1px solid #cbd5e1",
+    background: "var(--color-surface-subtle)",
+    border: "1px solid var(--color-border-control)",
     borderRadius: "4px",
-    color: "#334155",
+    color: "var(--color-text-default)",
     cursor: "pointer",
     display: "inline-flex",
     fontSize: "13px",
@@ -1965,9 +1953,9 @@ const styles = {
     whiteSpace: "nowrap",
   },
   disabledButton: {
-    background: "#f1f5f9",
-    border: "1px solid #cbd5e1",
-    color: "#64748b",
+    background: "var(--color-surface-subtle)",
+    border: "1px solid var(--color-border-control)",
+    color: "var(--color-text-muted)",
     cursor: "not-allowed",
   },
   detailDocument: {
@@ -1980,23 +1968,23 @@ const styles = {
     width: "100%",
   },
   prepareSaleNotice: {
-    background: "#eff6ff",
-    border: "1px solid #bfdbfe",
+    background: "var(--color-info-50)",
+    border: "1px solid var(--color-info-200)",
     borderRadius: "6px",
-    color: "#1e3a8a",
+    color: "var(--color-info-700)",
     lineHeight: 1.5,
     margin: 0,
     padding: "12px 14px",
   },
   printSheet: {
-    background: "#ffffff",
-    border: "1px solid #e5e7eb",
-    color: "#111827",
+    background: "var(--color-surface-panel)",
+    border: "1px solid var(--color-border-default)",
+    color: "var(--color-text-strong)",
     padding: "28px",
   },
   printHeader: {
     alignItems: "flex-start",
-    borderBottom: "2px solid #111827",
+    borderBottom: "2px solid var(--color-text-strong)",
     display: "flex",
     justifyContent: "space-between",
     gap: "20px",
@@ -2007,7 +1995,7 @@ const styles = {
     fontSize: "26px",
   },
   printMuted: {
-    color: "#64748b",
+    color: "var(--color-text-muted)",
     margin: "4px 0 0",
   },
   printMeta: {
@@ -2016,8 +2004,8 @@ const styles = {
     textAlign: "right",
   },
   clientBox: {
-    background: "#f8fafc",
-    border: "1px solid #e5e7eb",
+    background: "var(--color-surface-subtle)",
+    border: "1px solid var(--color-border-default)",
     borderRadius: "8px",
     margin: "18px 0",
     padding: "14px",
@@ -2034,20 +2022,20 @@ const styles = {
     width: "100%",
   },
   printTh: {
-    background: "#111827",
-    color: "#ffffff",
+    background: "var(--color-text-strong)",
+    color: "var(--color-text-on-strong)",
     fontSize: "12px",
     padding: "10px",
     textAlign: "left",
     textTransform: "uppercase",
   },
   printTd: {
-    borderBottom: "1px solid #e5e7eb",
+    borderBottom: "1px solid var(--color-border-default)",
     padding: "10px",
     verticalAlign: "top",
   },
   printItemMeta: {
-    color: "#64748b",
+    color: "var(--color-text-muted)",
     display: "block",
     fontSize: "12px",
     marginTop: "3px",
@@ -2059,38 +2047,38 @@ const styles = {
   },
   totalRow: {
     alignItems: "center",
-    borderBottom: "1px solid #eef2f7",
+    borderBottom: "1px solid var(--color-border-subtle)",
     display: "flex",
     justifyContent: "space-between",
     gap: "10px",
     padding: "11px 0",
   },
   totalLabel: {
-    color: "#475569",
+    color: "var(--color-text-default)",
     fontWeight: 700,
   },
   totalLabelStrong: {
-    color: "#111827",
+    color: "var(--color-text-strong)",
     fontSize: "18px",
     fontWeight: 800,
   },
   totalValue: {
-    color: "#111827",
+    color: "var(--color-text-strong)",
   },
   totalValueStrong: {
-    color: "#0f766e",
+    color: "var(--color-text-brand-accent)",
     fontSize: "22px",
   },
   observationsBox: {
-    borderTop: "1px solid #e5e7eb",
+    borderTop: "1px solid var(--color-border-default)",
     marginTop: "20px",
     paddingTop: "14px",
   },
   errorText: {
-    background: "#fef2f2",
-    border: "1px solid #fecaca",
+    background: "var(--color-danger-50)",
+    border: "1px solid var(--color-danger-200)",
     borderRadius: "4px",
-    color: "#b91c1c",
+    color: "var(--color-danger-700)",
     margin: 0,
     padding: "11px 13px",
   },

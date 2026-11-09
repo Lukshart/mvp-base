@@ -1,6 +1,7 @@
 import React from "react";
+import LoadingState from "../../components/ui/LoadingState";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
-import { formatCLP } from "../../utils/formatters";
+import { useBusinessMoney } from "../../hooks/useBusinessFormat";
 
 const TYPE_LABELS = {
   producto: "Producto",
@@ -32,6 +33,7 @@ function QuoteCatalogDialog({
   typeFilter,
   valuations,
 }) {
+  const formatBusinessAmount = useBusinessMoney();
   const searchRef = React.useRef(null);
 
   return (
@@ -76,7 +78,7 @@ function QuoteCatalogDialog({
         </div>
 
         {loading ? (
-          <div className="quote-workspace__empty" role="status">Cargando inventario valorizado…</div>
+          <LoadingState variant="section" label="Cargando inventario valorizado…" />
         ) : totalCount === 0 ? (
           <div className="quote-workspace__empty">No hay inventario activo valorizado.</div>
         ) : filteredCount === 0 ? (
@@ -96,7 +98,7 @@ function QuoteCatalogDialog({
                   </div>
                   <div className="quote-catalog__price">
                     <small>Precio</small>
-                    <strong>{formatCLP(valuation.precioInterno)}</strong>
+                    <strong>{formatBusinessAmount(valuation.precioInterno)}</strong>
                   </div>
                   <div className="quote-catalog__add">
                     {quantity > 0 && <span>Agregado: {quantity}</span>}

@@ -104,8 +104,12 @@ async function main() {
       }),
       adminDb.doc(`negocios/${businessId}`).set({
         estado: "activo",
-        creadoPorUid: ownerUid,
         verificacionEmpresa: {estado: "VERIFICADA"},
+        // Toda empresa real recibe creadoPorUid al crearse
+        // (functions/businessOnboarding.js) — storage.rules exige que el
+        // solicitante de evidencia de verificación sea ese creador
+        // registrado, no cualquier OWNER/ADMIN.
+        creadoPorUid: ownerUid,
       }),
       adminDb.doc(`membresias/${businessId}__${ownerUid}`).set({
         negocioId: businessId,
@@ -297,6 +301,20 @@ async function main() {
         { total: 1, uidUsuario: ownerUid }
       )
     );
+    await expectDenied("cliente escribe historial de aceptación legal", () =>
+      setDoc(
+        doc(
+          ownerClient.db,
+          `usuarios/${ownerUid}/aceptacionesLegales/forged-version`
+        ),
+        { uid: ownerUid, version: "forged-version" }
+      )
+    );
+    await expectDenied("cliente lee historial de aceptación legal", () =>
+      getDocs(
+        collection(ownerClient.db, `usuarios/${ownerUid}/aceptacionesLegales`)
+      )
+    );
     await expectDenied("cliente crea area fuera de la Function", () =>
       setDoc(doc(ownerClient.db, `usuarios/${ownerUid}/areas/forged-area`), {
         nombre: "Área no autorizada",
@@ -385,8 +403,8 @@ async function main() {
         monedaCodigo: "CLP",
         regionCodigo: "13",
         estado: "activo",
-        creadoPorUid: ownerUid,
         verificacionEmpresa: {estado: "VERIFICADA"},
+        creadoPorUid: ownerUid,
       }),
       adminDb.doc(`membresias/${businessId}__${ownerUid}`).set({
         negocioId: businessId,
@@ -472,6 +490,67 @@ async function main() {
         impuestoPredeterminadoTasa: 1,
       })
     );
+    await expectDenied("OWNER habilita modulos verticales por SDK", () =>
+      updateDoc(doc(ownerClient.db, `negocios/${businessId}`), {
+        modulosHabilitados: ["taller"],
+      })
+    );
+    await expectDenied("usuario ajeno habilita modulos verticales por SDK", () =>
+      updateDoc(doc(otherClient.db, `negocios/${businessId}`), {
+        modulosHabilitados: ["taller"],
+      })
+    );
+    const modulesRequestPath =
+      `negocios/${businessId}/platformModulesRequests/modules-rules-request`;
+    await adminDb.doc(modulesRequestPath).set({
+      negocioId: businessId,
+      modulosResultantes: [],
+      creadoPorUid: ownerUid,
+    });
+    await expectDenied("OWNER lee solicitud de modulos de plataforma", () =>
+      getDoc(doc(ownerClient.db, modulesRequestPath))
+    );
+    await expectDenied("OWNER escribe solicitud de modulos de plataforma", () =>
+      setDoc(doc(ownerClient.db, modulesRequestPath), {
+        negocioId: businessId,
+        modulosResultantes: ["taller"],
+      })
+    );
+    await expectDenied("OWNER borra solicitud de modulos de plataforma", () =>
+      deleteDoc(doc(ownerClient.db, modulesRequestPath))
+    );
+
+    // SPEC 032: invitaciones de equipo, solo accesibles desde Functions.
+    const invitationPaths = [
+      `invitacionesEquipo/${businessId}__${"a".repeat(64)}`,
+      `invitacionRequests/${businessId}__rules-invitation-request`,
+      `invitacionLimites/${businessId}__20261018`,
+    ];
+    for (const invitationPath of invitationPaths) {
+      await adminDb.doc(invitationPath).set({
+        negocioId: businessId,
+        emailNormalizado: "invitada@example.test",
+        estado: "pendiente",
+        creadoPorUid: ownerUid,
+      });
+      for (const [label, client] of [["OWNER", ownerClient], ["otro usuario", otherClient]]) {
+        await expectDenied(`${label} lee ${invitationPath.split("/")[0]}`, () =>
+          getDoc(doc(client.db, invitationPath))
+        );
+        await expectDenied(`${label} crea ${invitationPath.split("/")[0]}`, () =>
+          setDoc(doc(client.db, `${invitationPath}-sdk`), {negocioId: businessId, estado: "aceptada"})
+        );
+        await expectDenied(`${label} edita ${invitationPath.split("/")[0]}`, () =>
+          updateDoc(doc(client.db, invitationPath), {estado: "aceptada"})
+        );
+        await expectDenied(`${label} borra ${invitationPath.split("/")[0]}`, () =>
+          deleteDoc(doc(client.db, invitationPath))
+        );
+      }
+      await expectDenied(`OWNER lista ${invitationPath.split("/")[0]}`, () =>
+        getDocs(collection(ownerClient.db, invitationPath.split("/")[0]))
+      );
+    }
 
     const businessInventoryPath =
       `negocios/${businessId}/inventario/item-stock-hardening`;

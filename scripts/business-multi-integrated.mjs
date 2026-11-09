@@ -145,7 +145,7 @@ async function main() {
 
     const additionalPayload = {
       nombreComercial: "Mauricio SPA",
-      rubroCodigo: "SOFTWARE_SOLUCIONES_DIGITALES",
+      rubroCodigo: "TECNOLOGIA_INFORMATICA",
       paisCodigo: "BO",
       monedaCodigo: "USD",
       regionEstado: "La Paz",
@@ -192,7 +192,7 @@ async function main() {
     assert.equal(secondBusiness.exists, true);
     assert.equal(secondMembership.data()?.rol, "OWNER");
     assert.equal(secondProfile.data()?.nombreComercial, "Mauricio SPA");
-    assert.equal(secondProfile.data()?.rubroCodigo, "SOFTWARE_SOLUCIONES_DIGITALES");
+    assert.equal(secondProfile.data()?.rubroCodigo, "TECNOLOGIA_INFORMATICA");
     assert.equal(secondProfile.data()?.paisCodigo, "BO");
     assert.equal(secondProfile.data()?.monedaCodigo, "BOB");
     assert.equal(secondProfile.data()?.regionEstado, "La Paz");
@@ -200,7 +200,7 @@ async function main() {
     assert.equal(secondProfile.data()?.comunaCodigo, undefined);
     assert.equal(ownerUser.data()?.negocioActivoId, secondBusinessId);
     assert.equal(firstBusiness.data()?.rubroCodigo, baseBusiness.rubroCodigo);
-    assert.equal(secondBusiness.data()?.rubroCodigo, "SOFTWARE_SOLUCIONES_DIGITALES");
+    assert.equal(secondBusiness.data()?.rubroCodigo, "TECNOLOGIA_INFORMATICA");
     assert.equal(secondBusiness.data()?.comunaCodigo, undefined);
 
     const outsiderBusiness = await callable(outsider, "createFirstBusiness", {

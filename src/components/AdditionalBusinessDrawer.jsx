@@ -1,5 +1,5 @@
 import React from "react";
-import { Building2, LoaderCircle } from "lucide-react";
+import { Building2 } from "lucide-react";
 import {
   getBusinessCreationErrorMessage,
   INITIAL_QUICK_BUSINESS_VALUES,
@@ -199,9 +199,8 @@ function AdditionalBusinessDrawer({
           type="submit"
           form="additional-business-form"
           className="business-create-drawer__submit"
-          icon={isSubmitting ? LoaderCircle : Building2}
-          disabled={isSubmitting}
-          aria-busy={isSubmitting}
+          icon={Building2}
+          loading={isSubmitting}
         >
           {isSubmitting ? "Creando negocio..." : "Crear negocio"}
         </Button>

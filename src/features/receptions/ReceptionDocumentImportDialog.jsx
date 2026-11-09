@@ -1,6 +1,7 @@
 import {useEffect, useRef, useState} from "react";
 import Button from "../../components/ui/Button";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
+import Spinner from "../../components/ui/Spinner";
 import {
   applyReceptionImportRows,
   buildReceptionDocumentSource,
@@ -18,6 +19,7 @@ import {
   stripInventoryDocumentPayload,
 } from "../../services/inventoryAiImportService";
 import {formatMoney} from "../../utils/formatters";
+import useBusinessFormat from "../../hooks/useBusinessFormat";
 
 const EMPTY_FIELDS = {
   tipoDocumento: "otro", numeroDocumento: "", fechaDocumento: "", fechaVencimiento: "",
@@ -36,6 +38,7 @@ const providerFiscalId = (provider = {}) => provider.identificadorFiscalValor ||
   provider.identificadorFiscalNormalizado || provider.rut || provider.rutNormalizado || "Sin identificación fiscal";
 
 export default function ReceptionDocumentImportDialog({businessId, onApply, onClose, open, providerSnapshot, receptionItems}) {
+  const { locale: businessLocale } = useBusinessFormat();
   const inputRef = useRef(null);
   const applyGuard = useRef(false);
   const [fileData, setFileData] = useState(null);
@@ -118,7 +121,7 @@ export default function ReceptionDocumentImportDialog({businessId, onApply, onCl
   };
   const footer = rows.length ? <>
     <Button type="button" variant="secondary" disabled={analyzing || applying} onClick={close}>Cancelar</Button>
-    <Button type="button" aria-busy={applying} disabled={analyzing || applying || summary.asociadas === 0 || (providerMismatch && !providerReviewAccepted)} onClick={apply}>
+    <Button type="button" loading={applying} disabled={analyzing || summary.asociadas === 0 || (providerMismatch && !providerReviewAccepted)} onClick={apply}>
       {applying ? "Aplicando conciliación…" : `Aplicar ${summary.asociadas} ${summary.asociadas === 1 ? "línea" : "líneas"}`}
     </Button>
   </> : null;
@@ -141,8 +144,8 @@ export default function ReceptionDocumentImportDialog({businessId, onApply, onCl
         <div className="reception-import__file-actions"><button type="button" disabled={loading || analyzing || applying} onClick={chooseAnotherFile}>Cambiar</button><button type="button" disabled={loading || analyzing || applying} onClick={reset}>Eliminar</button></div>
       </section>}
       {fileData && !rows.length && <section className="reception-import__analysis">
-        {analyzing ? <div className="reception-import__processing" role="status" aria-live="polite"><span className="reception-import__spinner" aria-hidden="true" /><div><strong>{ANALYSIS_MESSAGES[analysisMessageIndex]}</strong><span>El archivo se procesa temporalmente; todavía no se aplica ningún cambio.</span></div></div> : <><strong>Documento listo para analizar</strong><span>Validaremos proveedor, líneas y totales antes de proponer cambios.</span></>}
-        <Button type="button" disabled={loading || analyzing || (fileData.kind === "document" && !fileData.base64)} onClick={analyze}>{analyzing ? "Analizando documento…" : "Analizar y conciliar"}</Button>
+        {analyzing ? <div className="reception-import__processing" role="status" aria-live="polite"><Spinner /><div><strong>{ANALYSIS_MESSAGES[analysisMessageIndex]}</strong><span>El archivo se procesa temporalmente; todavía no se aplica ningún cambio.</span></div></div> : <><strong>Documento listo para analizar</strong><span>Validaremos proveedor, líneas y totales antes de proponer cambios.</span></>}
+        <Button type="button" loading={analyzing} disabled={loading || (fileData.kind === "document" && !fileData.base64)} onClick={analyze}>{analyzing ? "Analizando documento…" : "Analizar y conciliar"}</Button>
       </section>}
       {error && <p className="po-message po-message--error" role="alert">{error}</p>}
 
@@ -158,7 +161,7 @@ export default function ReceptionDocumentImportDialog({businessId, onApply, onCl
 
         <section className="reception-import__document-summary" aria-label="Resumen del documento">
           <div><span>Folio</span><strong>{fields.numeroDocumento || "Sin folio"}</strong></div><div><span>Fecha</span><strong>{fields.fechaDocumento || "Sin fecha"}</strong></div><div><span>Proveedor</span><strong>{analysis?.proveedor?.nombre || "No identificado"}</strong></div>
-          <div><span>Neto</span><strong>{hasDocumentValue(fields.neto) ? formatMoney(fields.neto, currency) : "—"}</strong></div><div><span>{hasDocumentValue(fields.impuestoPorcentaje) ? `IVA (${fields.impuestoPorcentaje}%)` : "IVA"}</span><strong>{hasDocumentValue(fields.impuestoMonto) ? formatMoney(fields.impuestoMonto, currency) : "—"}</strong></div><div><span>Total</span><strong>{hasDocumentValue(fields.total) ? formatMoney(fields.total, currency) : "—"}</strong></div><div><span>Líneas</span><strong>{summary.total}</strong></div>
+          <div><span>Neto</span><strong>{hasDocumentValue(fields.neto) ? formatMoney(fields.neto, currency, businessLocale) : "—"}</strong></div><div><span>{hasDocumentValue(fields.impuestoPorcentaje) ? `IVA (${fields.impuestoPorcentaje}%)` : "IVA"}</span><strong>{hasDocumentValue(fields.impuestoMonto) ? formatMoney(fields.impuestoMonto, currency, businessLocale) : "—"}</strong></div><div><span>Total</span><strong>{hasDocumentValue(fields.total) ? formatMoney(fields.total, currency, businessLocale) : "—"}</strong></div><div><span>Líneas</span><strong>{summary.total}</strong></div>
         </section>
         <details className="reception-import__document-details">
           <summary>Revisar datos del documento</summary>
@@ -184,13 +187,13 @@ export default function ReceptionDocumentImportDialog({businessId, onApply, onCl
               <summary><div><strong>{row.nombreOrigen}</strong><small>{row.codigoOrigen || "Sin código de origen"} · {row.unidadOrigen}</small></div><div className="reception-import__row-match"><span>{target ? target.nombre : "Sin ítem de la orden"}</span><small>{reason}</small></div><span className={`reception-import-status reception-import-status--${row.estado}`}>{STATUS_LABELS[row.estado]}</span></summary>
               <div className="reception-import__row-fields">
                 <label><span>Ítem de la orden</span><select value={row.selectedLineId} onChange={(event) => setRows(updateReceptionImportRow(rows, row.rowId, "selectedLineId", event.target.value, receptionItems))}><option value="">No asociar</option>{receptionItems.map((line) => <option key={line.lineaId} value={line.lineaId}>{line.codigo ? `${line.codigo} · ` : ""}{line.nombre}</option>)}</select></label>
-                <label><span>Cantidad</span><input type="number" min="0" step="any" value={row.cantidad} onChange={(event) => setRows(updateReceptionImportRow(rows, row.rowId, "cantidad", event.target.value, receptionItems))} /></label><label><span>Costo unitario</span><input type="number" min="0" step="any" value={row.costoUnitario} onChange={(event) => setRows(updateReceptionImportRow(rows, row.rowId, "costoUnitario", event.target.value, receptionItems))} /></label><label><span>Descuento %</span><input type="number" min="0" max="100" step="any" value={row.descuentoPct} onChange={(event) => setRows(updateReceptionImportRow(rows, row.rowId, "descuentoPct", event.target.value, receptionItems))} /></label><div><span>Total del documento</span><strong>{row.totalLinea ? formatMoney(row.totalLinea, currency) : "—"}</strong></div>
+                <label><span>Cantidad</span><input type="number" min="0" step="any" value={row.cantidad} onChange={(event) => setRows(updateReceptionImportRow(rows, row.rowId, "cantidad", event.target.value, receptionItems))} /></label><label><span>Costo unitario</span><input type="number" min="0" step="any" value={row.costoUnitario} onChange={(event) => setRows(updateReceptionImportRow(rows, row.rowId, "costoUnitario", event.target.value, receptionItems))} /></label><label><span>Descuento %</span><input type="number" min="0" max="100" step="any" value={row.descuentoPct} onChange={(event) => setRows(updateReceptionImportRow(rows, row.rowId, "descuentoPct", event.target.value, receptionItems))} /></label><div><span>Total del documento</span><strong>{row.totalLinea ? formatMoney(row.totalLinea, currency, businessLocale) : "—"}</strong></div>
               </div>
             </details>;
           })}
         </section>
         {summary.sinAsociar > 0 && <p className="reception-import__notice">Las líneas sin asociación quedarán fuera de la recepción y no modificarán stock ni la compra.</p>}
-        {applying && <div className="reception-import__applying" role="status" aria-live="polite"><span className="reception-import__spinner" aria-hidden="true" /><div><strong>Aplicando conciliación…</strong><span>Estamos trasladando únicamente las líneas asociadas a la recepción.</span></div></div>}
+        {applying && <div className="reception-import__applying" role="status" aria-live="polite"><Spinner /><div><strong>Aplicando conciliación…</strong><span>Estamos trasladando únicamente las líneas asociadas a la recepción.</span></div></div>}
       </>}
     </div>
   </ResponsiveDialog>;

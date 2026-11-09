@@ -75,6 +75,113 @@
   margin: 0;
 }
 
+.brand-mark {
+  color: var(--color-brand-600);
+  display: block;
+  flex: 0 0 auto;
+}
+
+/* Marca animada (BrandMark animated, p. ej. LoadingScreen): el arco de la C se
+   dibuja con stroke-dasharray (pathLength normalizado a 1) y después aparece el
+   visto; al final del ciclo ambos se funden y el bucle vuelve a empezar. */
+.brand-mark--animated .brand-mark__arc,
+.brand-mark--animated .brand-mark__check {
+  animation-duration: var(--motion-brand-mark-duration);
+  animation-iteration-count: infinite;
+  animation-timing-function: ease-in-out;
+  stroke-dasharray: 1;
+}
+
+.brand-mark--animated .brand-mark__arc {
+  animation-name: brand-mark-arc;
+}
+
+.brand-mark--animated .brand-mark__check {
+  animation-name: brand-mark-check;
+}
+
+@keyframes brand-mark-arc {
+  0% {
+    opacity: 0;
+    stroke-dashoffset: 1;
+  }
+
+  6% {
+    opacity: 1;
+  }
+
+  45% {
+    stroke-dashoffset: 0;
+  }
+
+  88% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes brand-mark-check {
+  0%,
+  46% {
+    opacity: 0;
+    stroke-dashoffset: 1;
+  }
+
+  52% {
+    opacity: 1;
+  }
+
+  66% {
+    stroke-dashoffset: 0;
+  }
+
+  88% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Movimiento reducido: marca quieta y completa (sin depender del último
+   fotograma de la animación, que termina en opacidad 0). */
+@media (prefers-reduced-motion: reduce) {
+  .brand-mark--animated .brand-mark__arc,
+  .brand-mark--animated .brand-mark__check {
+    animation: none;
+    opacity: 1;
+    stroke-dashoffset: 0;
+  }
+}
+
+.brand-logo__name-main {
+  font-weight: var(--font-weight-bold);
+}
+
+.brand-logo__name-accent {
+  color: var(--color-brand-600);
+  font-weight: var(--font-weight-medium);
+}
+
+/* Modo oscuro: brand-600 no alcanza como texto ni como trazo sobre
+   superficies oscuras (mismo criterio que .ui-tab) y el recuadro del ícono
+   deja de ser el brand-50 claro para que el visto ámbar se lea. */
+:where(:root[data-theme="dark"]) .brand-mark,
+:where(:root[data-theme="dark"]) .brand-logo__name-accent {
+  color: var(--color-brand-400);
+}
+
+:where(:root[data-theme="dark"]) .brand-logo__icon {
+  background: var(--color-surface-subtle);
+  border-color: var(--color-border-default);
+}
+
 .brand-logo__subtitle {
   color: var(--color-text-muted);
   font-size: var(--font-size-xs);
@@ -154,7 +261,7 @@
 
 .business-switcher__trigger:hover,
 .business-switcher__trigger[aria-expanded="true"] {
-  background: var(--color-brand-50);
+  background: var(--color-surface-brand);
   border-color: var(--color-brand-200);
 }
 
@@ -222,7 +329,7 @@
 }
 
 .business-switcher__add:hover {
-  background: var(--color-brand-50);
+  background: var(--color-surface-brand);
 }
 
 .business-switcher__add-icon {
@@ -283,7 +390,7 @@
 .business-menu__item:hover,
 .business-menu__item:focus-visible,
 .business-menu__item.is-active {
-  background: var(--color-brand-50);
+  background: var(--color-surface-brand);
 }
 
 .business-menu__item:disabled {
@@ -389,16 +496,32 @@
   background: #ecfeff;
   border: 1px solid #a5f3fc;
   border-radius: var(--radius-sm);
-  bottom: var(--space-3);
   color: #155e75;
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-semibold);
   line-height: 1.3;
   padding: var(--space-2) var(--space-3);
+}
+
+/* Flotante: solo en pantallas sin la barra superior de AppLayout. */
+.environment-notice--floating {
+  bottom: var(--space-3);
   pointer-events: none;
   position: fixed;
   right: var(--space-3);
   z-index: calc(var(--z-sticky) + 2);
+}
+
+body:has(.topbar .environment-notice--inline) .environment-notice--floating {
+  display: none;
+}
+
+/* Insignia en la barra superior: no flota, así que no tapa contenido. */
+.environment-notice--inline {
+  flex: 0 0 auto;
+  line-height: 1;
+  padding: var(--space-1) var(--space-2);
+  white-space: nowrap;
 }
 
 .environment-notice--existing {
@@ -415,7 +538,7 @@
   gap: var(--space-3);
   grid-template-columns: minmax(0, 1fr) auto;
   min-height: var(--shell-topbar-height);
-  padding: var(--space-2) var(--space-6);
+  padding: var(--space-1) var(--space-6);
   position: sticky;
   top: 0;
   z-index: calc(var(--z-sticky) + 1);
@@ -453,11 +576,55 @@
   color: var(--color-brand-800);
 }
 
+/* A diferencia de topbar-menu-button/topbar-account-button (solo mobile,
+   display: none por defecto, se muestran en el media query de abajo), la
+   campana debe verse en desktop y mobile: sin regla de display propia,
+   nunca se oculta. El botón de tema (etapa 5, paso 9) comparte el mismo
+   aspecto y la misma visibilidad. */
+.topbar-notifications-button,
+.topbar-theme-button {
+  align-items: center;
+  background: var(--color-surface-panel);
+  border: 1px solid var(--color-border-control);
+  border-radius: var(--radius-md);
+  color: var(--color-text-default);
+  cursor: pointer;
+  display: inline-flex;
+  height: 42px;
+  justify-content: center;
+  position: relative;
+  width: 42px;
+}
+
+.topbar-notifications-button:hover,
+.topbar-theme-button:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-brand-800);
+}
+
+.topbar-notifications-button__badge {
+  position: absolute;
+  right: 4px;
+  top: 4px;
+}
+
 .topbar-user {
   align-items: center;
   display: flex;
   gap: var(--space-2);
   min-width: 0;
+}
+
+/* Envuelve el grupo desktop (Salir), la campana y el botón de cuenta mobile
+   en un solo item de grid: así el grid de dos columnas de .topbar no se
+   rompe al agregar la campana, y esta queda pegada visualmente a cualquiera
+   de los dos elementos que esté visible según el tamaño de pantalla (Salir
+   en desktop, el botón de cuenta en mobile), sin renderizar dos instancias
+   de NotificationBell. */
+.topbar-actions {
+  align-items: center;
+  display: flex;
+  gap: var(--space-2);
 }
 
 .topbar .ui-page-header {
@@ -486,6 +653,18 @@
 
 .topbar .ui-page-header__title {
   font-size: var(--font-size-sm);
+}
+
+.topbar-heading {
+  align-items: center;
+  display: flex;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.topbar-heading > .ui-page-header,
+.topbar-heading > .topbar-context {
+  min-width: 0;
 }
 
 .topbar-context {
@@ -532,6 +711,64 @@
   align-items: start;
 }
 
+.notification-section {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.notification-section + .notification-section {
+  border-top: 1px solid var(--color-border-subtle);
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+}
+
+.notification-section__title {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+.notification-list {
+  display: grid;
+  gap: var(--space-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.notification-list__item {
+  align-items: start;
+  background: var(--color-surface-panel);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  text-align: left;
+  width: 100%;
+}
+
+.notification-list__item.is-unread {
+  background: var(--color-info-50);
+  border-color: var(--color-info-200);
+}
+
+.notification-list__item strong {
+  color: var(--color-text-strong);
+  font-size: var(--font-size-sm);
+}
+
+.notification-list__item span {
+  color: var(--color-text-default);
+  font-size: var(--font-size-sm);
+}
+
+.notification-list__item small {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
 .verification-notice,
 .verification-banner {
   border-bottom: 1px solid;
@@ -541,7 +778,7 @@
 
 .verification-notice {
   background: var(--color-success-50);
-  border-color: #86d5b2;
+  border-color: var(--color-success-300);
   color: var(--color-success-700);
   font-weight: var(--font-weight-semibold);
 }
@@ -614,23 +851,6 @@
   font-size: var(--font-size-sm);
   justify-content: center;
   min-height: min(420px, 60vh);
-}
-
-.business-toast {
-  background: var(--color-text-strong);
-  border: 1px solid rgb(255 255 255 / 0.16);
-  border-radius: var(--radius-md);
-  bottom: var(--space-5);
-  box-shadow: var(--shadow-md);
-  color: var(--color-text-inverse);
-  font-size: var(--font-size-sm);
-  left: 50%;
-  max-width: min(420px, calc(100vw - 32px));
-  padding: var(--space-3) var(--space-4);
-  position: fixed;
-  text-align: center;
-  transform: translateX(-50%);
-  z-index: calc(var(--z-dialog) + 2);
 }
 
 .business-create-drawer-layer {
@@ -807,7 +1027,7 @@
 
 .business-drawer-alert {
   background: var(--color-danger-50);
-  border: 1px solid #fecaca;
+  border: 1px solid var(--color-danger-200);
   border-radius: var(--radius-md);
   color: var(--color-danger-700);
   display: grid;
@@ -819,10 +1039,6 @@
 
 .business-create-drawer__submit {
   min-width: 180px;
-}
-
-.business-create-drawer__submit[aria-busy="true"] svg {
-  animation: business-spin 0.8s linear infinite;
 }
 
 .business-discard-confirm {
@@ -860,12 +1076,6 @@
   flex-wrap: wrap;
   gap: var(--space-2);
   justify-content: flex-end;
-}
-
-@keyframes business-spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 .mobile-nav-layer {
@@ -1032,7 +1242,7 @@
 }
 
 @media (max-width: 640px) {
-  .environment-notice {
+  .environment-notice--floating {
     bottom: var(--space-2);
     left: var(--space-2);
     right: var(--space-2);
@@ -1042,7 +1252,7 @@
   .topbar {
     gap: var(--space-3);
     grid-template-columns: auto minmax(0, 1fr) auto;
-    padding: var(--space-2) var(--space-4);
+    padding: var(--space-1) var(--space-4);
   }
 
   .topbar .ui-page-header__eyebrow {
@@ -1105,6 +1315,8 @@
   .business-menu__item,
   .topbar-menu-button,
   .topbar-account-button,
+  .topbar-notifications-button,
+  .topbar-theme-button,
   .mobile-nav-close {
     min-height: 44px;
   }
@@ -1115,9 +1327,64 @@
   .mobile-nav-overlay,
   .business-switcher__chevron,
   .business-create-drawer,
-  .business-create-drawer-layer .responsive-dialog-overlay,
-  .business-create-drawer__submit[aria-busy="true"] svg {
+  .business-create-drawer-layer .responsive-dialog-overlay {
     animation: none;
     transition: none;
+  }
+}
+
+/* Modo oscuro (etapa 5, paso 3 de 10: hub compartido). */
+:where(:root[data-theme="dark"]) {
+  /* Mismo criterio que components.css: --color-brand-600/700/800 se
+     mantienen sin cambio (paso 2), así que como texto/ícono directo sobre
+     una superficie oscura no pasan AA (2.26:1 medido en el paso 2). Se
+     corrige con --color-brand-400 (mínimo 4.92:1 contra las 6 superficies
+     oscuras de la fundación) en cada selector que lo usa como texto sobre
+     un fondo que sí reacciona al tema. */
+  .business-switcher__add,
+  .nav-link:hover,
+  .nav-link-active,
+  .nav-link-active .nav-link__completion,
+  .topbar-menu-button:hover,
+  .topbar-account-button:hover,
+  .topbar-notifications-button:hover,
+  .topbar-theme-button:hover {
+    color: var(--color-brand-400);
+  }
+
+  .nav-link-active {
+    border-left-color: var(--color-brand-400);
+  }
+
+  .business-drawer-section__header {
+    color: var(--color-brand-400);
+  }
+
+  /* .environment-notice: mismo cian "modo QA/emulador" sin token propio
+     que ya existe en components.css (.quote-email-dialog__qa-notice--result),
+     mismos valores oscuros ya verificados ahí (7fd9e6/0f2b2e: 9.23:1). */
+  .environment-notice {
+    background: #0f2b2e;
+    border-color: #3d8a94;
+    color: #7fd9e6;
+  }
+
+  /* Scrims de diálogo (.business-discard-confirm) y del overlay de nav
+     mobile (.mobile-nav-overlay): hoy usan rgb(15 23 42 / X), el valor
+     VIEJO de --color-text-strong (antes de la recalibración de tokens.css),
+     nunca migrado al color-mix(...--color-text-strong...) canónico que sí
+     usa interior.css. Migrarlo ahora a ese patrón canónico sería
+     introducir un bug: --color-text-strong pasa a ser un color CLARO en
+     oscuro (#e4edf1), así que ese color-mix daría un velo claro sobre la
+     página en vez de oscurecerla — lo opuesto de lo que un scrim necesita
+     (atenuar detrás de un diálogo/drawer). Se deja como literal, fijo,
+     pero oscuro de verdad en los dos temas (un scrim oscuro atenúa igual
+     de bien un fondo claro que uno oscuro; se sube la opacidad un poco
+     porque oscuro-sobre-oscuro necesita algo más de diferencia para
+     leerse). Este hallazgo aplica también a interior.css, fuera de
+     alcance de este paso (hub compartido); queda para su propio paso. */
+  .business-discard-confirm,
+  .mobile-nav-overlay {
+    background: rgb(2 6 12 / 0.6);
   }
 }

@@ -1,0 +1,162 @@
+import assert from "node:assert/strict";
+import {readFile} from "node:fs/promises";
+import React from "react";
+import {renderToStaticMarkup} from "react-dom/server";
+import {createServer} from "vite";
+
+// ETAPA 2 (estados de carga), PASO 5: LoadingScreen de marca
+// (src/components/LoadingScreen.jsx) y retraso de aparición (.ui-reveal-delay).
+// Sin Firebase: se prueba vía Vite ssrLoadModule + renderToStaticMarkup, mismo
+// patrón que skeleton-smoke y button-smoke. Por eso LoadingScreen vive en su
+// propio archivo: App.jsx arrastra Firebase y no se puede renderizar aquí.
+
+const count = (text, pattern) => (text.match(pattern) || []).length;
+const assertClean = (markup, name) =>
+  assert.doesNotMatch(markup, /undefined|NaN|Infinity|<!--/, `${name}: markup sin undefined/NaN/Infinity/comentarios`);
+
+const vite = await createServer({appType: "custom", logLevel: "silent", server: {middlewareMode: true}});
+
+try {
+  const {default: LoadingScreen} = await vite.ssrLoadModule("/src/components/LoadingScreen.jsx");
+  const html = (props) => renderToStaticMarkup(React.createElement(LoadingScreen, props));
+
+  // --- Estructura, un único status y BrandLogo fuera de él ---
+  const markup = html({});
+  assert.match(markup, /^<main class="brand-loader"><div class="brand-loader__content ui-reveal-delay">/, "main.brand-loader > div con ui-reveal-delay (al contenido, no al fondo)");
+  assert.equal(count(markup, /role="status"/g), 1, "un único role=status");
+  assert.equal(count(markup, /aria-live/g), 0, "sin aria-live (role=status ya implica polite)");
+  assert.doesNotMatch(markup, /^<main class="brand-loader ui-reveal-delay"/, "el retraso no va en el contenedor de fondo");
+
+  const statusMatch = markup.match(/<div class="ui-loading-state ui-loading-state--page" role="status">.*?<\/div>/);
+  assert.ok(statusMatch, "LoadingState variant=page con role=status");
+  const status = statusMatch[0];
+  assert.doesNotMatch(status, /brand-logo|ValoraCloud Gestión|role="img"/, "BrandLogo no queda dentro del role=status");
+  assert.ok(markup.indexOf("brand-logo brand-logo--auth") > -1, "BrandLogo variant=auth presente");
+  assert.ok(markup.indexOf("brand-logo brand-logo--auth") < markup.indexOf('role="status"'), "BrandLogo va antes y como hermano del status");
+  assert.equal(count(status, /role=|aria-live/g), 1, "nada más con role ni aria-live dentro del status");
+  assert.doesNotMatch(markup, /ui-spinner/, "sin círculo giratorio: lo reemplaza la marca animada");
+  assert.match(markup, /<svg class="brand-mark brand-mark--animated" width="64" height="64"/, "marca de 64 px animada");
+  assert.ok(markup.indexOf("brand-mark--animated") < markup.indexOf('role="status"'), "la marca animada va fuera del role=status");
+  assert.doesNotMatch(status, /brand-mark/, "la marca animada no queda dentro del role=status");
+  assert.match(markup, /class="brand-mark__arc"[^>]*pathLength="1"/, "arco de la C con pathLength normalizado");
+  assert.match(markup, /class="brand-mark__check"[^>]*pathLength="1"/, "visto con pathLength normalizado");
+  assertClean(markup, "LoadingScreen");
+  console.log("OK: estructura — un único role=status, BrandLogo fuera de él, sin aria-live ni anidamiento");
+
+  // --- Label por defecto y personalizado (un único nodo de texto) ---
+  assert.match(markup, /<span class="ui-loading-state__label">Preparando tu espacio\.\.\.<\/span>/, "label por defecto");
+  const custom = html({label: "Restaurando sesión..."});
+  assert.match(custom, /<span class="ui-loading-state__label">Restaurando sesión\.\.\.<\/span>/, "label personalizado");
+  assert.doesNotMatch(custom, /Preparando tu espacio/);
+  assert.equal(count(custom, /role="status"/g), 1);
+  for (const bad of [null, 0, NaN, {}, ""]) {
+    const badMarkup = html({label: bad});
+    assert.equal(count(badMarkup, /role="status"/g), 1);
+    assertClean(badMarkup, `LoadingScreen con label ${String(bad)}`);
+  }
+  assert.match(html({label: undefined}), /Preparando tu espacio\.\.\./, "label undefined cae al valor por defecto");
+  assertClean(custom, "LoadingScreen con label personalizado");
+  console.log("OK: label por defecto y personalizado, y valores inválidos sin undefined/NaN/Infinity");
+
+  // --- CSS y tokens ---
+  const [components, tokens, appSource] = await Promise.all([
+    readFile(new URL("../src/styles/components.css", import.meta.url), "utf8"),
+    readFile(new URL("../src/styles/tokens.css", import.meta.url), "utf8"),
+    readFile(new URL("../src/app/App.jsx", import.meta.url), "utf8"),
+  ]);
+  const css = components.replace(/\/\*[\s\S]*?\*\//g, "");
+  const revealRule = css.match(/\.ui-reveal-delay \{[^}]*\}/)?.[0];
+  assert.ok(revealRule, "existe la regla .ui-reveal-delay");
+  assert.match(revealRule, /\bboth\b/, "fill-mode both: sin él, con reduced motion el elemento volvería a opacity 0");
+  assert.match(revealRule, /var\(--motion-reveal-duration\)/);
+  assert.match(revealRule, /var\(--motion-reveal-delay\)/);
+  assert.match(revealRule, /animation:\s*ui-reveal /, "shorthand animation");
+  assert.equal(count(css, /@keyframes ui-reveal\b/g), 1, "un solo @keyframes ui-reveal");
+  const revealKeyframes = css.match(/@keyframes ui-reveal \{[\s\S]*?\n\}/)?.[0] || "";
+  assert.match(revealKeyframes, /opacity: 0/);
+  assert.match(revealKeyframes, /opacity: 1/);
+  assert.equal(count(tokens, /--motion-reveal-delay:\s*250ms/g), 1);
+  assert.equal(count(tokens, /--motion-reveal-duration:\s*150ms/g), 1);
+  const revealStart = css.indexOf(".ui-reveal-delay {");
+  const revealEnd = css.indexOf(".brand-loader {");
+  assert.ok(revealStart > -1 && revealEnd > revealStart);
+  assert.doesNotMatch(css.slice(revealStart, revealEnd), /@media/, "sin @media propio: globals.css cubre reduced motion");
+
+  const loaderRule = css.match(/\.brand-loader \{[^}]*\}/)?.[0];
+  assert.ok(loaderRule, "existe la regla .brand-loader");
+  assert.match(loaderRule, /min-height: 100dvh/);
+  assert.match(loaderRule, /display: grid/);
+  assert.match(loaderRule, /place-content: center/);
+  assert.match(loaderRule, /justify-items: center/);
+  assert.match(loaderRule, /background: var\(--color-surface-canvas\)/);
+  assert.doesNotMatch(loaderRule, /#[0-9a-f]{3,8}\b|rgb\(|hsl\(/i, ".brand-loader solo con tokens");
+  assert.match(css, /\.auth-screen \{/, ".auth-screen se conserva (lo usa Login)");
+  assert.doesNotMatch(css, /\.auth-screen > \.muted:only-child/, "el hack de LoadingScreen se eliminó");
+
+  // El shimmer no lleva fill-mode: la comprobación se acota a su regla y su keyframes.
+  const shimmerRule = css.match(/\.ui-skeleton \{[^}]*\}/)?.[0];
+  const shimmerKeyframes = css.match(/@keyframes ui-shimmer \{[\s\S]*?\n\}/)?.[0];
+  assert.ok(shimmerRule && shimmerKeyframes);
+  assert.doesNotMatch(shimmerRule + shimmerKeyframes, /animation-fill-mode|forwards|\bboth\b/, "sin both en el shimmer");
+  console.log("OK: CSS — .ui-reveal-delay con both y los dos tokens, un keyframes, sin @media; .brand-loader solo con tokens; shimmer sin both");
+
+  // --- Marca animada: opt-in, solo con tokens y quieta con movimiento reducido ---
+  const [{default: BrandMark}, {default: LoadingState}, layoutCssSource] = await Promise.all([
+    vite.ssrLoadModule("/src/components/brand/BrandMark.jsx"),
+    vite.ssrLoadModule("/src/components/ui/LoadingState.jsx"),
+    readFile(new URL("../src/styles/layout.css", import.meta.url), "utf8"),
+  ]);
+  const staticMark = renderToStaticMarkup(React.createElement(BrandMark, {}));
+  assert.doesNotMatch(staticMark, /brand-mark--animated|brand-mark__arc|brand-mark__check|pathLength/, "BrandMark sin animated queda igual que antes");
+  const defaultState = renderToStaticMarkup(React.createElement(LoadingState, {variant: "page", label: "Cargando..."}));
+  assert.match(defaultState, /ui-spinner ui-spinner--md/, "LoadingState conserva el spinner por defecto");
+  const noSpinnerState = renderToStaticMarkup(React.createElement(LoadingState, {variant: "page", label: "Cargando...", showSpinner: false}));
+  assert.doesNotMatch(noSpinnerState, /ui-spinner/);
+  assert.match(noSpinnerState, /role="status"/);
+
+  const markCss = layoutCssSource.replace(/\/\*[\s\S]*?\*\//g, "");
+  assert.match(markCss, /\.brand-mark--animated \.brand-mark__arc,\s*\.brand-mark--animated \.brand-mark__check \{[^}]*animation-duration: var\(--motion-brand-mark-duration\);[^}]*stroke-dasharray: 1;/);
+  assert.equal(count(markCss, /@keyframes brand-mark-arc\b/g), 1);
+  assert.equal(count(markCss, /@keyframes brand-mark-check\b/g), 1);
+  assert.equal(count(tokens, /--motion-brand-mark-duration:\s*2\.6s/g), 1);
+  const markReduced = markCss.match(/@media \(prefers-reduced-motion: reduce\) \{\s*\.brand-mark--animated[\s\S]*?\n\}/)?.[0] || "";
+  assert.match(markReduced, /animation: none;/, "reduced motion: sin animación");
+  assert.match(markReduced, /opacity: 1;/, "reduced motion: marca completa");
+  assert.match(markReduced, /stroke-dashoffset: 0;/, "reduced motion: arco y visto dibujados");
+  const markRules = markCss.slice(markCss.indexOf(".brand-mark--animated"), markCss.indexOf(".brand-logo__name-main"));
+  assert.doesNotMatch(markRules, /#[0-9a-f]{3,8}\b|rgb\(|hsl\(|animation(?:-duration)?:[^;]*\d(?:ms|s)\b/i, "marca animada sin colores ni duraciones literales");
+  console.log("OK: marca animada — opt-in, pathLength, dasharray, un keyframes por trazo, token de duración y quieta con reduced motion");
+
+  // --- App.jsx: mismos puntos, misma posición, sin perder EnvironmentNotice ---
+  assert.match(appSource, /import LoadingScreen from "\.\.\/components\/LoadingScreen";/);
+  assert.doesNotMatch(appSource, /function LoadingScreen/, "App.jsx ya no define su propio LoadingScreen");
+  assert.equal(count(appSource, /if \(loading\) return <LoadingScreen \/>;/g), 1);
+  assert.equal(count(appSource, /if \(businessLoading\) return <LoadingScreen \/>;/g), 1);
+  assert.equal(count(appSource, /<LoadingScreen/g), 2, "solo los 2 puntos originales, sin key ni props");
+  assert.equal(count(appSource, /<EnvironmentNotice \/>/g), 1, "EnvironmentNotice flotante sigue una sola vez, fuera de AppRoutes");
+  assert.ok(appSource.indexOf("/propuesta/:token") < appSource.indexOf("if (!usuario)"), "la ruta pública sigue antes del guard de autenticación");
+  assert.ok(appSource.indexOf("if (loading) return <LoadingScreen />;") < appSource.indexOf("if (businessLoading) return <LoadingScreen />;"));
+  console.log("OK: App.jsx — 2 retornos originales, EnvironmentNotice único y ruta pública antes de if (!usuario)");
+
+  // --- Aviso de entorno: insignia en la barra superior de AppLayout ---
+  // Dentro de AppLayout no flota (no tapa filas de tablas); la versión
+  // flotante de App.jsx queda para pantallas sin barra y se oculta cuando la
+  // insignia está presente.
+  const [layoutSource, layoutCss, noticeSource] = await Promise.all([
+    readFile(new URL("../src/layout/AppLayout.jsx", import.meta.url), "utf8"),
+    readFile(new URL("../src/styles/layout.css", import.meta.url), "utf8"),
+    readFile(new URL("../src/components/EnvironmentNotice.jsx", import.meta.url), "utf8"),
+  ]);
+  assert.equal(count(layoutSource, /<EnvironmentNotice inline \/>/g), 1, "una insignia de entorno en la barra superior");
+  assert.match(layoutSource, /<div className="topbar-heading">[\s\S]*?<EnvironmentNotice inline \/>\s*<\/div>/);
+  assert.match(noticeSource, /environment-notice--inline/);
+  assert.match(noticeSource, /environment-notice--floating/);
+  assert.match(layoutCss, /\.environment-notice--floating \{[^}]*position: fixed/);
+  assert.doesNotMatch(layoutCss.match(/\.environment-notice--inline \{[^}]*\}/)?.[0] || "", /position: fixed/);
+  assert.match(layoutCss, /body:has\(\.topbar \.environment-notice--inline\) \.environment-notice--floating \{\s*display: none;/);
+  console.log("OK: aviso de entorno — insignia en la barra superior; la flotante solo fuera de AppLayout");
+
+  console.log("LOADING_SCREEN_SMOKE_OK");
+} finally {
+  await vite.close();
+}

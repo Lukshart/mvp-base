@@ -5,14 +5,19 @@ import { sileo } from "sileo";
 import AdditionalBusinessDrawer from "../components/AdditionalBusinessDrawer";
 import BrandLogo from "../components/BrandLogo";
 import BusinessSwitcher from "../components/BusinessSwitcher";
+import EnvironmentNotice from "../components/EnvironmentNotice";
+import NotificationBell from "../components/NotificationBell";
+import ThemeToggleButton from "../components/ThemeToggleButton";
 import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
+import LoadingState from "../components/ui/LoadingState";
 import PageHeader from "../components/ui/PageHeader";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
 import SkipLink from "../components/ui/SkipLink";
-import { getRouteMeta, navigationSections } from "../app/navigation";
+import { buildNavigationSections, getRouteMeta } from "../app/navigation";
 import {
   filterNavigationSections,
+  getBusinessPathOptions,
   getDefaultBusinessPath,
 } from "../domain/rbac.mjs";
 import {
@@ -30,7 +35,7 @@ function PrimaryNavigation({
   idPrefix,
   onNavigate,
   pathname,
-  sections = navigationSections,
+  sections,
 }) {
   return (
     <nav className="sidebar-nav" aria-label={ariaLabel}>
@@ -95,7 +100,6 @@ function AppLayout({
   const [mobileNavigationOpen, setMobileNavigationOpen] = React.useState(false);
   const [mobileAccountOpen, setMobileAccountOpen] = React.useState(false);
   const [businessDrawerOpen, setBusinessDrawerOpen] = React.useState(false);
-  const [businessNotice, setBusinessNotice] = React.useState("");
   const menuButtonRef = React.useRef(null);
   const drawerRef = React.useRef(null);
   const closeButtonRef = React.useRef(null);
@@ -105,6 +109,7 @@ function AppLayout({
   const businessVerified = canBusinessOperate(negocioActivo);
   const ownerEmailVerified = negocioActivo?.ownerEmailVerified === true;
   const {
+    error: businessCompletionError,
     profile: observedBusinessProfile,
     status: businessCompletionStatus,
   } = useBusinessCompletionStatus({
@@ -113,9 +118,16 @@ function AppLayout({
     initialProfile: negocioActivo || {},
   });
   const allowedNavigationSections = React.useMemo(
-    () => businessVerified
-      ? filterNavigationSections(navigationSections, negocioActivo)
-      : filterNavigationForBusinessVerification(navigationSections, negocioActivo),
+    () => {
+      const navigationSections = buildNavigationSections();
+      return businessVerified
+        ? filterNavigationSections(
+          navigationSections,
+          negocioActivo,
+          getBusinessPathOptions(negocioActivo)
+        )
+        : filterNavigationForBusinessVerification(navigationSections, negocioActivo);
+    },
     [negocioActivo]
   );
   const mainNavigationSections = allowedNavigationSections.filter(
@@ -191,11 +203,38 @@ function AppLayout({
       desktopMediaQuery.removeEventListener("change", closeDrawerOnDesktop);
   }, []);
 
+  // El toast de cambio/creación de empresa se dispara en location.state, no
+  // en el mismo tick del navigate(): ToastRouteSync limpia los toasts de
+  // sileo al cambiar de ruta (App.jsx monta <ToastRouteSync /> antes que
+  // <AppRoutes />, así que su efecto corre primero en el mismo commit), y
+  // AppLayout no se desmonta entre rutas. Mismo patrón que ya usan
+  // NewSalePage/NewPurchaseOrderPage/NewPurchasePage/PurchaseOrdersPage,
+  // con una clave de state propia (businessToastTitle, no toastTitle) para
+  // no cruzarse con la de esas páginas cuando quedan montadas dentro del
+  // mismo <Outlet>.
   React.useEffect(() => {
-    if (!businessNotice) return undefined;
-    const timerId = window.setTimeout(() => setBusinessNotice(""), 4500);
-    return () => window.clearTimeout(timerId);
-  }, [businessNotice]);
+    const toastTitle = location.state?.businessToastTitle;
+    if (!toastTitle) return;
+    sileo.success({title: toastTitle});
+    navigate(location.pathname, {replace: true, state: null});
+  }, [location.pathname, location.state, navigate]);
+
+  // Mismo patrón para el toast de "Empresa verificada" (más abajo), con su
+  // propia clave (verificationToastTitle/Description) en vez de reutilizar
+  // businessToastTitle: ese efecto de verificación puede navegar al mismo
+  // getDefaultBusinessPath(nextBusiness) que usan handleBusinessChanged/
+  // handleBusinessCreated, así que una clave compartida arriesgaría que una
+  // escritura de state pisara a la otra antes de leerse; además este toast
+  // trae description, que el consumidor de businessToastTitle no lee.
+  React.useEffect(() => {
+    const toastTitle = location.state?.verificationToastTitle;
+    if (!toastTitle) return;
+    sileo.success({
+      title: toastTitle,
+      description: location.state?.verificationToastDescription,
+    });
+    navigate(location.pathname, {replace: true, state: null});
+  }, [location.pathname, location.state, navigate]);
 
   React.useEffect(() => {
     const businessId = negocioActivo?.id || "";
@@ -222,11 +261,13 @@ function AppLayout({
         if (!layoutMountedRef.current) return;
         const nextBusiness = session?.activeBusiness;
         if (nextBusiness?.id === businessId && canBusinessOperate(nextBusiness)) {
-          sileo.success({
-            title: "Empresa verificada",
-            description: "Los módulos operativos ya están disponibles.",
+          navigate(getDefaultBusinessPath(nextBusiness, getBusinessPathOptions(nextBusiness)), {
+            replace: true,
+            state: {
+              verificationToastTitle: "Empresa verificada",
+              verificationToastDescription: "Los módulos operativos ya están disponibles.",
+            },
           });
-          navigate(getDefaultBusinessPath(nextBusiness), { replace: true });
         }
       })
       .catch(() => {
@@ -268,21 +309,32 @@ function AppLayout({
     const session = await onBusinessChanged(business.id);
     const nextBusiness = session?.activeBusiness || business;
     navigate(canBusinessOperate(nextBusiness)
-      ? getDefaultBusinessPath(nextBusiness)
-      : "/empresa?seccion=verificacion");
+      ? getDefaultBusinessPath(nextBusiness, getBusinessPathOptions(nextBusiness))
+      : "/empresa?seccion=verificacion", {
+      state: {
+        businessToastTitle: `Ahora estás trabajando en ${business.nombreComercial}`,
+      },
+    });
     setMobileNavigationOpen(false);
-    setBusinessNotice(
-      `Ahora estás trabajando en ${business.nombreComercial}`
-    );
   };
+
+  // Tras aceptar una invitación la sesión se recarga y se entra a la empresa.
+  const handleInvitationAccepted = (result, invitation) =>
+    handleBusinessChanged({
+      id: result?.businessId || invitation.negocioId,
+      nombreComercial: invitation.negocioNombre,
+    });
 
   const handleBusinessCreated = async (business) => {
     const session = await onBusinessCreated();
     const nextBusiness = session?.activeBusiness || business;
     navigate(canBusinessOperate(nextBusiness)
-      ? getDefaultBusinessPath(nextBusiness)
-      : "/empresa?seccion=verificacion");
-    setBusinessNotice(`${business.nombreComercial} fue creado correctamente`);
+      ? getDefaultBusinessPath(nextBusiness, getBusinessPathOptions(nextBusiness))
+      : "/empresa?seccion=verificacion", {
+      state: {
+        businessToastTitle: `${business.nombreComercial} fue creado correctamente`,
+      },
+    });
   };
 
   const businessSwitcher = (
@@ -335,63 +387,70 @@ function AppLayout({
             <AppIcon icon={Menu} size={21} />
           </button>
 
-          {pageProvidesHeading ? (
-            <div className="topbar-context" aria-label="Negocio activo">
-              <span>{negocioActivo?.nombreComercial || "Módulo activo"}</span>
-            </div>
-          ) : (
-            <PageHeader
-              eyebrow={negocioActivo?.nombreComercial || "Módulo activo"}
-              title={routeMeta.title}
+          <div className="topbar-heading">
+            {pageProvidesHeading ? (
+              <div className="topbar-context" aria-label="Negocio activo">
+                <span>{negocioActivo?.nombreComercial || "Módulo activo"}</span>
+              </div>
+            ) : (
+              <PageHeader
+                eyebrow={negocioActivo?.nombreComercial || "Módulo activo"}
+                title={routeMeta.title}
+              />
+            )}
+            <EnvironmentNotice inline />
+          </div>
+
+          <div className="topbar-actions">
+            <NotificationBell
+              businessId={negocioActivo?.id}
+              role={negocioActivo?.role}
+              onInvitationAccepted={handleInvitationAccepted}
             />
-          )}
+            <ThemeToggleButton />
 
-          <div className="topbar-user topbar-user--desktop">
-            {platformSuperadmin && <Button type="button" variant="secondary" icon={ShieldCheck} onClick={() => navigate("/admin/dashboard")}>Consola de Administración</Button>}
-            <Button
+            <div className="topbar-user topbar-user--desktop">
+              {platformSuperadmin && <Button type="button" variant="secondary" icon={ShieldCheck} onClick={() => navigate("/admin/dashboard")}>Consola de Administración</Button>}
+              <Button
+                type="button"
+                variant="ghost-danger"
+                icon={LogOut}
+                className="topbar-logout-button no-print"
+                aria-label="Cerrar sesión"
+                title="Salir de ValoraCloud"
+                onClick={() => logout()}
+              >
+                Salir
+              </Button>
+            </div>
+
+            <button
               type="button"
-              variant="ghost-danger"
-              icon={LogOut}
-              className="topbar-logout-button no-print"
-              aria-label="Cerrar sesión"
-              title="Salir de ValoraCloud"
-              onClick={() => logout()}
+              className="topbar-account-button no-print"
+              aria-label="Abrir cuenta de usuario"
+              aria-haspopup="dialog"
+              aria-expanded={mobileAccountOpen}
+              onClick={() => setMobileAccountOpen(true)}
             >
-              Salir
-            </Button>
+              <AppIcon icon={UserRound} size={20} />
+            </button>
           </div>
-
-          <button
-            type="button"
-            className="topbar-account-button no-print"
-            aria-label="Abrir cuenta de usuario"
-            aria-haspopup="dialog"
-            aria-expanded={mobileAccountOpen}
-            onClick={() => setMobileAccountOpen(true)}
-          >
-            <AppIcon icon={UserRound} size={20} />
-          </button>
         </header>
-
-        {businessNotice && (
-          <div className="business-toast no-print" role="status" aria-live="polite">
-            {businessNotice}
-          </div>
-        )}
 
         <main
           id="main-content"
           className={businessChanging ? "page-content is-business-changing" : "page-content"}
           tabIndex="-1"
-          aria-busy={businessChanging}
         >
           {businessChanging && (
-            <div className="business-change-status" role="status">
-              Cambiando de negocio...
-            </div>
+            <LoadingState
+              variant="page"
+              className="business-change-status"
+              label="Cambiando de negocio..."
+            />
           )}
           {!businessChanging && (
-            <Outlet context={{ businessCompletionStatus }} />
+            <Outlet context={{ businessCompletionError, businessCompletionStatus }} />
           )}
         </main>
       </div>

@@ -1,3 +1,5 @@
+import {VERTICAL_MODULES, getEnabledVerticalModules} from "./verticalModules.mjs";
+
 export const BUSINESS_ROLES = Object.freeze([
   "OWNER",
   "ADMIN",
@@ -40,13 +42,11 @@ export const BUSINESS_MODULES = Object.freeze([
   "compras",
   "empresa",
   "empleados",
-  "taller",
 ]);
 
 export const BUSINESS_MODULE_LABELS = Object.freeze({
   reportes: "Inicio / Reportes",
   trabajos: "Proyectos y trabajos",
-  taller: "Taller",
   inventario: "Inventario",
   clientes: "Clientes",
   cotizaciones: "Cotizaciones",
@@ -108,16 +108,17 @@ const permissionsByRole = Object.freeze({
   COMPRAS: [P.DASHBOARD_READ, P.PROVIDERS_READ, P.PROVIDERS_WRITE,
     P.PURCHASES_READ, P.PURCHASES_WRITE, P.INVENTORY_READ, P.INVENTORY_WRITE,
     P.INVENTORY_COSTS_READ, P.REFERENCES_READ, P.ACCOUNT_READ],
-  TECNICO: [P.DASHBOARD_READ, P.INVENTORY_READ, P.WORKS_READ, P.WORKS_OPERATE,
-    P.TALLER_READ, P.TALLER_OPERATE, P.TALLER_CREATE,
-    P.ACCOUNT_READ],
+  TECNICO: [P.DASHBOARD_READ, P.INVENTORY_READ, P.INVENTORY_COSTS_READ,
+    P.WORKS_READ, P.WORKS_OPERATE, P.TALLER_READ, P.TALLER_OPERATE,
+    P.TALLER_CREATE, P.ACCOUNT_READ],
   FINANZAS: [P.DASHBOARD_READ, P.SALES_READ, P.PURCHASES_READ, P.INVENTORY_READ,
     P.INVENTORY_COSTS_READ, P.REPORTS_READ, P.PROFITABILITY_READ,
     P.FINANCE_READ, P.FINANCE_WRITE, P.ACCOUNT_READ],
-  // MEMBER conserva lectura histórica y operación técnica propia.
+  // MEMBER conserva lectura histórica y operación técnica propia, sin permisos nuevos.
   MEMBER: [P.DASHBOARD_READ, P.CLIENTS_READ, P.QUOTES_READ, P.SALES_READ,
     P.PROVIDERS_READ, P.PURCHASES_READ, P.INVENTORY_READ, P.INVENTORY_COSTS_READ,
-    P.WORKS_READ, P.WORKS_OPERATE, P.TALLER_READ, P.TALLER_OPERATE, P.TALLER_COSTS_READ, P.REPORTS_READ, P.FINANCE_READ,
+    P.WORKS_READ, P.WORKS_OPERATE, P.TALLER_READ, P.TALLER_OPERATE,
+    P.TALLER_COSTS_READ, P.REPORTS_READ, P.FINANCE_READ,
     P.REFERENCES_READ, P.PRICING_READ, P.COMPANY_READ, P.MEMBERS_READ,
     P.ACCOUNT_READ],
 });
@@ -127,7 +128,6 @@ const permissionsByModule = Object.freeze({
     P.SALES_READ, P.PROVIDERS_READ, P.PURCHASES_READ, P.INVENTORY_READ,
     P.WORKS_READ, P.FINANCE_READ],
   trabajos: [P.DASHBOARD_READ, P.WORKS_READ, P.WORKS_OPERATE],
-  taller: [P.TALLER_READ, P.TALLER_OPERATE],
   inventario: [P.DASHBOARD_READ, P.INVENTORY_READ],
   clientes: [P.DASHBOARD_READ, P.CLIENTS_READ],
   cotizaciones: [P.DASHBOARD_READ, P.QUOTES_READ, P.INVENTORY_READ,
@@ -145,7 +145,6 @@ const permissionsByModule = Object.freeze({
 const modulePaths = Object.freeze({
   reportes: "/reportes",
   trabajos: "/trabajos",
-  taller: "/taller/ordenes",
   inventario: "/inventario",
   clientes: "/clientes",
   cotizaciones: "/cotizaciones",
@@ -171,7 +170,6 @@ const routePermissions = Object.freeze([
   [/^\/(reportes|estadisticas)(?:\/|$)/, P.REPORTS_READ],
   [/^\/finanzas(?:\/|$)/, P.FINANCE_READ],
   [/^\/valorizacion(?:\/|$)/, P.PRICING_READ],
-  [/^\/(referencias|tareas-referencias)(?:\/|$)/, P.REFERENCES_READ],
   [/^\/empresa(?:\/|$)/, P.COMPANY_READ],
   [/^\/empleados(?:\/|$)/, P.MEMBERS_READ],
   [/^\/cuenta(?:\/|$)/, P.ACCOUNT_READ],
@@ -188,7 +186,6 @@ const routeModules = Object.freeze([
   [/^\/compras(?:\/|$)/, "compras"],
   [/^\/inventario(?:\/|$)/, "inventario"],
   [/^\/trabajos(?:\/|$)/, "trabajos"],
-  [/^\/taller(?:\/|$)/, "taller"],
   [/^\/(reportes|estadisticas)(?:\/|$)/, "reportes"],
   [/^\/empresa(?:\/|$)/, "empresa"],
   [/^\/empleados(?:\/|$)/, "empleados"],
@@ -224,7 +221,33 @@ export function hasBusinessPermission(access, permission) {
   );
 }
 
-export function canAccessBusinessPath(access, pathname) {
+// Módulos verticales: una ruta bajo el basePath de un módulo del registro exige
+// que el negocio lo tenga habilitado, además del permiso normal. Sin la opción
+// enabledModules, o con acceso en string, quedan denegadas. Las rutas del Core
+// no pasan por esta comprobación.
+function findVerticalModule(pathname, registry) {
+  return registry.find(({basePath}) =>
+    typeof basePath === "string" && basePath.length > 1 && basePath.startsWith("/") &&
+    (pathname === basePath || pathname.startsWith(`${basePath}/`))
+  );
+}
+
+function isVerticalPathEnabled(access, pathname, {enabledModules, registry = VERTICAL_MODULES} = {}) {
+  const vertical = findVerticalModule(pathname, registry);
+  if (!vertical) return true;
+  return typeof access !== "string" &&
+    Array.isArray(enabledModules) &&
+    enabledModules.includes(vertical.id);
+}
+
+// Opciones de acceso a rutas para el negocio activo de la sesión: los módulos
+// verticales habilitados vienen de negocios/{businessId}.modulosHabilitados.
+export function getBusinessPathOptions(business) {
+  return {enabledModules: getEnabledVerticalModules(business)};
+}
+
+export function canAccessBusinessPath(access, pathname, options = {}) {
+  if (!isVerticalPathEnabled(access, pathname, options)) return false;
   const normalized = normalizeBusinessAccess(access);
   if (normalized.modules) {
     if (/^\/cuenta(?:\/|$)/.test(pathname)) return true;
@@ -235,7 +258,7 @@ export function canAccessBusinessPath(access, pathname) {
   return Boolean(match && hasBusinessPermission(normalized.role, match[1]));
 }
 
-export function getDefaultBusinessPath(access) {
+function resolveDefaultBusinessPath(access) {
   const normalized = normalizeBusinessAccess(access);
   if (normalized.modules) {
     const firstModule = BUSINESS_MODULES.find((moduleId) => normalized.modules.includes(moduleId));
@@ -249,11 +272,16 @@ export function getDefaultBusinessPath(access) {
   return "/cotizaciones";
 }
 
-export function filterNavigationSections(sections, access) {
+export function getDefaultBusinessPath(access, options = {}) {
+  const landing = resolveDefaultBusinessPath(access);
+  return isVerticalPathEnabled(access, landing, options) ? landing : "/cuenta";
+}
+
+export function filterNavigationSections(sections, access, options = {}) {
   return sections
     .map((section) => ({
       ...section,
-      items: section.items.filter((item) => canAccessBusinessPath(access, item.to)),
+      items: section.items.filter((item) => canAccessBusinessPath(access, item.to, options)),
     }))
     .filter((section) => section.items.length > 0);
 }

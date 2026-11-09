@@ -17,7 +17,7 @@ import {
   buildQuotePdfAttachment,
   getQuotePdfFileName,
 } from "../../utils/quotePdf";
-import { formatCLP } from "../../utils/formatters";
+import { useBusinessMoney } from "../../hooks/useBusinessFormat";
 
 function getSafeEmailError(error) {
   const message = String(error?.message || "");
@@ -48,6 +48,7 @@ function SendQuoteEmailModal({
   onClose,
   onSent,
 }) {
+  const formatBusinessAmount = useBusinessMoney();
   const defaults = useMemo(
     () => buildDefaultQuoteEmail({ quote, companyProfile }),
     [companyProfile, quote]
@@ -155,7 +156,7 @@ function SendQuoteEmailModal({
       } catch (sendError) {
         sileo.dismiss(loadingToastId);
         sileo.error({
-          title: "No pudimos enviar la cotización",
+          title: "No se pudo enviar la cotización",
           description: getSafeEmailError(sendError),
         });
         throw sendError;
@@ -239,7 +240,7 @@ function SendQuoteEmailModal({
       <Button
         type="submit"
         form="send-quote-email-form"
-        disabled={sending || !canSendQuote}
+        loading={sending} disabled={!canSendQuote}
       >
         {firebaseEnvironment.isEmulator
           ? sending
@@ -400,7 +401,7 @@ function SendQuoteEmailModal({
             </div>
             <div>
               <dt>Total</dt>
-              <dd>{formatCLP(quote.total)}</dd>
+              <dd>{formatBusinessAmount(quote.total)}</dd>
             </div>
           </dl>
           <div className="quote-email-dialog__attachment">
