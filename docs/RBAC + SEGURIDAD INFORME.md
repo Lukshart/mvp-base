@@ -8,6 +8,11 @@ se conserva el contrato Core de membresías y módulos. La SPEC definitiva MVP
 (VIN opcional, checklist definida) es la utilizada, no la propuesta histórica
 de actualización que aún exigía VIN y dejaba checklist pendiente.
 
+> **Estado del traspaso a `student-baseline` (2026-11-09).** Taller se integra
+> como vertical registrada, fuera de `BUSINESS_MODULES`. Las notas de la revisión
+> del 13-10-2026 se conservan como evidencia histórica; cuando difieren del
+> contrato actual, prevalece esta actualización.
+
 ## Hallazgos antes de modificar
 
 1. Algunas mutaciones (Vehículos, creación OT, Recepción, Diagnósticos y
@@ -31,18 +36,18 @@ revisión del mantenedor del 13-10-2026 confirmó que esto es el comportamiento
 esperado para TECNICO: debe poder consultar costos de materiales en terreno y
 solo se restringe su edición.
 
-La matriz de permisos Core aún no refleja esa decisión mediante
-`INVENTORY_COSTS_READ`. El mantenedor alineará ese contrato central en la próxima
-baseline. Esta diferencia no bloquea Taller ni requiere modificar Rules globales
-desde esta rama. La propuesta de un catálogo público sin costos queda registrada
-como mejora futura para negocios que requieran una política distinta.
+La baseline actual ya refleja esa decisión: `TECNICO` conserva
+`INVENTORY_COSTS_READ`. La capacidad `costs` de Taller se deriva de ese permiso
+para quienes además tienen acceso a la vertical. El catálogo de planificación no
+expone costo ni margen; `precioEfectivo` se entrega únicamente a roles con
+`PRICING_READ`, por lo que para `TECNICO` es `null`.
 
 ## Matriz compatible
 
 | Perfil | Lectura | Operación | Crear Vehículo/OT | Aprobación | Administración | Costos Taller |
 |---|---|---|---|---|---|---|
 | OWNER / ADMIN sin perfil personalizado | Sí | Sí | Sí | Sí | Sí | Sí |
-| TECNICO sin perfil personalizado | Sí | Sí | Sí | No | No | Sí, según decisión Core |
+| TECNICO sin perfil personalizado | Sí | Sí | Sí | No | No | Sí (`INVENTORY_COSTS_READ`) |
 | MEMBER legacy sin perfil personalizado | Sí | Sí | No | No | No | Sí (Core) |
 | MEMBER con perfil activo que incluye Taller | Sí | Sí | No | No | No | No |
 | Otros roles / sin módulo / membresía inactiva | No | No | No | No | No | No |
@@ -51,9 +56,16 @@ No se crean roles ni campos de permisos en membresías. El Core actual configura
 módulos, no capacidades individuales de Taller; un perfil Taller de solo lectura
 independiente requiere un contrato adicional y no se inventa en esta etapa.
 
-## Verificación
+El acceso a la vertical requiere que `taller` esté habilitado en el negocio. El
+registro vive en `VERTICAL_MODULES`, no en `BUSINESS_MODULES`; Functions solicita
+`requiredVerticalModule: "taller"` y las colecciones operacionales de Rules
+combinan `isBusinessModuleEnabled(...)` con el control existente
+`hasBusinessModuleAccess(...)`.
 
-Ejecutada el 13-10-2026, sobre emuladores sin importar ni exportar datos locales:
+## Verificación histórica
+
+Ejecutada el 13-10-2026, antes del traspaso, sobre emuladores sin importar ni
+exportar datos locales:
 
 | Comando | Resultado |
 |---|---|
@@ -82,10 +94,11 @@ La primera ejecución integrada detectó una capacidad denegada serializada como
 null en lugar de false para perfiles sin módulos resueltos. Se corrigió el
 retorno booleano y se añadió regresión; la repetición completa pasó.
 
-La prueba sintética confirmó la lectura directa de costoBase por TECNICO. Tras
+La prueba sintética confirmó la lectura directa de `costoBase` por TECNICO. Tras
 la decisión del mantenedor, se registra como evidencia de la política vigente,
-no como filtración. El DTO de Taller continúa sin exponer costos hasta que la
-alineación central de capacidades sea publicada.
+no como filtración. En el traspaso, `INVENTORY_COSTS_READ` quedó alineado y el
+catálogo de Taller mantiene separados costos y precio mediante
+`PRICING_READ`.
 
 El runtime Java del emulador de reglas imprimió un NullPointerException durante
 el apagado, después de `RULES_SMOKE_OK` y salida 0. No hubo aserciones fallidas;
@@ -96,8 +109,9 @@ deploy ni acceso a datos productivos.
 ## Correcciones aplicadas
 
 - `functions/tallerAccess.js` centraliza capacidades de Taller sin reemplazar
-  la autorización Core. Reutiliza `requireOperationalBusinessAccess`,
-  `assertBusinessCanOperate` y `resolveBaseTaxSettings`.
+  la autorización Core. Reutiliza `requireBusinessAccess` con
+  `requiredVerticalModule: "taller"`, además de `assertBusinessCanOperate` y
+  `resolveBaseTaxSettings`.
 - Vehículos, OT, Recepción, Diagnósticos, planificación, ejecución,
   aprobación, cierre y Plazas releen membresía, perfil, usuario, negocio y
   configuración de impuestos dentro de la transacción. La lectura participa
@@ -109,8 +123,9 @@ deploy ni acceso a datos productivos.
 - Las páginas reciben el contexto completo de acceso, incluido perfil y módulos,
   y utilizan `hasBusinessPermission` en lugar de conjuntos de roles locales.
   La ruta protegida Core se conserva; la interfaz no sustituye al backend.
-- No se modifican reglas globales, roles, stock, kernel económico ni persistencia
-  local de emuladores. Los cambios preexistentes de etapa 14 se preservan.
+- En `firestore.rules` solo se extendieron las colecciones operacionales de
+  Taller con el guard de vertical; no se modificaron reglas de Proyectos,
+  Inventario, stock, kernel económico ni persistencia local de emuladores.
 
 ## Controles inspeccionados
 
@@ -149,8 +164,8 @@ local; no deben atribuirse a esta revisión de seguridad ni descartarse.
 **La etapa 15 queda aceptable dentro del alcance de Taller.** Los controles de
 autorización, aislamiento y colecciones internas se verificaron en emuladores.
 La visibilidad de costos para TECNICO es una decisión explícita de producto;
-la posterior alineación de `INVENTORY_COSTS_READ` pertenece al Core y no bloquea
-este módulo.
+la baseline vigente ya conserva `INVENTORY_COSTS_READ` y Taller deriva de allí
+su capacidad de costos, sin implementar costos, horas-hombre ni margen propios.
 
 Como mejora futura, el Core podrá introducir proyecciones de catálogo sin costos
 para empresas que necesiten ocultarlos a perfiles operacionales. Esa alternativa

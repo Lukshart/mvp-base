@@ -11,6 +11,14 @@ entrega de la Orden de Trabajo (OT), incluyendo recepción, diagnóstico,
 planificación, aprobación, ejecución de servicios, plazas e historial. No sustituye la SPEC vigente: ante una
 contradicción, prevalecen `AGENTS.md`, la SPEC aplicable y los contratos Core.
 
+### Estado tras el traspaso a `student-baseline`
+
+Actualizado el 9-11-2026 sobre `baseline-v3` (`c950b68`). Taller se registra como
+vertical en `VERTICAL_MODULES`, fuera de `BUSINESS_MODULES`, y exige que el
+negocio tenga `taller` habilitado. Se conservaron las 35 Functions del módulo,
+sus rutas `/taller/*`, paths, permisos y colecciones. No se reintrodujeron stock,
+costos propios, horas-hombre, margen ni decisiones sobre Proyectos y trabajos.
+
 ## 2. Límites del módulo
 
 ### Incluido
@@ -92,6 +100,9 @@ directas sensibles, las cuales se realizan por Firebase Functions.
 - Los cambios compartidos fueron extensiones localizadas de rutas, RBAC,
   Rules, índices y servicios, sin modificar informalmente contratos económicos
   del Core.
+- Taller se registra en `VERTICAL_MODULES` y no forma parte de
+  `BUSINESS_MODULES`. El backend exige `requiredVerticalModule: "taller"` y
+  Rules comprueba la habilitación de la vertical antes de permitir lecturas.
 
 ## 4. Modelo operativo y máquinas de estado
 
@@ -144,7 +155,8 @@ dominio adicional.
 
 **Entregables.**
 
-- Registro del módulo en RBAC, navegación y metadatos.
+- Registro de la vertical en RBAC, rutas y metadatos; la navegación se construye
+  desde el registro central de verticales, sin ítems fijos exclusivos de Taller.
 - Navegación principal a Órdenes de trabajo, Vehículos y Plazas.
 - Rutas protegidas: `/taller`, `/taller/ordenes`,
   `/taller/ordenes/nueva`, `/taller/ordenes/:otId`,
@@ -427,10 +439,10 @@ Rules y colecciones técnicas de Taller.
 - Taller no expone operaciones de movimientos físicos de Inventario.
 - DTOs y pantallas no exponen costos a usuarios sin capacidad de costos.
 
-**Decisión pendiente de Core.** La visibilidad de costos de Inventario para
-TECNICO fue confirmada por la mantención como decisión funcional central. La
-matriz `INVENTORY_COSTS_READ` se alineará en una baseline posterior; no se
-consideró un bloqueo de seguridad específico de Taller.
+**Decisión incorporada desde Core.** `TECNICO` conserva
+`INVENTORY_COSTS_READ`; Taller deriva su capacidad de costos de ese permiso. El
+catálogo del módulo no devuelve costo ni margen y solo expone
+`precioEfectivo` a roles con `PRICING_READ`.
 
 ## 6. Interfaz y experiencia de usuario
 
@@ -453,7 +465,7 @@ Decisiones UX relevantes:
 - Cuando no existe backend de una etapa posterior, se prepara la sección sin
   fabricar datos ni estados.
 
-## 7. Verificaciones ejecutadas
+## 7. Verificaciones ejecutadas durante la implementación original
 
 Las siguientes verificaciones se ejecutaron durante las etapas implementadas:
 
@@ -474,6 +486,27 @@ git diff --check
 Además se ejecutaron smokes y casos específicos de aprobación, ejecución de
 servicios, Plazas, cierre, entorno Firebase e interfaz.
 
+Los casos aislados de aprobación, ejecución de servicios, cierre, cancelación,
+recorrido completo, Plazas y seguridad se importan y ejecutan desde
+`scripts/work-orders-integrated-local.mjs`; no necesitan entradas separadas en
+`package.json`.
+
+### Validaciones del traspaso ejecutadas hasta el paso 6
+
+| Verificación | Código de salida | Resultado |
+| --- | ---: | --- |
+| `npm run test:rbac` | 0 | Matriz Core/Taller correcta. |
+| `npm --prefix functions run lint` | 0 | Sin errores. |
+| `npm run test:rules` | 0 | `RULES_SMOKE_OK`. |
+| `npm run test:design` | 0 | Correcto. |
+| `npm run test:contrast` | 0 | Correcto. |
+| `npm run test:contrast-usage` | 0 | Correcto. |
+| `npm run build` | 1 | El sandbox bloqueó la resolución de `vite.config.js` antes de compilar. |
+| Vite con `--configLoader runner` | 0 | Build alternativo correcto: 2971 módulos transformados. |
+
+La batería final, incluido el reintento de `npm run build` en el entorno de
+verificación, permanece pendiente del paso 9 del traspaso.
+
 La matriz de seguridad cubrió 37 Functions con cinco escenarios negativos:
 sin sesión, negocio ajeno, membresía inactiva, perfil sin módulo Taller y usuario
 suspendido. También se comprobó que 13 colecciones técnicas internas queden
@@ -484,27 +517,41 @@ denegadas para el SDK cliente.
 La implementación agregó archivos propios de Taller y extendió de manera
 localizada archivos compartidos que eran necesarios para integrarlo:
 
-- `firestore.rules` y `firestore.indexes.json`: lectura controlada, bloqueo
-  de colecciones internas e índices del módulo.
+- `firestore.rules`: lectura controlada por vertical y bloqueo de escrituras y
+  colecciones internas del módulo.
 - `functions/index.js`, `functions/rbac.js` y
   `functions/tallerAccess.js`: exportación de Functions, capacidades y
   validación de acceso.
-- `src/app/App.jsx`, navegación, `src/domain/rbac.mjs` y
-  `src/firebase/firestorePaths.js`: rutas, metadatos y paths canónicos.
+- `src/app/App.jsx`, los registros `src/domain/verticalModules.mjs` y
+  `functions/verticalModules.js`, `src/domain/rbac.mjs` y
+  `src/firebase/firestorePaths.js`: rutas, registro vertical, permisos y paths
+  canónicos. `navigation.js` consume el registro, sin ítems fijos de Taller.
 - `src/features/clients/ClientSelector.jsx`: reutilización del selector Core
-  autorizado.
-- `src/services/workService.js` y `src/services/reportService.js`:
-  aislamiento de responsabilidades de Proyectos y reportes.
-- `src/styles/components.css` y `src/styles/interior.css`: extensiones
-  visuales localizadas siguiendo convenciones existentes.
+  mediante `listarClientes`, requerido por `NewVehiclePage.jsx`.
+- `src/features/taller/taller.css`: estilos propios importados por `App.jsx`;
+  `src/styles/interior.css` se conserva idéntico a Core.
 
 El resto de los cambios corresponde a dominio, Functions, servicios, páginas,
 componentes, pruebas y documentación propios de Taller.
 
+### Cambios mínimos en archivos Core para el PR
+
+| Archivo | Extensión localizada de Taller |
+| --- | --- |
+| `src/features/clients/ClientSelector.jsx` | Inyecta `loadClients`, con `listarClientes` como valor por defecto, porque `NewVehiclePage.jsx` reutiliza el selector. No modifica `listarClientesSeleccionablesTaller`. |
+| `src/app/App.jsx` | Importa estilos y registra las rutas `/taller/*`. |
+| `src/firebase/firestorePaths.js` | Agrega únicamente los paths canónicos de colecciones Taller. |
+| `functions/index.js` | Exporta las 35 Functions de Taller. |
+| `src/domain/rbac.mjs` y `functions/rbac.js` | Agregan permisos y grupos de roles Taller sin incorporar `taller` a `BUSINESS_MODULES`. |
+| `firestore.rules` | Agrega únicamente reglas de colecciones Taller con guard de vertical. |
+| `functions/package.json` | Incluye los archivos propios de Taller en el lint. |
+| `scripts/rbac-smoke.mjs` | Verifica la extensión RBAC y el registro vertical. |
+
 ## 9. Riesgos residuales y próximas decisiones
 
-- La matriz central de costos del Core debe alinearse en la próxima baseline
-  para resolver de forma uniforme la visibilidad esperada por los técnicos.
+- La capacidad de costos de Taller debe continuar derivándose de
+  `INVENTORY_COSTS_READ`; el precio de catálogo debe continuar separado mediante
+  `PRICING_READ`.
 - Reportes económicos, horas-hombre y margen requieren una decisión Core previa;
   no deben agregarse como cálculos paralelos de Taller.
 - Las mejoras posteriores deben abrir una nueva etapa, con SPEC aprobada,
@@ -1220,9 +1267,9 @@ Taller.
 - El negocio activo del navegador no autoriza una mutación por sí solo.
 - Las Rules niegan acceso SDK a contadores, requests idempotentes, llaves de
   unicidad, locks, balances y demás colecciones internas.
-- Las acciones de costo no se exponen a usuarios sin capacidad. La futura
-  alineación de `INVENTORY_COSTS_READ` para técnicos corresponde a Core y fue
-  identificada como decisión no bloqueante.
+- Las acciones de costo no se exponen a usuarios sin capacidad.
+  `INVENTORY_COSTS_READ` incluye a TECNICO en Core; la capacidad de Taller se
+  deriva de ese permiso y `precioEfectivo` requiere `PRICING_READ`.
 
 **Prueba negativa.** La matriz de seguridad cubre funciones de Taller frente a
 falta de sesión, negocio ajeno, membresía inactiva, perfil sin Taller y usuario
@@ -1385,10 +1432,9 @@ cerrarlo. No se detuvieron procesos ajenos ni se borraron exports.
 - **Validación UI pendiente:** no se ejecutó un recorrido interactivo en navegador
   ni comparación visual/responsive. Build, revisión de código y smokes no prueban
   interacción real, accesibilidad o los estados visuales bajo red lenta.
-- **Matriz de costos Core:** la prueba confirma que TECNICO puede leer costos de
-  Inventario Core según el contrato vigente. Los DTOs de Taller revisados siguen
-  filtrados. La alineación central previamente indicada por Mauricio no se cambió
-  ni se presenta como resuelta por Taller.
+- **Matriz de costos Core:** TECNICO puede leer costos de Inventario Core según
+  el contrato vigente. Taller no agrega costos, HH ni margen; su catálogo omite
+  costo/margen y filtra `precioEfectivo` con `PRICING_READ`.
 - **Ambiente:** pruebas ejecutadas con Node 26 del host; Functions declara Node 22
   y el emulador advierte del desajuste. No se verificó esta ejecución con Node 22
   ni en producción. El apagado de emuladores presentó la incidencia descrita.
@@ -1426,7 +1472,9 @@ esto no constituye garantía de ausencia de defectos fuera de su cobertura.
 El 15-10-2026 se retiró de `feature/taller-mecanico` la implementación de
 consumo y devolución física de Inventario. Antes de modificar la rama se creó
 `backup/taller-etapa-11-materiales` apuntando al commit
-`736e4f526a26b49542fb561a0e3b91d813d15b7d`, que conserva el trabajo completo.
+`a194fd3`; el commit informado originalmente,
+`736e4f526a26b49542fb561a0e3b91d813d15b7d`, es ancestro de ese respaldo. La
+rama está publicada en el fork y conserva el trabajo retirado.
 
 ### 20.1 Implementación retirada
 
