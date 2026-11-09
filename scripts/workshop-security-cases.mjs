@@ -105,7 +105,7 @@ export async function testWorkshopSecurity({adminDb, businessId, otId, owner, me
   const safeItem = catalog.find((item) => item.itemId === "security-cost-probe");
   assert.ok(safeItem);
   assert.ok(!Object.keys(safeItem).some((key) => /costo|margen|valorInventario/i.test(key)));
-  console.log("DECISION_CORE_CONFIRMADA: TECNICO lee costos de Inventario; DTO Taller permanece acotado hasta la alineación central");
+  console.log("DECISION_CORE_CONFIRMADA: TECNICO lee costos de Inventario; DTO Taller no expone costos y el precio exige PRICING_READ");
   await adminDb.doc(`${base}/inventario/security-cost-probe`).delete();
   console.log(`WORKSHOP_SECURITY_OK: ${Object.keys(calls).length} Functions × 5 escenarios negativos; 11 colecciones internas cerradas`);
 }

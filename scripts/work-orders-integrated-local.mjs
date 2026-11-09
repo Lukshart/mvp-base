@@ -185,12 +185,21 @@ try {
   });
   const outsiderBusinessId = outsiderBusiness.data.business.id;
 
+  await expectCallableError(
+    "Function Taller con módulo deshabilitado",
+    () => callable(owner, "listarCatalogoTaller")({businessId}),
+    ["failed-precondition"],
+    /Este módulo no está habilitado para tu empresa\./
+  );
+
   await Promise.all([
     adminDb.doc(`negocios/${businessId}`).update({
       monedaCodigo: "CLP",
+      modulosHabilitados: ["taller"],
       verificacionEmpresa: {estado: "VERIFICADA"},
     }),
     adminDb.doc(`negocios/${outsiderBusinessId}`).update({
+      modulosHabilitados: ["taller"],
       verificacionEmpresa: {estado: "VERIFICADA"},
     }),
     adminDb.doc(`membresias/${businessId}__${admin.uid}`).set({
@@ -228,11 +237,11 @@ try {
     ),
     adminDb.doc(`negocios/${businessId}/inventario/servicio-core`).set({
       negocioId: businessId, tipoItem: "servicio", estado: "activo", nombre: "Cambio de aceite",
-      codigoInterno: "SER-001", unidad: "servicio", precioInterno: 25000,
+      codigoInterno: "SER-001", unidad: "servicio", costoBase: 10000, precioInterno: 25000,
     }),
     adminDb.doc(`negocios/${businessId}/inventario/producto-core`).set({
       negocioId: businessId, tipoItem: "producto", estado: "activo", nombre: "Filtro",
-      codigoInterno: "PRO-001", unidad: "unidad", precioInterno: 8000, stock: 12,
+      codigoInterno: "PRO-001", unidad: "unidad", costoBase: 3000, precioInterno: 8000, stock: 12,
     }),
     adminDb.doc(`negocios/${businessId}/inventario/servicio-externo`).set({
       negocioId: outsiderBusinessId, tipoItem: "servicio", estado: "activo", nombre: "Ajeno",
@@ -777,6 +786,20 @@ try {
   ));
   assert.equal(listed.size, 5);
   console.log("OK lectura OT: listado filtrado autorizado para Taller");
+
+  const technicianInventory = await getDoc(
+    doc(technician.db, `negocios/${businessId}/inventario/producto-core`)
+  );
+  assert.equal(technicianInventory.data()?.costoBase, 3000);
+  const technicianCatalog = (await callable(technician, "listarCatalogoTaller")({businessId})).data.items;
+  assert.ok(technicianCatalog.length > 0);
+  assert.ok(technicianCatalog.every((item) => item.precioEfectivo === null));
+  assert.ok(technicianCatalog.every((item) =>
+    !Object.keys(item).some((key) => /costo|margen|precioInterno/i.test(key))));
+  const ownerCatalog = (await callable(owner, "listarCatalogoTaller")({businessId})).data.items;
+  assert.ok(ownerCatalog.some((item) => item.itemId === "producto-core" && item.precioEfectivo === 8000));
+  console.log("OK permisos Core: TECNICO lee costos, no recibe precios; OWNER recibe precio efectivo");
+
   await expectFirestoreDenied(
     "otro negocio no puede leer la OT",
     () => getDoc(doc(outsider.db, orderPath))
@@ -808,12 +831,21 @@ try {
   await expectFirestoreDenied("perfil solo Taller no lee costos de Inventario Core", () =>
     getDocs(query(collection(member.db, `negocios/${businessId}/inventario`),
       where("negocioId", "==", businessId))));
-  const coreCatalog = (await callable(member, "listarCatalogoTaller")({businessId})).data.items;
-  assert.ok(coreCatalog.some((item) => item.itemId === "servicio-core" && item.precioEfectivo === 25000));
-  assert.ok(coreCatalog.some((item) => item.itemId === "producto-core" && item.precioEfectivo === 8000));
-  assert.ok(coreCatalog.every((item) => !Object.keys(item).some((key) => /costo|margen|precioInterno/i.test(key))));
+  const tallerOnlyCatalog = (await callable(member, "listarCatalogoTaller")({businessId})).data.items;
+  assert.ok(tallerOnlyCatalog.length > 0);
+  assert.ok(tallerOnlyCatalog.every((item) => item.precioEfectivo === null));
+  assert.ok(tallerOnlyCatalog.every((item) =>
+    !Object.keys(item).some((key) => /costo|margen|precioInterno/i.test(key))));
+  await adminDb.doc(`negocios/${businessId}/perfilesEmpleados/taller-only`).update({
+    modulos: ["taller", "cotizaciones"],
+  });
+  const pricedCatalog = (await callable(member, "listarCatalogoTaller")({businessId})).data.items;
+  assert.ok(pricedCatalog.some((item) => item.itemId === "servicio-core" && item.precioEfectivo === 25000));
+  assert.ok(pricedCatalog.some((item) => item.itemId === "producto-core" && item.precioEfectivo === 8000));
+  assert.ok(pricedCatalog.every((item) =>
+    !Object.keys(item).some((key) => /costo|margen|precioInterno/i.test(key))));
   assert.ok((await getDoc(doc(member.db, servicePath))).exists());
-  console.log("OK perfil solo Taller: catálogo Core filtrado sin costos y ServiciosOT del mismo negocio");
+  console.log("OK perfil Taller: catálogo sin costos y precios solo con PRICING_READ");
   console.log("WORK_ORDERS_INTEGRATED_LOCAL_OK");
   await testWorkOrderApproval({adminDb, businessId, otId, serviceId, diagnosisPath,
     owner, admin, technician, member, outsider, callable, expectCallableError, expectFirestoreDenied, runId: RUN_ID});
