@@ -84,8 +84,10 @@ assert.equal(canAccessBusinessPath("VENTAS", "/compras"), false);
 assert.equal(canAccessBusinessPath("COMPRAS", "/ordenes-compra/nueva"), true);
 assert.equal(canAccessBusinessPath("COMPRAS", "/ventas"), false);
 assert.equal(canAccessBusinessPath("TECNICO", "/trabajos"), true);
-assert.equal(canAccessBusinessPath("TECNICO", "/taller/ordenes"), true);
-assert.equal(canAccessBusinessPath("VENTAS", "/taller/ordenes"), false);
+const tallerEnabled = {enabledModules: ["taller"]};
+assert.equal(canAccessBusinessPath({role: "TECNICO"}, "/taller/ordenes"), false);
+assert.equal(canAccessBusinessPath({role: "TECNICO"}, "/taller/ordenes", tallerEnabled), true);
+assert.equal(canAccessBusinessPath({role: "VENTAS"}, "/taller/ordenes", tallerEnabled), false);
 assert.equal(canAccessBusinessPath("TECNICO", "/reportes"), false);
 assert.equal(canAccessBusinessPath("FINANZAS", "/reportes"), true);
 assert.equal(canAccessBusinessPath("FINANZAS", "/empresa"), false);
@@ -148,8 +150,9 @@ const verticalMenu = [{label: "Modulos", items: [{to: "/clientes"}, {to: "/venta
 const menuTargets = (options) => filterNavigationSections(verticalMenu, {role: "OWNER"}, options).flatMap((section) => section.items.map((item) => item.to));
 assert.deepEqual(menuTargets(withoutModule), ["/ventas"]);
 assert.deepEqual(menuTargets(withModule), ["/clientes", "/ventas"]);
-// Con el registro real (vacio) nada cambia y las opciones salen de la sesion.
-assert.deepEqual(getBusinessPathOptions({modulosHabilitados: ["taller"]}), {enabledModules: []}, "el registro real vacio descarta todo");
+// Con el registro real, las opciones conservan solo los verticales conocidos
+// que vienen habilitados en la sesion.
+assert.deepEqual(getBusinessPathOptions({modulosHabilitados: ["taller"]}), {enabledModules: ["taller"]});
 assert.deepEqual(getBusinessPathOptions(undefined), {enabledModules: []});
 assert.equal(canAccessBusinessPath({role: "OWNER"}, "/clientes", getBusinessPathOptions({role: "OWNER"})), true);
 // Ningun vertical entra en BUSINESS_MODULES.
