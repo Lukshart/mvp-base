@@ -1001,7 +1001,8 @@ service cloud.firestore {
       }
 
       match /vehiculos/{vehiculoId} {
-        allow read: if hasBusinessModuleAccess(businessId, ["OWNER", "ADMIN", "TECNICO", "MEMBER"], ["taller"])
+        allow read: if isBusinessModuleEnabled(businessId, "taller")
+          && hasBusinessModuleAccess(businessId, ["OWNER", "ADMIN", "TECNICO", "MEMBER"], ["taller"])
           && resource.data.negocioId == businessId;
         allow create, update, delete: if false;
       }
@@ -1019,7 +1020,8 @@ service cloud.firestore {
       }
 
       match /plazasTaller/{plazaId} {
-        allow read: if hasBusinessModuleAccess(businessId, ["OWNER", "ADMIN", "TECNICO", "MEMBER"], ["taller"])
+        allow read: if isBusinessModuleEnabled(businessId, "taller")
+          && hasBusinessModuleAccess(businessId, ["OWNER", "ADMIN", "TECNICO", "MEMBER"], ["taller"])
           && resource.data.negocioId == businessId;
         allow create, update, delete: if false;
       }
@@ -1029,19 +1031,22 @@ service cloud.firestore {
       }
 
       match /ordenesTrabajo/{otId} {
-        allow read: if hasBusinessModuleAccess(businessId, ["OWNER", "ADMIN", "TECNICO", "MEMBER"], ["taller"])
+        allow read: if isBusinessModuleEnabled(businessId, "taller")
+          && hasBusinessModuleAccess(businessId, ["OWNER", "ADMIN", "TECNICO", "MEMBER"], ["taller"])
           && resource.data.negocioId == businessId;
         allow create, update, delete: if false;
 
         match /diagnosticos/{diagnosticoId} {
-          allow read: if hasBusinessModuleAccess(businessId, ["OWNER", "ADMIN", "TECNICO", "MEMBER"], ["taller"])
+          allow read: if isBusinessModuleEnabled(businessId, "taller")
+            && hasBusinessModuleAccess(businessId, ["OWNER", "ADMIN", "TECNICO", "MEMBER"], ["taller"])
             && resource.data.negocioId == businessId
             && resource.data.otId == otId;
           allow create, update, delete: if false;
         }
 
         match /servicios/{servicioOtId} {
-          allow read: if hasBusinessModuleAccess(businessId, ["OWNER", "ADMIN", "TECNICO", "MEMBER"], ["taller"])
+          allow read: if isBusinessModuleEnabled(businessId, "taller")
+            && hasBusinessModuleAccess(businessId, ["OWNER", "ADMIN", "TECNICO", "MEMBER"], ["taller"])
             && resource.data.negocioId == businessId
             && resource.data.otId == otId;
           allow create, update, delete: if false;

@@ -118,6 +118,46 @@ async function main() {
         estado: "activo",
       }),
     ]);
+
+    const workshopOrderId = "workshop-rules-smoke";
+    const workshopDocuments = [
+      {
+        path: `negocios/${businessId}/vehiculos/vehicle-rules-smoke`,
+        data: {negocioId: businessId, vehiculoId: "vehicle-rules-smoke"},
+      },
+      {
+        path: `negocios/${businessId}/plazasTaller/plaza-rules-smoke`,
+        data: {negocioId: businessId, plazaId: "plaza-rules-smoke"},
+      },
+      {
+        path: `negocios/${businessId}/ordenesTrabajo/${workshopOrderId}`,
+        data: {negocioId: businessId, otId: workshopOrderId},
+      },
+      {
+        path: `negocios/${businessId}/ordenesTrabajo/${workshopOrderId}/diagnosticos/diagnosis-rules-smoke`,
+        data: {negocioId: businessId, otId: workshopOrderId, diagnosticoId: "diagnosis-rules-smoke"},
+      },
+      {
+        path: `negocios/${businessId}/ordenesTrabajo/${workshopOrderId}/servicios/service-rules-smoke`,
+        data: {negocioId: businessId, otId: workshopOrderId, servicioOtId: "service-rules-smoke"},
+      },
+    ];
+    await Promise.all(workshopDocuments.map(({path, data}) => adminDb.doc(path).set(data)));
+    for (const {path} of workshopDocuments) {
+      await expectDenied(`Taller deshabilitado bloquea ${path}`, () =>
+        getDoc(doc(ownerClient.db, path))
+      );
+    }
+    await adminDb.doc(`negocios/${businessId}`).update({modulosHabilitados: ["taller"]});
+    for (const {path} of workshopDocuments) {
+      const snapshot = await getDoc(doc(ownerClient.db, path));
+      if (!snapshot.exists()) throw new Error(`Taller habilitado no pudo leer ${path}`);
+      await expectDenied(`Taller mantiene escritura cliente cerrada en ${path}`, () =>
+        updateDoc(doc(ownerClient.db, path), {forjadoDesdeCliente: true})
+      );
+    }
+    console.log("OK reglas Taller: módulo apagado bloquea, habilitado permite lectura y escritura cliente sigue cerrada");
+
     const inventoryPath = `usuarios/${ownerUid}/inventario/item-smoke`;
     const areaPath = `usuarios/${ownerUid}/areas/area-smoke`;
     const categoryPath =
