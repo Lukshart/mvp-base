@@ -1,13 +1,16 @@
 "use strict";
 
-const {
-  INVENTORY_COSTS_READ_ROLES,
-  TALLER_CREATION_ROLES,
-  TALLER_MANAGEMENT_ROLES,
-  TALLER_OPERATION_ROLES,
-} = require("./rbac");
 const {assertBusinessCanOperate} = require("./businessOperations");
 const {resolveBaseTaxSettings} = require("./businessJurisdiction");
+
+// Taller mantiene sus grupos localmente para no extender la matriz RBAC del Core.
+const INVENTORY_COSTS_READ_ROLES = Object.freeze([
+  "OWNER", "ADMIN", "COMPRAS", "TECNICO", "FINANZAS", "MEMBER",
+]);
+const PRICING_READ_ROLES = Object.freeze(["OWNER", "ADMIN", "VENTAS", "MEMBER"]);
+const TALLER_MANAGEMENT_ROLES = Object.freeze(["OWNER", "ADMIN"]);
+const TALLER_CREATION_ROLES = Object.freeze(["OWNER", "ADMIN", "TECNICO"]);
+const TALLER_OPERATION_ROLES = Object.freeze(["OWNER", "ADMIN", "TECNICO", "MEMBER"]);
 
 // Profiles select modules, not administrative/financial capabilities (Core contract).
 function hasTallerCapability(membership, capability) {
@@ -65,4 +68,14 @@ async function assertFreshTallerAccess(transaction, context, dependencies, capab
   return membership;
 }
 
-module.exports = {hasTallerCapability, assertTallerCapability, requireTallerAccess, assertFreshTallerAccess};
+module.exports = {
+  INVENTORY_COSTS_READ_ROLES,
+  PRICING_READ_ROLES,
+  TALLER_CREATION_ROLES,
+  TALLER_MANAGEMENT_ROLES,
+  TALLER_OPERATION_ROLES,
+  hasTallerCapability,
+  assertTallerCapability,
+  requireTallerAccess,
+  assertFreshTallerAccess,
+};

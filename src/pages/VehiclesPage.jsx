@@ -4,6 +4,7 @@ import {Link, useNavigate} from "react-router-dom";
 import {Car, Plus, RefreshCw, Search} from "lucide-react";
 import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
+import LoadingState from "../components/ui/LoadingState";
 import {matchesVehicleSearch, getVehicleTypeLabel} from "../domain/vehicleModel.mjs";
 import {getClientErrorMessage, listarClientes} from "../services/clientService";
 import {getVehicleErrorMessage, listarVehiculos} from "../services/vehicleService";
@@ -67,7 +68,7 @@ function VehiclesPage({businessId, role}) {
         <div className="erp-filters no-print">
           <label className="erp-field vehicle-search-field"><span className="erp-field__label">Buscar vehículo</span><span className="vehicle-search-control"><AppIcon icon={Search} size={18} /><input className="erp-control" type="search" value={search} maxLength={200} onChange={(event) => setSearch(event.target.value)} placeholder="Patente, VIN, marca o modelo" /></span></label>
         </div>
-        {loading ? <div className="erp-empty-state" role="status">Cargando vehículos del negocio activo...</div> : !error && visibleVehicles.length === 0 ? (
+        {loading ? <LoadingState variant="section" label="Cargando vehículos del negocio activo..." /> : !error && visibleVehicles.length === 0 ? (
           <div className="erp-empty-state"><AppIcon icon={Car} size={28} /><h3>{hasSearch ? "No hay coincidencias" : "Aún no hay vehículos"}</h3><p>{hasSearch ? "Prueba con otra patente, VIN, marca o modelo." : canCreate ? "Registra el primer vehículo para comenzar." : "No tienes permisos para registrar vehículos."}</p>{!hasSearch && canCreate && <Button icon={Plus} onClick={() => navigate("/taller/vehiculos/nuevo")}>Crear primer vehículo</Button>}</div>
         ) : !error && <>
           <div className="erp-table-region erp-desktop-only"><table className="erp-table"><thead><tr><th>Patente</th><th>Marca / modelo</th><th>Año</th><th>Tipo</th><th>Propietario actual</th></tr></thead><tbody>{visibleVehicles.map((vehicle) => <tr key={vehicle.vehiculoId}><td><Link className="vehicle-link" to={`/taller/vehiculos/${vehicle.vehiculoId}`}>{vehicle.patente}</Link></td><td>{vehicle.marca} {vehicle.modelo}</td><td>{vehicle.anio}</td><td>{getVehicleTypeLabel(vehicle.tipo)}</td><td>{ownerName(vehicle, clientsById, canReadClients)}</td></tr>)}</tbody></table></div>

@@ -3,6 +3,7 @@ import React, {useCallback, useEffect, useRef, useState} from "react";
 import {ArrowLeft, Ban, RefreshCw, Save} from "lucide-react";
 import {useNavigate, useParams} from "react-router-dom";
 import Button from "../components/ui/Button";
+import LoadingState from "../components/ui/LoadingState";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
 import StatusBadge from "../components/ui/StatusBadge";
 import DiagnosisPanel from "../features/workOrders/DiagnosisPanel";
@@ -288,7 +289,7 @@ export default function WorkOrderDetailPage({businessId, role}) {
     }
   };
 
-  if (loading) return <main className="erp-page"><div className="erp-empty-state" role="status">Cargando orden de trabajo...</div></main>;
+  if (loading) return <LoadingState variant="page" label="Cargando orden de trabajo..." />;
   if (error) return <main className="erp-page"><div className="vehicle-message vehicle-message--error" role="alert"><span>{error}</span><Button type="button" variant="secondary" icon={RefreshCw} onClick={load}>Reintentar</Button></div></main>;
   if (!order) return <main className="erp-page"><div className="erp-empty-state" role="status"><h2>Orden de trabajo no encontrada</h2><p>Puede no existir o no pertenecer al negocio activo.</p><Button type="button" variant="secondary" icon={ArrowLeft} onClick={() => navigate("/taller/ordenes")}>Volver a órdenes</Button></div></main>;
 
@@ -356,7 +357,7 @@ export default function WorkOrderDetailPage({businessId, role}) {
     {["resumen", "servicios"].includes(activeSection) && <ApprovalPanel businessId={businessId} otId={otId} order={order} onChanged={refreshServices} />}
     {activeSection === "historial" && <section className="erp-panel" aria-labelledby="work-order-history-title">
       <div className="erp-panel-header"><div><h2 id="work-order-history-title" className="erp-panel-title">Historial</h2><p className="erp-secondary-text">Eventos registrados de la orden de trabajo.</p></div></div>
-      {historyLoading && <div className="erp-empty-state" role="status">Cargando historial...</div>}
+      {historyLoading && <LoadingState variant="section" label="Cargando historial..." />}
       {historyError && <div className="vehicle-message vehicle-message--error" role="alert">{historyError} <Button type="button" variant="secondary" onClick={refreshHistory}>Reintentar</Button></div>}
       {!historyLoading && !historyError && (historyEvents.length
         ? <ol className="work-order-history-list">{historyEvents.map((event) => { const detail = getWorkOrderHistoryDetail(event); return <li key={event.eventoId} className="work-order-history-event"><time>{formatWorkOrderHistoryDate(event.fecha)}</time><div><h3>{getWorkOrderHistoryEventLabel(event.tipo)}</h3><p>{event.actorNombre || "Usuario no disponible"}</p>{detail && <p className="erp-secondary-text">{detail}</p>}</div></li>; })}</ol>

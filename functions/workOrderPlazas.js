@@ -1,8 +1,12 @@
 "use strict";
 
 const {normalizeBusinessVerificationState} = require("./businessOperations");
-const {TALLER_MANAGEMENT_ROLES, TALLER_OPERATION_ROLES} = require("./rbac");
-const {requireTallerAccess, assertFreshTallerAccess} = require("./tallerAccess");
+const {
+  TALLER_MANAGEMENT_ROLES,
+  TALLER_OPERATION_ROLES,
+  requireTallerAccess,
+  assertFreshTallerAccess,
+} = require("./tallerAccess");
 const {
   appendPlanningEvent,
   diagnosisActor,

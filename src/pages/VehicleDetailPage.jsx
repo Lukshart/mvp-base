@@ -3,6 +3,7 @@ import React, {useCallback, useEffect, useState} from "react";
 import {Link, useLocation, useNavigate, useParams} from "react-router-dom";
 import {ArrowLeft, Pencil, Plus, RefreshCw, Save, UserRound} from "lucide-react";
 import Button from "../components/ui/Button";
+import LoadingState from "../components/ui/LoadingState";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
 import StatusBadge from "../components/ui/StatusBadge";
 import ClientSelector from "../features/clients/ClientSelector";
@@ -103,7 +104,7 @@ function VehicleDetailPage({businessId, role}) {
     finally { setSaving(false); }
   };
 
-  if (loading) return <main className="erp-page"><div className="erp-empty-state" role="status">Cargando vehículo...</div></main>;
+  if (loading) return <LoadingState variant="page" label="Cargando vehículo..." />;
   if (error) return <main className="erp-page"><div className="vehicle-message vehicle-message--error" role="alert"><span>{error}</span><Button variant="secondary" icon={RefreshCw} onClick={load}>Reintentar</Button></div></main>;
   if (!vehicle) return <main className="erp-page"><div className="erp-empty-state" role="status"><h2>Vehículo no encontrado</h2><p>Puede haber sido eliminado del contexto del negocio activo.</p><Button variant="secondary" icon={ArrowLeft} onClick={() => navigate("/taller/vehiculos")}>Volver a vehículos</Button></div></main>;
 

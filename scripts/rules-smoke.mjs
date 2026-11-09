@@ -156,7 +156,30 @@ async function main() {
         updateDoc(doc(ownerClient.db, path), {forjadoDesdeCliente: true})
       );
     }
+    const workshopRolePaths = workshopDocuments.slice(0, 3).map(({path}) => path);
+    const workshopMembershipRef = adminDb.doc(`membresias/${businessId}__${otherUid}`);
+    await workshopMembershipRef.set({
+      negocioId: businessId,
+      uid: otherUid,
+      rol: "ADMIN",
+      estado: "activo",
+    });
+    for (const role of ["ADMIN", "TECNICO", "MEMBER"]) {
+      await workshopMembershipRef.update({rol: role});
+      for (const path of workshopRolePaths) {
+        const snapshot = await getDoc(doc(otherClient.db, path));
+        if (!snapshot.exists()) throw new Error(`${role} no pudo leer ${path}`);
+      }
+    }
+    for (const role of ["VENTAS", "COMPRAS", "FINANZAS"]) {
+      await workshopMembershipRef.update({rol: role});
+      for (const path of workshopRolePaths) {
+        await expectDenied(`${role} no lee ${path}`, () => getDoc(doc(otherClient.db, path)));
+      }
+    }
+    await workshopMembershipRef.delete();
     console.log("OK reglas Taller: módulo apagado bloquea, habilitado permite lectura y escritura cliente sigue cerrada");
+    console.log("OK reglas Taller: Vehículos, OTs y Plazas respetan lectura por rol");
 
     const inventoryPath = `usuarios/${ownerUid}/inventario/item-smoke`;
     const areaPath = `usuarios/${ownerUid}/areas/area-smoke`;

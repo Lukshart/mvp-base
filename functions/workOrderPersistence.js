@@ -2,14 +2,16 @@
 
 const {createHash} = require("node:crypto");
 const {normalizeBusinessVerificationState} = require("./businessOperations");
-const {hasTallerCapability, requireTallerAccess, assertFreshTallerAccess} = require("./tallerAccess");
 const {
-  ASSIGNABLE_BUSINESS_ROLES,
   PRICING_READ_ROLES,
   TALLER_CREATION_ROLES,
   TALLER_MANAGEMENT_ROLES,
   TALLER_OPERATION_ROLES,
-} = require("./rbac");
+  hasTallerCapability,
+  requireTallerAccess,
+  assertFreshTallerAccess,
+} = require("./tallerAccess");
+const {ASSIGNABLE_BUSINESS_ROLES} = require("./rbac");
 
 function canReadCorePricing(membership) {
   if (!PRICING_READ_ROLES.includes(membership?.rol)) return false;

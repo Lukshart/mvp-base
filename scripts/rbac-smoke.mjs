@@ -15,6 +15,7 @@ import {
 
 const require = createRequire(import.meta.url);
 const backendRbac = require("../functions/rbac.js");
+const tallerRbac = require("../functions/tallerAccess.js");
 const {crearVentaHandler} = require("../functions/salePersistence.js");
 const {crearCompraHandler} = require("../functions/purchasePersistence.js");
 const {obtenerBalanceTrabajoHandler} = require("../functions/workBalance.js");
@@ -24,20 +25,22 @@ assert.ok(BUSINESS_ROLES.includes("MEMBER"));
 assert.ok(ASSIGNABLE_BUSINESS_ROLES.includes("MEMBER"));
 assert.ok(!BUSINESS_ROLES.includes("PLATFORM_SUPERADMIN"));
 assert.deepEqual(backendRbac.BUSINESS_ROLES, BUSINESS_ROLES);
-assert.deepEqual(backendRbac.TALLER_MANAGEMENT_ROLES, ["OWNER", "ADMIN"]);
-assert.deepEqual(backendRbac.TALLER_CREATION_ROLES, ["OWNER", "ADMIN", "TECNICO"]);
+assert.equal(Object.hasOwn(backendRbac, "TALLER_MANAGEMENT_ROLES"), false);
+assert.equal(Object.hasOwn(backendRbac, "TALLER_CREATION_ROLES"), false);
+assert.deepEqual(tallerRbac.TALLER_MANAGEMENT_ROLES, ["OWNER", "ADMIN"]);
+assert.deepEqual(tallerRbac.TALLER_CREATION_ROLES, ["OWNER", "ADMIN", "TECNICO"]);
 console.log("OK RBAC: perfiles predefinidos compatibles y Colaborador asignable");
 
 const P = BUSINESS_PERMISSIONS;
 assert.deepEqual(
-  backendRbac.INVENTORY_COSTS_READ_ROLES,
+  tallerRbac.INVENTORY_COSTS_READ_ROLES,
   BUSINESS_ROLES.filter((role) => hasBusinessPermission(role, P.INVENTORY_COSTS_READ))
 );
 assert.deepEqual(
-  backendRbac.PRICING_READ_ROLES,
+  tallerRbac.PRICING_READ_ROLES,
   BUSINESS_ROLES.filter((role) => hasBusinessPermission(role, P.PRICING_READ))
 );
-const {hasTallerCapability, requireTallerAccess} = require("../functions/tallerAccess.js");
+const {hasTallerCapability, requireTallerAccess} = tallerRbac;
 const workshopCapabilities = {read: P.TALLER_READ, operate: P.TALLER_OPERATE,
   create: P.TALLER_CREATE, approve: P.TALLER_APPROVE, manage: P.TALLER_MANAGE};
 for (const role of BUSINESS_ROLES) {
