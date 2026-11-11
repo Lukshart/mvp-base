@@ -2,6 +2,7 @@ import {BUSINESS_PERMISSIONS, hasBusinessPermission} from "../../domain/rbac.mjs
 import React, {useEffect, useMemo, useState} from "react";
 import {Plus, Save} from "lucide-react";
 import Button from "../../components/ui/Button";
+import LoadingState from "../../components/ui/LoadingState";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
 import StatusBadge from "../../components/ui/StatusBadge";
 import {
@@ -204,7 +205,7 @@ export default function ServicePlanningPanel({
       {onFinalizeWorkOrder && <Button type="button" variant="secondary" className="work-order-finalize-button" disabled={!canFinalizeWorkOrder} onClick={onFinalizeWorkOrder}>Finalizar orden de trabajo</Button>}
     </div></div>
     {!order.recepcion && <div className="vehicle-message vehicle-message--warning" role="status">Registra la Recepción antes de planificar servicios.</div>}
-    {loading && <div className="erp-empty-state" role="status">Cargando catálogo y responsables...</div>}
+    {loading && <LoadingState variant="section" label="Cargando catálogo y responsables..." />}
     {loadError && <div className="vehicle-message vehicle-message--error" role="alert">{loadError}</div>}
     {error && <div className="vehicle-message vehicle-message--error" role="alert">{error}</div>}
     {notice && <div className="vehicle-message" role="status">{notice}</div>}

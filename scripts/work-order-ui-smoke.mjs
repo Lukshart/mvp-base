@@ -104,7 +104,9 @@ for (const action of ["Enviar a aprobación", "Aprobar", "Rechazar", "Revalidar 
 }
 assert.match(approvalPanel, /summary\.puedeAprobar/);
 assert.match(approvalPanel, /ResponsiveDialog/);
+assert.match(approvalPanel, /<LoadingState variant="section" label="Cargando alcance\.\.\." \/>/);
 assert.match(approvalPanel, /confirmation\.revision/);
+assert.doesNotMatch(approvalPanel, /erp-empty-state" role="status">Cargando alcance/);
 assert.doesNotMatch(approvalPanel, /setDoc|updateDoc|<select|type="number"/);
 const diagnosisPanel = fs.readFileSync("src/features/workOrders/DiagnosisPanel.jsx", "utf8");
 assert.match(diagnosisPanel, /Guardar borrador/);
@@ -114,6 +116,8 @@ assert.match(diagnosisPanel, /"pendiente_entrega", "cerrada", "cancelada"/);
 const planningPanel = fs.readFileSync("src/features/workOrders/ServicePlanningPanel.jsx", "utf8");
 const workOrderService = fs.readFileSync("src/services/workOrderService.js", "utf8");
 assert.match(planningPanel, /listarCatalogoTaller/);
+assert.match(planningPanel, /<LoadingState variant="section" label="Cargando catálogo y responsables\.\.\." \/>/);
+assert.doesNotMatch(planningPanel, /erp-empty-state" role="status">Cargando catálogo y responsables/);
 assert.doesNotMatch(planningPanel, /getInventoryItems/);
 assert.match(planningPanel, /tipoItem === "servicio"/);
 assert.match(planningPanel, /tipoItem === "producto"/);

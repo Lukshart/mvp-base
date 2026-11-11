@@ -1,5 +1,6 @@
 import React, {useCallback, useEffect, useState} from "react";
 import Button from "../../components/ui/Button";
+import LoadingState from "../../components/ui/LoadingState";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
 import {
   createWorkOrderRequestId, ejecutarAccionAprobacionOT, getWorkOrderErrorMessage,
@@ -80,7 +81,7 @@ export default function ApprovalPanel({businessId, otId, order, onChanged}) {
         ? "Alcance congelado al enviar. Los cambios posteriores del catálogo no modifican estos valores."
         : "Vista previa de valores vigentes. Se confirmarán desde Inventario al enviar a aprobación."}</p>
     </div><Button type="button" variant="secondary" disabled={loading || busy} onClick={() => setReload((value) => value + 1)}>Actualizar</Button></div>
-    {loading && <div className="erp-empty-state" role="status">Cargando alcance...</div>}
+    {loading && <LoadingState variant="section" label="Cargando alcance..." />}
     {error && <div className="vehicle-message vehicle-message--error" role="alert">{error}</div>}
     {notice && <div className="vehicle-message" role="status">{notice}</div>}
     {summary && !loading && <>

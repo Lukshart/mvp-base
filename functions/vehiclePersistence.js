@@ -268,8 +268,6 @@ async function listarClientesSeleccionablesTallerHandler(request, dependencies) 
       clienteId: client.clienteId,
       negocioId: context.businessId,
       nombreRazonSocial: String(client.nombreRazonSocial || "Cliente sin nombre"),
-      identificadorFiscalValor: String(client.identificadorFiscalValor || client.rut || ""),
-      rut: String(client.rut || ""),
       estado: "activo",
     }))
     .sort((left, right) => left.nombreRazonSocial.localeCompare(right.nombreRazonSocial, "es", {sensitivity: "base"}));

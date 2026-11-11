@@ -42,7 +42,7 @@ assert.deepEqual(
 );
 const {hasTallerCapability, requireTallerAccess} = tallerRbac;
 const workshopCapabilities = {read: P.TALLER_READ, operate: P.TALLER_OPERATE,
-  create: P.TALLER_CREATE, approve: P.TALLER_APPROVE, manage: P.TALLER_MANAGE};
+  create: P.TALLER_CREATE, approve: P.TALLER_MANAGE, manage: P.TALLER_MANAGE};
 for (const role of BUSINESS_ROLES) {
   for (const [capability, permission] of Object.entries(workshopCapabilities)) {
     assert.equal(hasTallerCapability({rol: role}, capability), hasBusinessPermission(role, permission),

@@ -354,7 +354,11 @@ try {
   );
   const selectableClients = await callable(technician, "listarClientesSeleccionablesTaller")({businessId});
   assert.ok(selectableClients.data.clientes.some((client) => client.clienteId === "cliente-a"));
-  assert.ok(selectableClients.data.clientes.every((client) => !Object.hasOwn(client, "email") && !Object.hasOwn(client, "telefono")));
+  for (const client of selectableClients.data.clientes) {
+    assert.deepEqual(Object.keys(client).sort(), [
+      "clienteId", "estado", "negocioId", "nombreRazonSocial",
+    ]);
+  }
   const technicianCreate = await callable(technician, "crearVehiculo")({
     businessId,
     requestId: `vehicle-technician-${RUN_ID}`,
