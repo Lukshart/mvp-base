@@ -108,12 +108,42 @@ function vehiclePayload(overrides = {}) {
   };
 }
 
+// Valores sensibles distintos por cliente: la prueba del selector de Taller
+// comprueba por valor que ninguno sale en la respuesta.
+const SENSITIVE_CLIENT_DATA = Object.freeze({
+  "cliente-a": {
+    rut: "76.086.428-5",
+    identificadorFiscalValor: "76086428-5",
+    email: "contacto.secreto.a@cliente-a.test",
+    telefono: "+56 9 4111 2233",
+  },
+  "cliente-b": {
+    rut: "11.111.111-1",
+    identificadorFiscalValor: "11111111-1",
+    email: "contacto.secreto.b@cliente-b.test",
+    telefono: "+56 9 4222 3344",
+  },
+  "cliente-inconsistente": {
+    rut: "22.222.222-2",
+    identificadorFiscalValor: "22222222-2",
+    email: "contacto.secreto.c@otro-negocio.test",
+    telefono: "+56 9 4333 4455",
+  },
+  "cliente-externo": {
+    rut: "33.333.333-3",
+    identificadorFiscalValor: "33333333-3",
+    email: "contacto.secreto.d@cliente-externo.test",
+    telefono: "+56 9 4444 5566",
+  },
+});
+
 function storedClient(businessId, clienteId, name) {
   return {
     clienteId,
     negocioId: businessId,
     nombreRazonSocial: name,
     estado: "activo",
+    ...SENSITIVE_CLIENT_DATA[clienteId],
   };
 }
 
@@ -358,6 +388,19 @@ try {
     assert.deepEqual(Object.keys(client).sort(), [
       "clienteId", "estado", "negocioId", "nombreRazonSocial",
     ]);
+  }
+  // Por valor: el fixture guarda rut, identificadorFiscalValor, email y telefono
+  // reales; ninguno debe aparecer en la respuesta, aunque cambie la forma.
+  const storedClientA = (await adminDb.doc(`negocios/${businessId}/clientes/cliente-a`).get()).data();
+  for (const field of ["rut", "identificadorFiscalValor", "email", "telefono"]) {
+    assert.ok(storedClientA[field], `el fixture de cliente-a debe tener ${field}`);
+  }
+  const selectableJson = JSON.stringify(selectableClients.data);
+  for (const [clienteId, sensitive] of Object.entries(SENSITIVE_CLIENT_DATA)) {
+    for (const [field, value] of Object.entries(sensitive)) {
+      assert.ok(!selectableJson.includes(value),
+        `listarClientesSeleccionablesTaller no debe devolver ${field} de ${clienteId}`);
+    }
   }
   const technicianCreate = await callable(technician, "crearVehiculo")({
     businessId,
