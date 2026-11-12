@@ -19,6 +19,14 @@ const PLATE_PATTERNS = Object.freeze([
   /^[A-Z]{4}\d$/,
 ]);
 const TEXT_ONLY_PATTERN = /^\p{L}(?:[\p{L}\s.'-]*\p{L})?$/u;
+export const MIN_VEHICLE_YEAR = 1900;
+export const MAX_VEHICLE_YEAR = new Date().getFullYear() + 1;
+const VEHICLE_TEXT_LIMITS = Object.freeze({
+  vin: [80, "El VIN"],
+  marca: [120, "La marca"],
+  modelo: [120, "El modelo"],
+  color: [80, "El color"],
+});
 const REQUIRED_FIELDS = Object.freeze([
   ["patente", "La patente es obligatoria."],
   ["marca", "La marca es obligatoria."],
@@ -45,6 +53,10 @@ export function isTextOnly(value) {
 
 export function keepTextOnlyInput(value) {
   return String(value ?? "").replace(/[^\p{L}\s.'-]/gu, "");
+}
+
+export function keepVehicleYearInput(value) {
+  return String(value ?? "").replace(/\D/g, "").slice(0, 4);
 }
 
 export function getVehicleTypeLabel(value) {
@@ -97,11 +109,20 @@ export function getVehicleFieldErrors(raw = {}, {requiresOwner = false} = {}) {
   if (normalizedText(raw.color) && !isTextOnly(raw.color)) {
     errors.color = "El color solo puede contener texto.";
   }
-  const anio = Number(normalizedText(raw.anio));
-  if (normalizedText(raw.anio) && (
-    !Number.isSafeInteger(anio) || anio < 1 || anio > 9999
+  for (const [field, [maximum, label]] of Object.entries(VEHICLE_TEXT_LIMITS)) {
+    if (normalizedText(raw[field]).length > maximum) {
+      errors[field] = `${label} no puede superar ${maximum} caracteres.`;
+    }
+  }
+  const rawYear = normalizedText(raw.anio);
+  const anio = Number(rawYear);
+  if (rawYear && (
+    !/^\d{4}$/.test(rawYear) ||
+    !Number.isSafeInteger(anio) ||
+    anio < MIN_VEHICLE_YEAR ||
+    anio > MAX_VEHICLE_YEAR
   )) {
-    errors.anio = "El año debe ser un número entero válido.";
+    errors.anio = `El año debe tener 4 dígitos y estar entre ${MIN_VEHICLE_YEAR} y ${MAX_VEHICLE_YEAR}.`;
   }
   if (normalizedText(raw.tipo) && !VEHICLE_TYPE_VALUES.has(normalizedText(raw.tipo))) {
     errors.tipo = "Selecciona un tipo de vehículo válido.";

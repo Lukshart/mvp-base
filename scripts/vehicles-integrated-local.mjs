@@ -360,6 +360,35 @@ try {
     ["invalid-argument"],
     /tipo de vehículo/i
   );
+  const maximumVehicleYear = new Date().getFullYear() + 1;
+  for (const [label, anio] of [
+    ["año con menos de 4 dígitos", 999],
+    ["año anterior al rango", 1899],
+    ["año posterior al rango", maximumVehicleYear + 1],
+    ["año con más de 4 dígitos", 10000],
+  ]) {
+    await expectCallableError(
+      label,
+      () => callable(owner, "crearVehiculo")({
+        businessId,
+        requestId: `vehicle-invalid-year-${anio}-${RUN_ID}`,
+        vehiculo: vehiclePayload({patente: "UVWX34", vin: `VIN-YEAR-${anio}`, anio}),
+      }),
+      ["invalid-argument"],
+      /4 dígitos.*1900/i
+    );
+  }
+  const nextModelYear = await callable(owner, "crearVehiculo")({
+    businessId,
+    requestId: `vehicle-next-year-${RUN_ID}`,
+    vehiculo: vehiclePayload({
+      patente: "UVWX56",
+      vin: `VIN-YEAR-${maximumVehicleYear}`,
+      anio: maximumVehicleYear,
+    }),
+  });
+  assert.equal(nextModelYear.data.vehiculo.anio, maximumVehicleYear);
+  console.log("OK año: exige 4 dígitos y rango dinámico 1900–año siguiente");
   await expectCallableError(
     "cliente con negocioId inconsistente",
     () => callable(owner, "crearVehiculo")({

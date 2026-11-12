@@ -122,16 +122,32 @@ for (const field of ["clienteId", "patente", "marca", "modelo", "color", "tipo"]
     (error) => error.code === "invalid-argument"
   );
 }
-for (const anio of [2020.5, "2020", 0, 10000]) {
+const maximumVehicleYear = new Date().getFullYear() + 1;
+for (const anio of [2020.5, "2020", 999, 1899, maximumVehicleYear + 1, 10000]) {
   assert.throws(
     () => normalizeVehicleInput({...requiredBase, anio}, TestHttpsError),
-    (error) => error.code === "invalid-argument" && /entero válido/i.test(error.message)
+    (error) => error.code === "invalid-argument" && /4 dígitos.*1900/i.test(error.message)
   );
 }
+assert.equal(
+  normalizeVehicleInput({...requiredBase, anio: maximumVehicleYear}, TestHttpsError).anio,
+  maximumVehicleYear
+);
 for (const [field, value] of [["marca", "Toyota 2"], ["color", "Azul 2"]]) {
   assert.throws(
     () => normalizeVehicleInput({...requiredBase, [field]: value}, TestHttpsError),
     (error) => error.code === "invalid-argument" && /solo puede contener texto/i.test(error.message)
+  );
+}
+for (const [field, value, expectedLength] of [
+  ["vin", "V".repeat(81), 80],
+  ["marca", "M".repeat(121), 120],
+  ["modelo", "X".repeat(121), 120],
+  ["color", "C".repeat(81), 80],
+]) {
+  assert.throws(
+    () => normalizeVehicleInput({...requiredBase, [field]: value}, TestHttpsError),
+    (error) => error.code === "invalid-argument" && error.message.includes(String(expectedLength))
   );
 }
 assert.throws(

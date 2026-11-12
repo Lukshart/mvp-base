@@ -23,6 +23,7 @@ const PLATE_PATTERNS = Object.freeze([
   /^[A-Z]{4}\d$/,
 ]);
 const TEXT_ONLY_PATTERN = /^\p{L}(?:[\p{L}\s.'-]*\p{L})?$/u;
+const MIN_VEHICLE_YEAR = 1900;
 const VEHICLE_INPUT_FIELDS = new Set([
   "clienteId",
   "patente",
@@ -126,6 +127,27 @@ function textOnly(value, label, maxLength, HttpsError) {
   return normalized;
 }
 
+function maxVehicleYear(now = new Date()) {
+  return now.getFullYear() + 1;
+}
+
+function normalizeVehicleYear(value, HttpsError) {
+  const maximum = maxVehicleYear();
+  if (
+    !Number.isSafeInteger(value) ||
+    !/^\d{4}$/.test(String(value)) ||
+    value < MIN_VEHICLE_YEAR ||
+    value > maximum
+  ) {
+    fail(
+      HttpsError,
+      "invalid-argument",
+      `El año debe tener 4 dígitos y estar entre ${MIN_VEHICLE_YEAR} y ${maximum}.`
+    );
+  }
+  return value;
+}
+
 function normalizeVehicleInput(raw, HttpsError, {includeOwner = true} = {}) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     fail(
@@ -146,10 +168,7 @@ function normalizeVehicleInput(raw, HttpsError, {includeOwner = true} = {}) {
     );
   }
 
-  const anio = raw.anio;
-  if (!Number.isSafeInteger(anio) || anio < 1 || anio > 9999) {
-    fail(HttpsError, "invalid-argument", "El año debe ser un número entero válido.");
-  }
+  const anio = normalizeVehicleYear(raw.anio, HttpsError);
   const tipo = text(raw.tipo, "El tipo", 40, HttpsError, {required: true})
     .toLowerCase();
   if (!VEHICLE_TYPE_SET.has(tipo)) {

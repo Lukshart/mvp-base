@@ -1,6 +1,9 @@
 import React from "react";
 import {
   keepTextOnlyInput,
+  keepVehicleYearInput,
+  MAX_VEHICLE_YEAR,
+  MIN_VEHICLE_YEAR,
   normalizeVehiclePlate,
   VEHICLE_TYPES,
 } from "../../domain/vehicleModel.mjs";
@@ -42,10 +45,11 @@ function VehicleFormFields({errors = {}, onChange, values}) {
       {field("marca", "Marca", {required: true})}
       {field("modelo", "Modelo", {required: true})}
       <VehicleField field="anio" label="Año" error={errors.anio} required>
-        <input className="erp-control" type="number" value={values.anio} min="1" max="9999" step="1"
-          onChange={(event) => onChange("anio", event.target.value)} />
+        <input className="erp-control" type="text" inputMode="numeric" pattern="[0-9]{4}" maxLength={4}
+          value={values.anio} placeholder={`${MIN_VEHICLE_YEAR}–${MAX_VEHICLE_YEAR}`}
+          onChange={(event) => onChange("anio", keepVehicleYearInput(event.target.value))} />
       </VehicleField>
-      {field("color", "Color", {required: true})}
+      {field("color", "Color", {required: true, maxLength: 80})}
       <VehicleField field="tipo" label="Tipo" error={errors.tipo} required>
         <select className="erp-control" value={values.tipo} onChange={(event) => onChange("tipo", event.target.value)}>
           <option value="">Selecciona un tipo</option>

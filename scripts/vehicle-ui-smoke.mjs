@@ -7,6 +7,9 @@ import {
   isTextOnly,
   isValidVehiclePlate,
   keepTextOnlyInput,
+  keepVehicleYearInput,
+  MAX_VEHICLE_YEAR,
+  MIN_VEHICLE_YEAR,
   matchesVehicleSearch,
 } from "../src/domain/vehicleModel.mjs";
 
@@ -17,6 +20,25 @@ assert.deepEqual(
   ["anio", "clienteId", "color", "marca", "modelo", "patente", "tipo"],
 );
 assert.equal(getVehicleFieldErrors({patente: "ABCD12", marca: "Marca", modelo: "Modelo", anio: "2024", color: "Rojo", tipo: "suv"}).anio, undefined);
+assert.equal(MIN_VEHICLE_YEAR, 1900);
+assert.equal(MAX_VEHICLE_YEAR, new Date().getFullYear() + 1);
+assert.equal(getVehicleFieldErrors({patente: "ABCD12", marca: "Marca", modelo: "Modelo", anio: "999", color: "Rojo", tipo: "suv"}).anio.includes("4 dígitos"), true);
+assert.equal(getVehicleFieldErrors({patente: "ABCD12", marca: "Marca", modelo: "Modelo", anio: "1899", color: "Rojo", tipo: "suv"}).anio.includes("1900"), true);
+assert.equal(getVehicleFieldErrors({patente: "ABCD12", marca: "Marca", modelo: "Modelo", anio: String(MAX_VEHICLE_YEAR + 1), color: "Rojo", tipo: "suv"}).anio.includes(String(MAX_VEHICLE_YEAR)), true);
+assert.equal(getVehicleFieldErrors({patente: "ABCD12", marca: "Marca", modelo: "Modelo", anio: String(MAX_VEHICLE_YEAR), color: "Rojo", tipo: "suv"}).anio, undefined);
+assert.equal(keepVehicleYearInput("20a267"), "2026");
+assert.equal(keepVehicleYearInput("12345"), "1234");
+for (const [field, value, expectedLength] of [
+  ["vin", "V".repeat(81), 80],
+  ["marca", "M".repeat(121), 120],
+  ["modelo", "X".repeat(121), 120],
+  ["color", "C".repeat(81), 80],
+]) {
+  assert.equal(
+    getVehicleFieldErrors({patente: "ABCD12", marca: "Marca", modelo: "Modelo", anio: "2024", color: "Rojo", tipo: "suv", [field]: value})[field].includes(String(expectedLength)),
+    true
+  );
+}
 assert.equal(buildVehicleMutationPayload({anio: "2008"}).anio, 2008);
 assert.equal(typeof buildVehicleMutationPayload({anio: "2008"}).anio, "number");
 assert.equal(isValidVehiclePlate("ABCD12"), true);
@@ -60,6 +82,11 @@ assert.match(form, /<select/);
 assert.doesNotMatch(form, /<input[^>]+tipo/);
 assert.match(form, /normalizeVehiclePlate/);
 assert.match(form, /keepTextOnlyInput/);
+assert.match(form, /keepVehicleYearInput/);
+assert.match(form, /inputMode="numeric"/);
+assert.match(form, /pattern="\[0-9\]\{4\}"/);
+assert.match(form, /maxLength=\{4\}/);
+assert.match(form, /field\("color", "Color", \{required: true, maxLength: 80\}\)/);
 const newVehiclePage = fs.readFileSync("src/pages/NewVehiclePage.jsx", "utf8");
 assert.match(newVehiclePage, /useCallback/);
 assert.match(newVehiclePage, /onChange=\{handleOwnerChange\}/);
