@@ -1,227 +1,92 @@
-# Manual de usuario — Taller Automotriz
+# Manual de uso — Taller Automotriz
 
-## 1. Objetivo
+El módulo Taller Automotriz permite registrar vehículos de Clientes Core y gestionar su atención mediante Órdenes de Trabajo (OT), desde la recepción hasta la entrega.
 
-El módulo Taller Automotriz permite registrar vehículos de clientes del Core y gestionar su atención mediante Órdenes de Trabajo (OT).
+Este manual se divide en tres partes según la responsabilidad de la persona: usuario, trabajador y administrador. No contiene contraseñas, claves, identificadores fiscales ni datos reales de personas o empresas.
 
-Con el módulo se puede:
+## 1. Usuario
 
-- registrar vehículos y cambiar su propietario actual;
-- crear y consultar OTs;
-- registrar la recepción del vehículo;
-- asignar una Plaza física;
-- registrar y completar diagnósticos;
-- planificar servicios y productos del catálogo de Inventario;
-- enviar el alcance a aprobación, aprobarlo o rechazarlo;
-- ejecutar los servicios planificados;
-- finalizar la reparación, registrar la entrega y consultar el historial;
-- cancelar una OT mientras su estado todavía lo permita.
+Esta sección sirve para cualquier persona que ingresa al módulo y necesita entender qué puede consultar, cómo acceder y cuáles son sus límites.
 
-Los datos se mantienen separados por empresa. La empresa activa solo determina el contexto de navegación: el acceso efectivo requiere una membresía activa, permisos suficientes y que Taller esté habilitado para esa empresa.
+### 1.1 Para qué sirve Taller
 
-Este documento no contiene contraseñas, claves, identificadores fiscales ni datos reales de personas o empresas.
+Taller permite:
 
-## 2. Quién usa el módulo
+- consultar vehículos asociados a Clientes del Core;
+- consultar OTs, su estado, aprobación, Plaza e historial;
+- registrar y mantener vehículos cuando el rol lo permite;
+- documentar recepción, diagnósticos, servicios y productos planificados;
+- aprobar, ejecutar, finalizar y entregar una OT según los permisos del rol;
+- conservar trazabilidad sin borrar la historia operacional.
 
-Además de los permisos indicados abajo, la empresa debe tener habilitado el módulo `taller`.
+Los datos se mantienen separados por empresa. La empresa activa solo determina el contexto de navegación: el acceso efectivo exige una membresía activa, permisos suficientes y que Taller esté habilitado para esa empresa.
 
-| Rol | Puede hacer |
+### 1.2 Quién puede entrar
+
+| Rol | Acceso principal |
 | --- | --- |
-| `OWNER` | Consultar, crear y operar vehículos y OTs; aprobar o rechazar alcances; crear y administrar Plazas. |
-| `ADMIN` | Las mismas operaciones de Taller que `OWNER`. |
-| `TECNICO` | Consultar el módulo, registrar vehículos y OTs, completar la recepción y el diagnóstico, planificar y ejecutar servicios. No administra Plazas ni aprueba alcances. |
-| `MEMBER` | Consultar y operar OTs existentes. No registra vehículos u OTs nuevos, no administra Plazas y no aprueba alcances. Si usa un perfil personalizado, el perfil también debe incluir Taller. |
-| `VENTAS`, `COMPRAS`, `FINANZAS` | No tienen acceso al módulo Taller. |
-| Superadministrador de plataforma | Habilita o deshabilita Taller para una empresa. No realiza la operación diaria del Taller por ese solo privilegio. |
+| `OWNER` | Consulta, crea y opera Vehículos y OTs; aprueba o rechaza alcances; administra Plazas. |
+| `ADMIN` | Tiene las mismas capacidades operacionales de Taller que `OWNER`. |
+| `TECNICO` | Consulta, registra Vehículos y OTs y realiza la operación técnica. No administra Plazas ni aprueba alcances. |
+| `MEMBER` | Consulta y opera OTs existentes. No crea Vehículos u OTs, no administra Plazas ni aprueba alcances. Si usa un perfil personalizado, ese perfil también debe incluir Taller. |
+| `VENTAS`, `COMPRAS`, `FINANZAS` | No tienen permisos de Taller. |
+| Superadministrador de plataforma | Habilita o deshabilita Taller para una empresa. Ese privilegio no concede por sí solo acceso a la operación diaria. |
 
-La aprobación y el rechazo corresponden a la capacidad de administración de Taller. La visibilidad de costos y precios, cuando una pantalla los utiliza, depende de los permisos Core `INVENTORY_COSTS_READ` y `PRICING_READ`; Taller no crea permisos económicos paralelos.
+La aprobación y el rechazo derivan de `TALLER_MANAGE`, capacidad disponible para `OWNER` y `ADMIN`. Taller no crea permisos económicos paralelos: la visibilidad de costos y precios depende de los permisos Core `INVENTORY_COSTS_READ` y `PRICING_READ`.
 
-## 3. Requisitos previos
+### 1.3 Requisitos de acceso
 
-Antes de operar Taller, comprueba que:
+Antes de entrar, comprueba que:
 
 1. La empresa está activa y verificada.
-2. El usuario tiene una membresía activa en la empresa.
+2. Tu membresía en la empresa está activa.
 3. Taller está habilitado para esa empresa.
-4. El usuario seleccionó la empresa correcta como empresa activa.
-5. Existen Clientes Core para asociar propietarios.
-6. Los servicios y productos que se planificarán existen y están activos en Inventario Core.
-7. Si se usarán Plazas, `OWNER` o `ADMIN` ya creó las ubicaciones necesarias.
+4. Seleccionaste la empresa correcta como empresa activa.
+5. Tu rol o perfil tiene acceso al módulo.
 
-## 4. Cómo activar Taller
+Cuando está habilitado, Taller aparece en la sección **Módulos** de la navegación. Al entrar se abre el listado de Órdenes de Trabajo.
 
-La activación la realiza únicamente un superadministrador de plataforma.
+### 1.4 Consultar información
 
-1. Ingresa a la consola de administración de plataforma.
-2. Abre **Empresas**.
-3. Selecciona la empresa que utilizará Taller.
-4. Verifica que la empresa esté activa y que su verificación empresarial permita operar.
-5. En la sección **Módulos**, marca **Taller automotriz**.
-6. Escribe un motivo del cambio, sin incluir contraseñas, claves ni datos sensibles.
-7. Selecciona **Guardar módulos**.
-8. Confirma que **Habilitados ahora** incluya Taller automotriz.
-9. Pide a los usuarios de la empresa que recarguen la sesión. Si el menú no cambia, deben salir y volver a ingresar.
+- **Vehículos:** busca por patente, VIN, marca o modelo.
+- **Órdenes de Trabajo:** busca y filtra por estado y aprobación.
+- **Plazas:** consulta su estado administrativo y ocupación calculada.
+- **Historial:** revisa eventos persistidos de una OT; no se editan directamente.
+- **Ficha del vehículo:** consulta datos técnicos y las OTs anteriores.
 
-Cuando está habilitado, Taller aparece en la sección **Módulos** de la navegación. Al entrar, el sistema abre el listado de Órdenes de Trabajo.
+La identificación y el contacto del propietario en la ficha del Vehículo están restringidos a `OWNER` y `ADMIN`. Para `TECNICO` y `MEMBER`, la interfaz muestra: **“La información del propietario está restringida para tu perfil”**.
 
-### Desactivar Taller
+### 1.5 Mensajes frecuentes
 
-El superadministrador puede volver a la ficha de la empresa, desmarcar **Taller automotriz**, informar el motivo y guardar.
+#### “El módulo no está habilitado para esta empresa”
 
-Al deshabilitarlo:
+Solicita a un superadministrador de plataforma que revise los módulos de la empresa. Después del cambio, recarga la sesión.
 
-- el módulo queda oculto y sus rutas y Functions quedan bloqueadas;
-- los datos existentes no se eliminan;
-- el cambio se refleja al recargar la sesión;
-- una reactivación posterior vuelve a permitir el acceso según los permisos del usuario.
+#### Taller no aparece en el menú
 
-## 5. Preparación inicial
+Comprueba la empresa activa, la habilitación de Taller, el estado de la membresía y los permisos del rol. Si la activación fue reciente, recarga la sesión o vuelve a ingresar.
 
-### 5.1 Crear Plazas
+#### No puedo crear Vehículos u OTs
 
-Esta tarea corresponde a `OWNER` o `ADMIN`.
+La creación está disponible para `OWNER`, `ADMIN` y `TECNICO`. `MEMBER` puede consultar y operar registros existentes, pero no crearlos.
 
-1. Entra a **Módulos > Taller automotriz > Plazas**.
-2. Selecciona **Nueva Plaza**.
-3. Escribe un nombre descriptivo, por ejemplo, “Plaza 1”.
-4. Selecciona **Crear Plaza**.
-5. Repite el proceso para cada ubicación física necesaria.
+#### No puedo aprobar o rechazar
 
-Una Plaza puede estar activa o inactiva. **Disponible** y **En uso** se calculan desde las OTs activas; no se editan manualmente. Una Plaza en uso no puede asignarse simultáneamente a otra OT activa.
+La decisión está restringida a `OWNER` y `ADMIN` mediante `TALLER_MANAGE`.
 
-### 5.2 Preparar Clientes e Inventario
+#### No puedo asignar una Plaza
 
-- Los Clientes se crean y mantienen en el módulo Clientes del Core.
-- Taller reutiliza esos Clientes; no crea una ficha de cliente paralela.
-- El selector de Taller expone únicamente los datos mínimos necesarios y no devuelve RUT, identificador fiscal ni datos de contacto.
-- Los Servicios y Productos se crean y mantienen en Inventario Core.
-- Taller solo permite seleccionar ítems activos del catálogo.
+La Plaza debe estar activa y libre. La administración y asignación de Plazas corresponde a `OWNER` y `ADMIN`.
 
-## 6. Flujo paso a paso
+#### La OT no permite finalizar
 
-### Paso 1: registrar un vehículo
+Todos los servicios deben estar completados. Finalizar la reparación deja la OT pendiente de entrega; todavía se debe registrar la entrega para cerrarla.
 
-Disponible para `OWNER`, `ADMIN` y `TECNICO`.
+### 1.6 Limitaciones actuales
 
-1. Entra a **Taller automotriz > Vehículos**.
-2. Selecciona **Crear vehículo**.
-3. Selecciona el Cliente que será el propietario actual.
-4. Completa patente, VIN si está disponible, marca, modelo, año, color y tipo.
-5. Selecciona **Guardar vehículo**.
+Taller no incluye:
 
-La patente es obligatoria y única dentro de la empresa. El VIN es opcional, pero si se informa también debe ser único dentro de la empresa.
-
-`OWNER` y `ADMIN` pueden editar la ficha y cambiar el propietario. El cambio de propietario no modifica el Cliente histórico guardado en OTs anteriores.
-
-### Paso 2: crear una Orden de Trabajo
-
-Disponible para `OWNER`, `ADMIN` y `TECNICO`.
-
-1. Desde la ficha del vehículo, selecciona **Crear OT**; también puedes entrar a **Órdenes de Trabajo > Nueva OT**.
-2. Busca y selecciona el vehículo correcto.
-3. Revisa patente, vehículo y propietario actual.
-4. Selecciona **Crear orden de trabajo**.
-
-El número visible de la OT se genera automáticamente. La OT conserva como Cliente histórico al propietario que tenía el vehículo al momento de crearla.
-
-### Paso 3: registrar la Recepción
-
-1. Abre la OT.
-2. Entra a la sección **Recepción**.
-3. Completa kilometraje, nivel de combustible, accesorios y observaciones.
-4. Completa todos los controles de la checklist.
-5. Si existe una anomalía, descríbela en **Daños observados**.
-6. Guarda la Recepción.
-
-La checklist registra condiciones visibles al recibir el vehículo; no reemplaza el Diagnóstico técnico.
-
-### Paso 4: asignar una Plaza
-
-La OT puede existir sin Plaza.
-
-1. En la OT, ubica el control de Plaza.
-2. Selecciona **Asignar Plaza**.
-3. Escoge una Plaza activa y disponible.
-4. Confirma la asignación.
-
-También puedes cambiar o liberar la Plaza. El sistema impide que dos OTs activas ocupen la misma Plaza.
-
-### Paso 5: registrar y completar el Diagnóstico
-
-1. Entra a **Diagnósticos**.
-2. Selecciona la opción para agregar un diagnóstico.
-3. Elige una persona responsable.
-4. Registra la descripción y las observaciones.
-5. Guarda el borrador si todavía falta información.
-6. Cuando la evaluación esté lista, selecciona **Completar diagnóstico**.
-
-Guardar un borrador no equivale a completar el Diagnóstico. Para enviar la OT a aprobación debe existir al menos un Diagnóstico completado. Un diagnóstico completado no se edita como borrador; si aparece información nueva, se registra otro.
-
-### Paso 6: planificar servicios y productos
-
-1. Entra a **Servicios y repuestos**.
-2. Selecciona **Agregar servicio**.
-3. Elige un Servicio activo de Inventario Core y una persona responsable.
-4. Guarda el servicio.
-5. Si corresponde, selecciona **Agregar producto** dentro del servicio.
-6. Elige un Producto activo e indica una cantidad entera positiva.
-7. Repite el proceso hasta completar el alcance.
-
-Agregar o modificar productos es solo planificación. No reserva, descuenta ni mueve stock.
-
-### Paso 7: enviar el alcance a aprobación
-
-Pueden enviar o revalidar quienes tienen capacidad de operación de Taller. Solo `OWNER` y `ADMIN` pueden aprobar o rechazar.
-
-1. En **Alcance y aprobación**, revisa servicios, productos, cantidades y valores visibles.
-2. Selecciona **Enviar a aprobación**.
-3. Confirma la acción.
-4. El backend vuelve a consultar el catálogo y congela el alcance vigente.
-5. Si faltan productos, la OT queda esperando repuestos; esto no reserva ni descuenta stock.
-6. `OWNER` o `ADMIN` revisa el alcance y selecciona **Aprobar** o **Rechazar**.
-
-Si cambia un servicio, producto o cantidad después de una aprobación, el alcance debe enviarse nuevamente.
-
-### Paso 8: ejecutar los servicios
-
-Cuando la OT está aprobada y en reparación:
-
-1. Abre **Servicios y repuestos**.
-2. En cada servicio pendiente, selecciona **Iniciar servicio**.
-3. Cuando termine, selecciona **Completar servicio**.
-4. Repite hasta que todos los servicios estén completados.
-
-Las acciones quedan registradas en el historial de la OT.
-
-### Paso 9: finalizar la reparación y entregar
-
-1. Comprueba que todos los servicios estén completados.
-2. Selecciona **Finalizar orden de trabajo**.
-3. La OT pasa a pendiente de entrega.
-4. Cuando el vehículo se entregue físicamente, selecciona **Registrar entrega**.
-5. Confirma la acción.
-
-La entrega cierra la OT. Una OT cerrada no se reabre.
-
-### Paso 10: consultar historial o cancelar
-
-- Usa la sección **Historial** para revisar los eventos persistidos de la OT.
-- La ficha del Vehículo muestra sus OTs anteriores.
-- La cancelación solo está disponible antes de entrar en reparación y deja la OT en un estado terminal.
-- Una OT cancelada no se elimina ni se reabre; una nueva visita requiere otra OT.
-
-## 7. Búsqueda y consulta
-
-- **Vehículos:** permite buscar por patente, VIN, marca o modelo.
-- **Órdenes de Trabajo:** permite buscar y filtrar por estado y aprobación.
-- **Plazas:** muestra estado administrativo y ocupación calculada.
-- **Historial:** muestra los eventos de cada OT sin permitir edición directa.
-
-## 8. Limitaciones actuales
-
-El módulo no incluye:
-
-- consumo, devolución, reserva o descuento físico de stock;
+- consumo, devolución, reserva ni descuento físico de stock;
 - movimientos de Inventario creados por Taller;
 - costos operacionales nuevos, Horas Hombre o margen de Taller;
 - precios ingresados manualmente dentro de la OT;
@@ -232,51 +97,235 @@ El módulo no incluye:
 - agenda, reservas horarias o notificaciones;
 - garantías, retrabajos o mantenimiento preventivo;
 - reapertura de OTs cerradas o canceladas;
-- eliminación física de OTs y su historial;
+- eliminación física de OTs o de su historial;
 - una decisión automática sobre **Proyectos y trabajos** cuando Taller está habilitado.
 
-La planificación puede consultar disponibilidad del catálogo, pero no garantiza stock futuro. La existencia de una cantidad planificada no representa una reserva.
+La planificación consulta disponibilidad del catálogo, pero no garantiza stock futuro. Una cantidad planificada no representa reserva, consumo ni movimiento físico.
 
-## 9. Mensajes frecuentes
+## 2. Trabajador
 
-### “El módulo no está habilitado para esta empresa”
+Esta sección describe la operación diaria. Aplica a `TECNICO` y a quienes tengan `TALLER_OPERATE`; las diferencias de creación se indican en cada paso.
 
-Solicita a un superadministrador de plataforma que revise la sección **Módulos** de la empresa. Después del cambio, recarga la sesión.
+### 2.1 Preparación antes de atender
 
-### Taller no aparece en el menú
+Confirma que:
 
-Comprueba que:
+1. El Cliente ya existe y está activo en Clientes Core.
+2. El Vehículo no está registrado previamente con la misma patente o VIN.
+3. Los Servicios y Productos necesarios existen y están activos en Inventario Core.
+4. La empresa activa corresponde a la atención que vas a registrar.
+5. Si usarás una Plaza, un administrador ya creó ubicaciones activas.
 
-- la empresa activa sea la correcta;
-- Taller esté habilitado;
-- la membresía esté activa;
-- el rol tenga permisos de Taller;
-- la sesión se haya recargado después de la activación.
+El selector para registrar un Vehículo muestra únicamente el nombre de los Clientes activos. No devuelve RUT, identificador fiscal, email ni teléfono.
 
-### No puedo crear vehículos u OTs
+### 2.2 Registrar un Vehículo
 
-La creación está disponible para `OWNER`, `ADMIN` y `TECNICO`. `MEMBER` puede consultar y operar registros existentes, pero no crearlos.
+Disponible para `OWNER`, `ADMIN` y `TECNICO`.
 
-### No puedo aprobar o rechazar
+1. Entra a **Taller automotriz > Vehículos**.
+2. Selecciona **Crear vehículo**.
+3. Selecciona el Cliente propietario por su nombre.
+4. Completa patente, VIN si está disponible, marca, modelo, año, color y tipo.
+5. Selecciona **Guardar vehículo**.
 
-La aprobación está restringida a `OWNER` y `ADMIN`.
+La patente es obligatoria y única dentro de la empresa. El VIN es opcional; cuando se informa también debe ser único dentro de la empresa.
 
-### No puedo asignar una Plaza
+### 2.3 Crear una Orden de Trabajo
 
-Comprueba que la Plaza esté activa y no esté ocupada por otra OT activa. La administración de Plazas corresponde a `OWNER` y `ADMIN`.
+Disponible para `OWNER`, `ADMIN` y `TECNICO`.
 
-### La OT no permite finalizar
+1. Desde la ficha del Vehículo, selecciona **Crear OT**; también puedes entrar a **Órdenes de Trabajo > Nueva OT**.
+2. Busca y selecciona el Vehículo correcto.
+3. Revisa patente y descripción del Vehículo.
+4. Selecciona **Crear orden de trabajo**.
 
-Todos los servicios deben estar completados. Finalizar la reparación deja la OT pendiente de entrega; para cerrarla todavía se debe registrar la entrega.
+El número de OT se genera automáticamente. La OT conserva como Cliente histórico al propietario vigente en el momento de crearla.
 
-## 10. Buenas prácticas
+### 2.4 Registrar la Recepción
 
-- Confirma siempre la empresa activa antes de operar.
-- Busca el vehículo antes de registrarlo para evitar duplicados.
+1. Abre la OT.
+2. Entra a **Recepción**.
+3. Completa kilometraje, nivel de combustible, accesorios y observaciones.
+4. Completa todos los controles de la checklist.
+5. Si existe una anomalía, descríbela en **Daños observados**.
+6. Guarda la Recepción.
+
+La checklist documenta condiciones visibles al recibir el Vehículo; no sustituye el Diagnóstico técnico.
+
+### 2.5 Registrar y completar el Diagnóstico
+
+1. Entra a **Diagnósticos**.
+2. Agrega un Diagnóstico.
+3. Selecciona una persona responsable.
+4. Registra descripción y observaciones.
+5. Guarda el borrador si falta información.
+6. Cuando la evaluación esté lista, selecciona **Completar diagnóstico**.
+
+Para enviar la OT a aprobación debe existir al menos un Diagnóstico completado. Si aparece información nueva después de completarlo, registra otro Diagnóstico en vez de reescribir el anterior.
+
+### 2.6 Planificar Servicios y Productos
+
+1. Entra a **Servicios y repuestos**.
+2. Selecciona **Agregar servicio**.
+3. Elige un Servicio activo del Core y una persona responsable.
+4. Guarda el Servicio.
+5. Si corresponde, selecciona **Agregar producto** dentro del Servicio.
+6. Elige un Producto activo e indica una cantidad positiva válida.
+7. Repite hasta completar el alcance.
+
+Agregar o modificar Productos solo planifica el trabajo. No reserva, descuenta ni mueve stock.
+
+### 2.7 Enviar el alcance a aprobación
+
+Quien tiene capacidad de operación puede enviar o revalidar. Solo `OWNER` y `ADMIN` pueden aprobar o rechazar.
+
+1. En **Alcance y aprobación**, revisa Servicios, Productos, cantidades y valores visibles.
+2. Selecciona **Enviar a aprobación**.
+3. Confirma la acción.
+4. El backend consulta nuevamente el catálogo y congela el alcance vigente.
+5. Si faltan Productos, la OT queda esperando repuestos, sin reservar ni descontar stock.
+6. Espera la decisión de `OWNER` o `ADMIN`.
+
+Si cambia un Servicio, Producto o cantidad después de una aprobación, el alcance debe enviarse nuevamente.
+
+### 2.8 Ejecutar los Servicios
+
+Cuando la OT está aprobada y en reparación:
+
+1. Abre **Servicios y repuestos**.
+2. En cada Servicio pendiente, selecciona **Iniciar servicio**.
+3. Cuando termine, selecciona **Completar servicio**.
+4. Repite hasta completar todos los Servicios.
+
+Las acciones quedan registradas en el historial.
+
+### 2.9 Finalizar y entregar
+
+1. Comprueba que todos los Servicios estén completados.
+2. Selecciona **Finalizar orden de trabajo**.
+3. La OT pasa a pendiente de entrega.
+4. Al entregar físicamente el Vehículo, selecciona **Registrar entrega**.
+5. Confirma la acción.
+
+La entrega cierra la OT. Una OT cerrada no se reabre.
+
+### 2.10 Cancelar y consultar historial
+
+- Usa **Historial** para revisar los eventos persistidos de la OT.
+- La ficha del Vehículo muestra sus OTs anteriores.
+- La cancelación solo está disponible antes de entrar en reparación.
+- Una OT cancelada no se elimina ni se reabre; una nueva visita requiere otra OT.
+
+### 2.11 Buenas prácticas del trabajador
+
+- Confirma la empresa activa antes de operar.
+- Busca el Vehículo antes de registrarlo para evitar duplicados.
 - Revisa el propietario antes de crear la OT.
-- Describe claramente las anomalías observadas en la Recepción.
+- Describe claramente anomalías y daños observados.
 - Completa el Diagnóstico solo cuando la evaluación esté lista.
 - Revisa el alcance antes de enviarlo a aprobación.
-- No interpretes la planificación de productos como reserva o consumo.
-- No incluyas contraseñas, claves, tokens ni datos sensibles en motivos u observaciones.
-- Usa el historial para auditar acciones; no intentes corregir registros eliminándolos.
+- No interpretes Productos planificados como reserva o consumo.
+- No escribas contraseñas, claves, tokens ni datos sensibles en observaciones.
+- Usa el historial para auditar; no intentes corregir eliminando registros.
+
+## 3. Administrador
+
+Esta sección distingue dos responsabilidades:
+
+- el **superadministrador de plataforma** habilita o deshabilita Taller para una empresa;
+- `OWNER` y `ADMIN` administran la operación interna: Vehículos, propietarios, Plazas y aprobaciones.
+
+### 3.1 Activar Taller para una empresa
+
+Esta acción corresponde únicamente al superadministrador de plataforma.
+
+1. Ingresa a la consola de administración de plataforma.
+2. Abre **Empresas**.
+3. Selecciona la empresa que utilizará Taller.
+4. Verifica que la empresa esté activa y habilitada para operar.
+5. En **Módulos**, marca **Taller automotriz**.
+6. Escribe un motivo del cambio sin contraseñas, claves ni datos sensibles.
+7. Selecciona **Guardar módulos**.
+8. Confirma que **Habilitados ahora** incluya Taller automotriz.
+9. Pide a los usuarios recargar la sesión; si el menú no cambia, deben salir y volver a ingresar.
+
+Habilitar el módulo no sustituye la membresía ni los permisos de cada usuario.
+
+### 3.2 Desactivar Taller
+
+1. Abre la empresa en la consola de plataforma.
+2. Desmarca **Taller automotriz**.
+3. Registra el motivo y guarda.
+
+Al deshabilitarlo:
+
+- el módulo se oculta y sus rutas y Functions quedan bloqueadas;
+- los datos existentes no se eliminan;
+- el cambio se refleja al recargar la sesión;
+- una reactivación posterior recupera el acceso según el rol y la membresía.
+
+### 3.3 Crear y administrar Plazas
+
+Esta tarea corresponde a `OWNER` o `ADMIN`.
+
+1. Entra a **Módulos > Taller automotriz > Plazas**.
+2. Selecciona **Nueva Plaza**.
+3. Escribe un nombre descriptivo, por ejemplo, “Plaza 1”.
+4. Selecciona **Crear Plaza**.
+5. Repite para cada ubicación física.
+
+Una Plaza puede estar activa o inactiva. **Disponible** y **En uso** se calculan desde las OTs activas; no se editan manualmente. Una Plaza en uso no puede asignarse simultáneamente a otra OT activa.
+
+Para asignar una Plaza a una OT:
+
+1. Abre la OT.
+2. Selecciona **Asignar Plaza**.
+3. Elige una Plaza activa y disponible.
+4. Confirma la asignación.
+
+También puedes cambiar o liberar la Plaza.
+
+### 3.4 Aprobar o rechazar un alcance
+
+La decisión deriva de `TALLER_MANAGE` y corresponde a `OWNER` y `ADMIN`.
+
+1. Abre una OT en estado de espera de aprobación.
+2. Revisa el Diagnóstico, los Servicios, los Productos, las cantidades y los valores visibles.
+3. Selecciona **Aprobar** para permitir que la OT avance o **Rechazar** para devolver el alcance a revisión.
+4. Si rechazas, registra un motivo útil sin información sensible.
+5. Confirma la acción.
+
+La decisión se valida nuevamente en backend. Si el alcance cambió, deberá enviarse otra vez.
+
+### 3.5 Administrar Vehículos y propietarios
+
+`OWNER` y `ADMIN` pueden:
+
+- editar los datos descriptivos de un Vehículo;
+- consultar la identificación y el contacto del propietario en la ficha;
+- abrir **Cambiar propietario** usando el selector completo de Clientes Core;
+- confirmar un nuevo propietario sin modificar el Cliente histórico de OTs anteriores.
+
+Estas capacidades no están disponibles para `TECNICO` ni `MEMBER`.
+
+### 3.6 Preparar dependencias del Core
+
+Antes de operar Taller, el administrador debe comprobar que:
+
+- existen Clientes Core activos;
+- los Servicios y Productos necesarios están activos en Inventario Core;
+- la moneda y los impuestos de la empresa están configurados;
+- las membresías y perfiles están activos;
+- las Plazas necesarias existen y están habilitadas.
+
+Taller reutiliza estas fuentes de verdad y no mantiene catálogos paralelos.
+
+### 3.7 Buenas prácticas del administrador
+
+- Habilita Taller solo para empresas que realmente utilizarán la vertical.
+- Revisa periódicamente Plazas inactivas u ocupadas.
+- Confirma el alcance congelado antes de aprobar.
+- No uses la habilitación del módulo como sustituto de los permisos de usuario.
+- No incluyas secretos ni datos personales en motivos administrativos.
+- Recuerda que Taller no descuenta stock ni crea Ventas en su alcance actual.
+- Conserva las decisiones sobre **Proyectos y trabajos** fuera de este módulo hasta que Core las defina.
