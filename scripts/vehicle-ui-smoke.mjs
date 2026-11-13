@@ -11,6 +11,7 @@ import {
   MAX_VEHICLE_YEAR,
   MIN_VEHICLE_YEAR,
   matchesVehicleSearch,
+  normalizeVehiclePlate,
 } from "../src/domain/vehicleModel.mjs";
 
 assert.equal(getVehicleTypeLabel("sedan"), "Sedán");
@@ -45,6 +46,15 @@ assert.equal(isValidVehiclePlate("ABCD12"), true);
 assert.equal(isValidVehiclePlate("ABC12"), true);
 assert.equal(isValidVehiclePlate("ABCDE1"), true);
 assert.equal(isValidVehiclePlate("ABCD1"), true);
+assert.equal(isValidVehiclePlate("AB1234"), true);
+assert.equal(isValidVehiclePlate("AB123"), true);
+assert.equal(isValidVehiclePlate("123ABC"), true);
+assert.equal(isValidVehiclePlate("1234ABC"), true);
+assert.equal(isValidVehiclePlate("ABC123"), true);
+assert.equal(normalizeVehiclePlate("12-34 abc"), "1234ABC");
+for (const plate of ["12ABC", "12345ABC", "1234AB", "ABC1234", "1234AB1"]) {
+  assert.equal(isValidVehiclePlate(plate), false);
+}
 assert.equal(isValidVehiclePlate("ASDDD"), false);
 assert.equal(isTextOnly("Hyundai"), true);
 assert.equal(isTextOnly("Mercedes-Benz"), true);
@@ -81,6 +91,8 @@ assert.match(form, /field\("vin", "VIN", \{optional: true/);
 assert.match(form, /<select/);
 assert.doesNotMatch(form, /<input[^>]+tipo/);
 assert.match(form, /normalizeVehiclePlate/);
+assert.match(form, /maxLength: 7/);
+assert.match(form, /ABCD12 o 1234ABC/);
 assert.match(form, /keepTextOnlyInput/);
 assert.match(form, /keepVehicleYearInput/);
 assert.match(form, /inputMode="numeric"/);

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import {MAX_RECEPTION_MILEAGE_KM} from "../src/domain/workOrderReceptionModel.mjs";
 import {testWorkOrderApproval} from "./work-order-approval-cases.mjs";
 import {testServiceExecution} from "./work-order-service-execution-cases.mjs";
 import {testWorkOrderClosure} from "./work-order-closure-cases.mjs";
@@ -350,6 +351,18 @@ try {
     }),
     ["invalid-argument"],
     /obligatorio/i
+  );
+  await expectCallableError(
+    "kilometraje de recepción sobre el máximo",
+    () => callable(owner, "registrarRecepcionOrdenTrabajo")({
+      businessId,
+      otId,
+      recepcion: workOrderReception({
+        kilometraje: MAX_RECEPTION_MILEAGE_KM + 1,
+      }),
+    }),
+    ["invalid-argument"],
+    /kilometraje.*no puede superar/i
   );
   const registeredReception = await callable(owner, "registrarRecepcionOrdenTrabajo")({
     businessId,

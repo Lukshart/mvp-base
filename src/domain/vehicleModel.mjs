@@ -12,12 +12,26 @@ export const VEHICLE_TYPES = Object.freeze([
 ]);
 
 const VEHICLE_TYPE_VALUES = new Set(VEHICLE_TYPES.map(({value}) => value));
-const PLATE_PATTERNS = Object.freeze([
-  /^[A-Z]{4}\d{2}$/,
-  /^[A-Z]{3}\d{2}$/,
-  /^[A-Z]{5}\d$/,
-  /^[A-Z]{4}\d$/,
-]);
+// Formatos ordinarios admitidos por país. Se validan en conjunto para que un
+// taller pueda registrar vehículos matriculados en otro país.
+export const VEHICLE_PLATE_PATTERNS_BY_COUNTRY = Object.freeze({
+  CL: Object.freeze([
+    /^[A-Z]{4}\d{2}$/,
+    /^[A-Z]{3}\d{2}$/,
+    /^[A-Z]{5}\d$/,
+    /^[A-Z]{4}\d$/,
+    /^[A-Z]{2}\d{4}$/,
+    /^[A-Z]{2}\d{3}$/,
+  ]),
+  BO: Object.freeze([
+    /^\d{3}[A-Z]{3}$/,
+    /^\d{4}[A-Z]{3}$/,
+    /^[A-Z]{3}\d{3}$/,
+  ]),
+});
+const PLATE_PATTERNS = Object.freeze(
+  Object.values(VEHICLE_PLATE_PATTERNS_BY_COUNTRY).flat()
+);
 const TEXT_ONLY_PATTERN = /^\p{L}(?:[\p{L}\s.'-]*\p{L})?$/u;
 export const MIN_VEHICLE_YEAR = 1900;
 export const MAX_VEHICLE_YEAR = new Date().getFullYear() + 1;
@@ -101,7 +115,7 @@ export function getVehicleFieldErrors(raw = {}, {requiresOwner = false} = {}) {
     errors.clienteId = "Selecciona un cliente propietario.";
   }
   if (normalizedText(raw.patente) && !isValidVehiclePlate(raw.patente)) {
-    errors.patente = "Ingresa una patente válida sin guiones, por ejemplo ABCD12.";
+    errors.patente = "Ingresa una patente válida de Chile o Bolivia (formato ordinario).";
   }
   if (normalizedText(raw.marca) && !isTextOnly(raw.marca)) {
     errors.marca = "La marca solo puede contener texto.";

@@ -26,6 +26,7 @@ import {
   getReceptionFieldErrors,
   hasReceptionAnomaly,
   isReceptionChecklistComplete,
+  MAX_RECEPTION_MILEAGE_KM,
   RECEPTION_CHECKLIST_FIELDS,
   RECEPTION_FUEL_LEVELS,
   receptionValuesFromStored,
@@ -140,7 +141,7 @@ function ReceptionPanel({businessId, onSaved, order, otId, role}) {
     <div className="erp-panel-header"><div><h2 id="work-order-reception-title" className="erp-panel-title">Recepción</h2><p className="erp-secondary-text">Registra condiciones observables. Esta checklist no reemplaza un diagnóstico mecánico.</p></div></div>
     {canOperate ? <form className="vehicle-form" onSubmit={submit} noValidate>
       <div className="work-order-reception-grid">
-        <ReceptionField label="Kilometraje" error={errors.kilometraje} required><input className="erp-control" type="number" min="0" step="1" value={values.kilometraje} onChange={(event) => updateValue("kilometraje", event.target.value)} /></ReceptionField>
+        <ReceptionField label="Kilometraje" error={errors.kilometraje} required><input className="erp-control" type="number" min="0" max={MAX_RECEPTION_MILEAGE_KM} step="1" value={values.kilometraje} onChange={(event) => updateValue("kilometraje", event.target.value)} /></ReceptionField>
         <ReceptionField label="Nivel de combustible" error={errors.nivelCombustible} required><select className="erp-control" value={values.nivelCombustible} onChange={(event) => updateValue("nivelCombustible", event.target.value)}><option value="">Selecciona una opción</option>{RECEPTION_FUEL_LEVELS.map((fuelLevel) => <option key={fuelLevel.value} value={fuelLevel.value}>{fuelLevel.label}</option>)}</select></ReceptionField>
         {RECEPTION_CHECKLIST_FIELDS.map((field) => <ReceptionField key={field.name} label={field.label} error={errors[field.name]} required><select className="erp-control" value={values.checklist[field.name]} onChange={(event) => updateChecklist(field.name, event.target.value)}><option value="">Selecciona una opción</option>{field.options.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></ReceptionField>)}
         <ReceptionField label="Daños u observaciones detectados" error={errors.danosObservados} required={checklistComplete && hasAnomaly}><textarea className="erp-control work-order-reception-textarea" disabled={checklistComplete && !hasAnomaly} maxLength={2000} value={values.danosObservados} onChange={(event) => updateValue("danosObservados", event.target.value)} placeholder={hasAnomaly ? "Describe la anomalía observada" : checklistComplete ? "Ninguno" : "Completa la checklist primero"} /></ReceptionField>

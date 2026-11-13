@@ -9,6 +9,7 @@ import {
 import {
   getReceptionFieldErrors,
   hasReceptionAnomaly as hasReceptionAnomalyForUi,
+  MAX_RECEPTION_MILEAGE_KM,
 } from "../src/domain/workOrderReceptionModel.mjs";
 import {
   adaptStoredWorkshopPlaza,
@@ -20,6 +21,7 @@ import {
 
 const require = createRequire(import.meta.url);
 const {
+  MAX_RECEPTION_MILEAGE_KM: MAX_BACKEND_RECEPTION_MILEAGE_KM,
   scopeFingerprint,
   freezeCoreItem,
   canApproveWorkOrder,
@@ -110,12 +112,12 @@ assert.equal((await catalogFor({rol: "MEMBER"})).items[0].precioEfectivo, 25000)
 assert.equal((await catalogFor({rol: "MEMBER", profileId: "profile", modules: ["taller"]})).items[0].precioEfectivo, null);
 assert.equal((await catalogFor({rol: "MEMBER", profileId: "profile", modules: ["taller", "cotizaciones"]})).items[0].precioEfectivo, 25000);
 assert.equal(
-  profileIdentityName({nombres: "Matías", apellidos: "Pérez"}, {email: "matias@bagner.cl", displayName: "matias@bagner.cl"}),
+  profileIdentityName({nombres: "Matías", apellidos: "Pérez"}, {email: "usuario@example.test", displayName: "usuario@example.test"}),
   "Matías Pérez"
 );
 assert.equal(
-  profileIdentityName({nombres: "", apellidos: ""}, {email: "matias@bagner.cl", displayName: "Otro nombre"}),
-  "matias@bagner.cl"
+  profileIdentityName({nombres: "", apellidos: ""}, {email: "usuario@example.test", displayName: "Otro nombre"}),
+  "usuario@example.test"
 );
 console.log("OK backend OT: payload acotado y número visible canónico");
 
@@ -188,6 +190,15 @@ const reception = {
   observaciones: "",
 };
 assert.deepEqual(normalizeReceptionInput(reception, TestHttpsError), reception);
+assert.equal(MAX_BACKEND_RECEPTION_MILEAGE_KM, MAX_RECEPTION_MILEAGE_KM);
+assert.deepEqual(
+  normalizeReceptionInput({...reception, kilometraje: MAX_RECEPTION_MILEAGE_KM}, TestHttpsError),
+  {...reception, kilometraje: MAX_RECEPTION_MILEAGE_KM}
+);
+assert.throws(
+  () => normalizeReceptionInput({...reception, kilometraje: MAX_RECEPTION_MILEAGE_KM + 1}, TestHttpsError),
+  (error) => error.code === "invalid-argument" && /kilometraje.*no puede superar/i.test(error.message)
+);
 assert.equal(hasReceptionAnomaly(reception.checklist), false);
 assert.equal(hasReceptionAnomalyForUi(reception.checklist), false);
 assert.equal(receptionNextStatus({estado: "ingresada", plazaId: null}), "en_cola");
@@ -221,6 +232,10 @@ assert.throws(
   (error) => error.code === "invalid-argument" && /nivel de combustible válido/i.test(error.message)
 );
 assert.equal(Object.keys(getReceptionFieldErrors({...reception, kilometraje: "125000", accesoriosTexto: "Llave de rueda"})).length, 0);
+assert.match(
+  getReceptionFieldErrors({...reception, kilometraje: String(MAX_RECEPTION_MILEAGE_KM + 1)}).kilometraje,
+  /no puede superar/i
+);
 assert.deepEqual(normalizeDiagnosisInput({responsableUid: "member-1", descripcion: "  Falla en arranque  ", observaciones: ""}, TestHttpsError), {
   responsableUid: "member-1", descripcion: "Falla en arranque", observaciones: "",
 });

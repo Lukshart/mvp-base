@@ -58,6 +58,7 @@ assert.match(detail, /getWorkOrderStatusLabel/);
 assert.match(detail, /getWorkOrderApprovalLabel/);
 assert.match(detail, /RECEPTION_CHECKLIST_FIELDS/);
 assert.match(detail, /RECEPTION_FUEL_LEVELS/);
+assert.match(detail, /max=\{MAX_RECEPTION_MILEAGE_KM\}/);
 assert.match(detail, /Selecciona una opción/);
 assert.match(detail, /registrarRecepcionOrdenTrabajo/);
 assert.match(detail, /<DiagnosisPanel/);

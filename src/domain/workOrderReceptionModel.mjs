@@ -107,6 +107,8 @@ export const RECEPTION_FUEL_LEVELS = Object.freeze([
   {value: "Lleno", label: "Lleno"},
 ]);
 
+export const MAX_RECEPTION_MILEAGE_KM = 2_000_000;
+
 export function emptyReceptionValues() {
   return {
     kilometraje: "",
@@ -141,7 +143,11 @@ export function isReceptionChecklistComplete(checklist = {}) {
 export function getReceptionFieldErrors(values) {
   const errors = {};
   const kilometraje = Number(values.kilometraje);
-  if (!Number.isSafeInteger(kilometraje) || kilometraje < 0) errors.kilometraje = "Ingresa un kilometraje entero válido.";
+  if (!Number.isSafeInteger(kilometraje) || kilometraje < 0) {
+    errors.kilometraje = "Ingresa un kilometraje entero válido.";
+  } else if (kilometraje > MAX_RECEPTION_MILEAGE_KM) {
+    errors.kilometraje = `El kilometraje no puede superar ${MAX_RECEPTION_MILEAGE_KM.toLocaleString("es-CL")} km.`;
+  }
   if (!String(values.nivelCombustible || "").trim()) {
     errors.nivelCombustible = "Indica el nivel de combustible.";
   } else if (!RECEPTION_FUEL_LEVELS.some(({value}) => value === values.nivelCombustible)) {

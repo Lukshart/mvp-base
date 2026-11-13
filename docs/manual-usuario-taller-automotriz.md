@@ -130,6 +130,8 @@ Disponible para `OWNER`, `ADMIN` y `TECNICO`.
 
 La patente es obligatoria y única dentro de la empresa. El VIN es opcional; cuando se informa también debe ser único dentro de la empresa.
 
+El año debe tener exactamente cuatro dígitos y estar entre 1900 y el año siguiente al actual. El límite superior avanza automáticamente cada año; por ejemplo, durante 2026 se acepta hasta 2027.
+
 ### 2.3 Crear una Orden de Trabajo
 
 Disponible para `OWNER`, `ADMIN` y `TECNICO`.
@@ -149,6 +151,8 @@ El número de OT se genera automáticamente. La OT conserva como Cliente histór
 4. Completa todos los controles de la checklist.
 5. Si existe una anomalía, descríbela en **Daños observados**.
 6. Guarda la Recepción.
+
+El kilometraje debe ser un número entero entre 0 y 2.000.000 km.
 
 La checklist documenta condiciones visibles al recibir el Vehículo; no sustituye el Diagnóstico técnico.
 

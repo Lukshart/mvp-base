@@ -3,6 +3,7 @@ import {createRequire} from "node:module";
 
 const require = createRequire(import.meta.url);
 const {
+  VEHICLE_PLATE_PATTERNS_BY_COUNTRY,
   VEHICLE_TYPES,
   normalizeVehicleInput,
   normalizeVehicleKey,
@@ -45,14 +46,28 @@ assert.equal(
   normalizeVehicleKey(" aa-bb 11 ", "La patente", 30, TestHttpsError, false),
   "AABB11"
 );
-for (const plate of ["ABCD12", "ABC12", "ABCDE1", "ABCD1"]) {
+assert.deepEqual(Object.keys(VEHICLE_PLATE_PATTERNS_BY_COUNTRY), ["CL", "BO"]);
+for (const plate of [
+  "ABCD12",
+  "ABC12",
+  "ABCDE1",
+  "ABCD1",
+  "AB1234",
+  "AB123",
+  "123ABC",
+  "1234ABC",
+  "ABC123",
+]) {
   assert.equal(normalizeVehiclePlate(plate, TestHttpsError), plate);
 }
 assert.equal(normalizeVehiclePlate(" ab-cd 12 ", TestHttpsError), "ABCD12");
-assert.throws(
-  () => normalizeVehiclePlate("ASDDD", TestHttpsError),
-  (error) => error.code === "invalid-argument" && /patente/i.test(error.message)
-);
+assert.equal(normalizeVehiclePlate(" 12-34 abc ", TestHttpsError), "1234ABC");
+for (const plate of ["ASDDD", "12ABC", "12345ABC", "1234AB", "ABC1234", "1234AB1"]) {
+  assert.throws(
+    () => normalizeVehiclePlate(plate, TestHttpsError),
+    (error) => error.code === "invalid-argument" && /patente/i.test(error.message)
+  );
+}
 assert.equal(
   normalizeVehicleKey("", "El VIN", 80, TestHttpsError, true),
   null

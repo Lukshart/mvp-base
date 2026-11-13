@@ -54,6 +54,7 @@ const RECEPTION_FUEL_LEVELS = new Set([
   "3/4",
   "Lleno",
 ]);
+const MAX_RECEPTION_MILEAGE_KM = 2_000_000;
 const DIAGNOSIS_INPUT_FIELDS = new Set(["responsableUid", "descripcion", "observaciones"]);
 const SERVICE_INPUT_FIELDS = new Set(["itemId", "responsableUid"]);
 const PLANNING_STATES = new Set(["en_cola", "en_diagnostico", "esperando_aprobacion", "esperando_repuestos", "en_reparacion"]);
@@ -148,6 +149,18 @@ function nonNegativeInteger(value, label, HttpsError) {
   return value;
 }
 
+function receptionMileage(value, HttpsError) {
+  const mileage = nonNegativeInteger(value, "El kilometraje", HttpsError);
+  if (mileage > MAX_RECEPTION_MILEAGE_KM) {
+    fail(
+      HttpsError,
+      "invalid-argument",
+      `El kilometraje no puede superar ${MAX_RECEPTION_MILEAGE_KM} km.`
+    );
+  }
+  return mileage;
+}
+
 function normalizeChecklist(raw, HttpsError) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     fail(HttpsError, "invalid-argument", "La checklist de recepción debe enviarse como un objeto.");
@@ -203,7 +216,7 @@ function normalizeReceptionInput(raw, HttpsError) {
     fail(HttpsError, "invalid-argument", "Selecciona un nivel de combustible válido.");
   }
   return {
-    kilometraje: nonNegativeInteger(raw.kilometraje, "El kilometraje", HttpsError),
+    kilometraje: receptionMileage(raw.kilometraje, HttpsError),
     nivelCombustible,
     checklist,
     accesorios: normalizeAccessories(raw.accesorios, HttpsError),
@@ -1503,6 +1516,7 @@ const rechazarOTHandler = (request, deps) => approvalOperation(request, deps, "r
 const revalidarDisponibilidadOTHandler = (request, deps) => approvalOperation(request, deps, "revalidar");
 
 module.exports = {
+  MAX_RECEPTION_MILEAGE_KM,
   appendPlanningEvent,
   diagnosisActor,
   identifier,

@@ -16,12 +16,26 @@ const VEHICLE_TYPES = Object.freeze([
   "otro",
 ]);
 const VEHICLE_TYPE_SET = new Set(VEHICLE_TYPES);
-const PLATE_PATTERNS = Object.freeze([
-  /^[A-Z]{4}\d{2}$/,
-  /^[A-Z]{3}\d{2}$/,
-  /^[A-Z]{5}\d$/,
-  /^[A-Z]{4}\d$/,
-]);
+// Formatos ordinarios admitidos por país. La validación usa la unión porque
+// un taller puede recibir vehículos matriculados en otro país.
+const VEHICLE_PLATE_PATTERNS_BY_COUNTRY = Object.freeze({
+  CL: Object.freeze([
+    /^[A-Z]{4}\d{2}$/,
+    /^[A-Z]{3}\d{2}$/,
+    /^[A-Z]{5}\d$/,
+    /^[A-Z]{4}\d$/,
+    /^[A-Z]{2}\d{4}$/,
+    /^[A-Z]{2}\d{3}$/,
+  ]),
+  BO: Object.freeze([
+    /^\d{3}[A-Z]{3}$/,
+    /^\d{4}[A-Z]{3}$/,
+    /^[A-Z]{3}\d{3}$/,
+  ]),
+});
+const PLATE_PATTERNS = Object.freeze(
+  Object.values(VEHICLE_PLATE_PATTERNS_BY_COUNTRY).flat()
+);
 const TEXT_ONLY_PATTERN = /^\p{L}(?:[\p{L}\s.'-]*\p{L})?$/u;
 const MIN_VEHICLE_YEAR = 1900;
 const VEHICLE_INPUT_FIELDS = new Set([
@@ -113,7 +127,7 @@ function normalizeVehiclePlate(value, HttpsError) {
     fail(
       HttpsError,
       "invalid-argument",
-      "La patente debe usar un formato válido, sin guiones."
+      "La patente debe usar un formato válido de Chile o Bolivia (patente ordinaria)."
     );
   }
   return normalized;
@@ -551,6 +565,7 @@ async function cambiarPropietarioVehiculoHandler(request, dependencies) {
 }
 
 module.exports = {
+  VEHICLE_PLATE_PATTERNS_BY_COUNTRY,
   VEHICLE_TYPES,
   actualizarVehiculoHandler,
   cambiarPropietarioVehiculoHandler,

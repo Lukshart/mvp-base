@@ -40,7 +40,7 @@ function VehicleFormFields({errors = {}, onChange, values}) {
 
   return (
     <div className="vehicle-form-grid">
-      {field("patente", "Patente", {required: true, maxLength: 6, placeholder: "Ej.: ABCD12"})}
+      {field("patente", "Patente", {required: true, maxLength: 7, placeholder: "Ej.: ABCD12 o 1234ABC"})}
       {field("vin", "VIN", {optional: true, maxLength: 80})}
       {field("marca", "Marca", {required: true})}
       {field("modelo", "Modelo", {required: true})}
