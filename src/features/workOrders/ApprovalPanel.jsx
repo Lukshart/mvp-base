@@ -2,28 +2,16 @@ import React, {useCallback, useEffect, useState} from "react";
 import Button from "../../components/ui/Button";
 import LoadingState from "../../components/ui/LoadingState";
 import ResponsiveDialog from "../../components/ui/ResponsiveDialog";
-import {adaptDocumentAmountDecimals} from "../../domain/localization.mjs";
-import {calculateWorkOrderProductLineTotal, calculateWorkOrderScopeTotal} from "../../domain/workOrderModel.mjs";
-import useBusinessFormat from "../../hooks/useBusinessFormat";
-import {formatBusinessMoney} from "../../utils/formatters";
 import {
   createWorkOrderRequestId, ejecutarAccionAprobacionOT, getWorkOrderErrorMessage,
   obtenerResumenAprobacionOT,
 } from "../../services/workOrderService";
 
-const ACTIONS = {
-  enviar: "Enviar a aprobación", aprobar: "Aprobar", rechazar: "Rechazar",
-  revalidar: "Revalidar disponibilidad",
-};
+const ACTIONS = {aprobar: "Aprobar ingreso", rechazar: "Rechazar ingreso"};
 
-function amount(value, currency, locale) {
-  return Number.isFinite(value) && currency
-    ? formatBusinessMoney(value, currency, locale)
-    : "No disponible";
-}
-
+// La aprobación es una compuerta: el Owner o el Administrador dicen sí o no al ingreso.
+// Los trabajos y repuestos se registran después, en la ejecución.
 export default function ApprovalPanel({businessId, otId, order, onChanged}) {
-  const {locale} = useBusinessFormat();
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -42,11 +30,8 @@ export default function ApprovalPanel({businessId, otId, order, onChanged}) {
       .then(async (data) => {
         if (!active) return;
         setSummary(data);
-        // A concurrent operation may have changed the OT after the parent loaded it.
-        // Refresh its header and badges from the same authoritative revision.
-        if (Number.isSafeInteger(data.revision) && data.revision !== revision) {
-          await onChanged();
-        }
+        // Otra operación pudo cambiar la OT después de cargar la ficha.
+        if (Number.isSafeInteger(data.revision) && data.revision !== revision) await onChanged();
       })
       .catch((failure) => { if (active) setError(getWorkOrderErrorMessage(failure)); })
       .finally(() => { if (active) setLoading(false); });
@@ -66,65 +51,44 @@ export default function ApprovalPanel({businessId, otId, order, onChanged}) {
     }
     setBusy(true); setError("");
     try {
-      const result = await ejecutarAccionAprobacionOT(businessId, otId, confirmation.action,
+      await ejecutarAccionAprobacionOT(businessId, otId, confirmation.action,
         confirmation.requestId, confirmation.revision, reason);
       setConfirmation(null);
-      setNotice(result.faltantes.length
-        ? "Operación registrada. La OT espera repuestos; no se reservó ni descontó stock."
-        : "Operación registrada correctamente. El stock no se modificó.");
+      setNotice(confirmation.action === "aprobar"
+        ? "Ingreso aprobado. Ya se pueden registrar los trabajos en la ejecución."
+        : "Ingreso rechazado.");
       await onChanged();
       setReload((value) => value + 1);
     } catch (failure) {
       setError(getWorkOrderErrorMessage(failure));
-      if (String(failure.code).includes("aborted")) {
-        setConfirmation(null);
-        // Keep the conflict visible until the user explicitly refreshes the summary.
-        setSummary(null);
-      }
+      if (String(failure.code).includes("aborted")) { setConfirmation(null); setSummary(null); }
     } finally { setBusy(false); }
   }, [businessId, otId, confirmation, busy, reason, onChanged]);
 
-  const awaitingDecision = summary?.estado === "esperando_aprobacion" && summary?.estadoAprobacion === "pendiente";
-  // Decimales de cálculo de la OT (SPEC 036): los resuelve el servidor y vienen en el resumen; ausente = 0.
-  const decimals = summary ? adaptDocumentAmountDecimals(summary, summary.moneda) : 0;
+  const approved = summary?.estadoAprobacion === "aprobada";
+  const rejected = summary?.estadoAprobacion === "rechazada";
   return <section className="erp-panel" aria-labelledby="work-order-approval-title">
     <div className="erp-panel-header"><div>
-      <h2 id="work-order-approval-title" className="erp-panel-title">Alcance y aprobación</h2>
-      <p className="erp-secondary-text">{summary?.congelado
-        ? "Alcance congelado al enviar. Los cambios posteriores del catálogo no modifican estos valores."
-        : "Vista previa de valores vigentes. Se confirmarán desde Inventario al enviar a aprobación."}</p>
-    </div><Button type="button" variant="secondary" disabled={loading || busy} onClick={() => setReload((value) => value + 1)}>Actualizar</Button></div>
-    {loading && <LoadingState variant="section" label="Cargando alcance..." />}
+      <h2 id="work-order-approval-title" className="erp-panel-title">Aprobación del ingreso</h2>
+      <p className="erp-secondary-text">Revisa la recepción y decide si el vehículo ingresa al taller.</p>
+    </div></div>
+    {loading && <LoadingState variant="section" label="Cargando aprobación..." />}
     {error && <div className="vehicle-message vehicle-message--error" role="alert">{error}</div>}
     {notice && <div className="vehicle-message" role="status">{notice}</div>}
     {summary && !loading && <>
-      {!summary.alcance.length ? <div className="erp-empty-state">Aún no hay servicios definidos.</div> :
-        <div className="erp-table-region work-order-approval-table"><table className="erp-table">
-          <thead><tr><th>Servicio / producto</th><th>Cantidad</th><th>Precio</th><th>Subtotal</th></tr></thead>
-          <tbody>{summary.alcance.map((service) => <React.Fragment key={service.servicioOtId}>
-            <tr><td><strong>{service.servicioSnapshot?.nombre || "Servicio no disponible"}</strong></td><td>1</td><td>{amount(service.precioUnitario, summary.moneda, locale)}</td><td>{amount(service.precioUnitario, summary.moneda, locale)}</td></tr>
-            {service.productos.map((product) => <tr key={product.productoOtId}><td>{product.productoSnapshot?.nombre || "Producto no disponible"}</td><td>{product.cantidad}</td><td>{amount(product.precioUnitario, summary.moneda, locale)}</td><td>{amount(calculateWorkOrderProductLineTotal(product, decimals), summary.moneda, locale)}</td></tr>)}
-          </React.Fragment>)}</tbody>
-          <tfoot><tr className="work-order-approval-total"><th scope="row" colSpan={3}>Total</th><td>{amount(calculateWorkOrderScopeTotal(summary.alcance, decimals), summary.moneda, locale)}</td></tr></tfoot>
-        </table></div>}
-      {summary.alcance.length > 0 && <p className="erp-secondary-text">El total suma los valores del alcance. No se calcula IVA en esta vista.</p>}
-      {summary.estado === "esperando_repuestos" && <div className="vehicle-message vehicle-message--warning" role="status">{summary.estadoAprobacion === "aprobada"
-        ? "El alcance está aprobado. Revalida la disponibilidad para continuar cuando existan repuestos."
-        : "Faltan repuestos. Revalida la disponibilidad antes de solicitar la decisión de aprobación."}</div>}
-      {summary.estadoAprobacion === "rechazada" && <div className="vehicle-message vehicle-message--warning" role="status">Alcance rechazado. Revisa los servicios y repuestos antes de reenviarlo.</div>}
-      {summary.estado === "esperando_aprobacion" && <p className="erp-secondary-text">El alcance ya fue enviado y espera una decisión de aprobación.</p>}
-      {!summary.puedeEnviar && !summary.congelado && <p className="erp-secondary-text">Para enviar se requiere Recepción, al menos un Diagnóstico completado y servicios definidos.</p>}
-      {awaitingDecision && !summary.puedeAprobar && <p className="erp-secondary-text">Tu membresía permite consultar el alcance, pero no aprobarlo ni rechazarlo.</p>}
-      <div className="vehicle-form-actions work-order-approval-actions">
-        {(summary.puedeEnviar || summary.estado === "esperando_aprobacion") && <Button type="button" disabled={busy || !summary.puedeEnviar} onClick={() => begin("enviar")}>Enviar a aprobación</Button>}
-        {awaitingDecision && summary.puedeAprobar && <><Button type="button" variant="secondary" disabled={busy} onClick={() => begin("rechazar")}>Rechazar</Button><Button type="button" disabled={busy} onClick={() => begin("aprobar")}>Aprobar</Button></>}
-        {summary.estado === "esperando_repuestos" && summary.estadoAprobacion !== "rechazada" && <Button type="button" disabled={busy} onClick={() => begin("revalidar")}>Revalidar disponibilidad</Button>}
-      </div>
+      {approved && <div className="vehicle-message" role="status">Ingreso aprobado.</div>}
+      {rejected && <div className="vehicle-message vehicle-message--warning" role="status">Ingreso rechazado. Puedes aprobarlo si cambia la decisión.</div>}
+      {!approved && !summary.puedeDecidir && <p className="erp-secondary-text">Registra la recepción para poder decidir el ingreso.</p>}
+      {summary.puedeDecidir && !summary.puedeAprobar && <p className="erp-secondary-text">Tu membresía permite consultar la aprobación, pero no decidirla.</p>}
+      {summary.puedeDecidir && summary.puedeAprobar && <div className="vehicle-form-actions work-order-approval-actions">
+        <Button type="button" variant="secondary" disabled={busy} onClick={() => begin("rechazar")}>Rechazar</Button>
+        <Button type="button" disabled={busy} onClick={() => begin("aprobar")}>Aprobar</Button>
+      </div>}
     </>}
     <ResponsiveDialog open={Boolean(confirmation)} onClose={() => !busy && setConfirmation(null)} size="small" eyebrow="Taller" title={ACTIONS[confirmation?.action] || "Confirmar acción"}
-      description={confirmation?.action === "enviar" ? "Se consultarán nuevamente los precios de Inventario y se congelará el alcance vigente." : "La operación se validará en el servidor sobre esta versión del alcance."}
+      description="La decisión se valida en el servidor y queda en el historial de la OT."
       footer={<><Button type="button" variant="secondary" disabled={busy} onClick={() => setConfirmation(null)}>Cancelar</Button><Button type="button" disabled={busy} onClick={confirm}>{busy ? "Procesando..." : "Confirmar"}</Button></>}>
-      {confirmation?.action === "rechazar" && <label className="erp-field"><span className="erp-field__label">Motivo *</span><textarea className="erp-control" value={reason} maxLength={2000} disabled={busy} aria-required="true" aria-invalid={Boolean(reasonError)} onChange={(event) => { setReason(event.target.value); setReasonError(""); }} />{reasonError && <span className="work-order-field-error" role="alert">{reasonError}</span>}</label>}
+      {confirmation?.action === "rechazar" && <label className="erp-field"><span className="erp-field__label">Motivo *</span><textarea className="erp-control" value={reason} maxLength={2000} disabled={busy} onChange={(event) => { setReason(event.target.value); setReasonError(""); }} />{reasonError && <span className="work-order-field-error" role="alert">{reasonError}</span>}</label>}
       {error && <div className="vehicle-message vehicle-message--error" role="alert">{error}</div>}
     </ResponsiveDialog>
   </section>;
