@@ -6,6 +6,7 @@ import {testWorkOrderClosure} from "./work-order-closure-cases.mjs";
 import {testWorkOrderCancellation} from "./work-order-cancellation-cases.mjs";
 import {testWorkOrderEndToEnd} from "./work-order-end-to-end-cases.mjs";
 import {testWorkshopPlazas} from "./work-order-plaza-cases.mjs";
+import {testWorkshopPlazaAutoAssignment} from "./work-order-plaza-auto-cases.mjs";
 import {testWorkshopSecurity} from "./workshop-security-cases.mjs";
 import {createRequire} from "node:module";
 import {deleteApp, initializeApp} from "firebase/app";
@@ -459,9 +460,18 @@ try {
   console.log("OK actualización recepción: rol operativo autorizado y autoría inicial preservada");
 
   // Los trabajos se registran en la ejecución: primero el Owner aprueba el ingreso (compuerta).
+  // Un negocio sin Plazas activas no puede aprobar ingresos.
+  await expectCallableError("aprobar sin Plazas activas", async () => callable(owner, "aprobarOT")({
+    businessId, otId, requestId: `gate-no-plaza-${RUN_ID}`,
+    expectedActualizadoEn: (await adminDb.doc(orderPath).get()).data().actualizadoEn.toMillis(),
+  }), ["failed-precondition"], /al menos una Plaza activa/i);
+  const mainPlazaId = (await callable(owner, "crearPlazaTaller")({
+    businessId, requestId: `plaza-main-${RUN_ID}`, plaza: {nombre: "Taller - Plaza principal"},
+  })).data.plaza.plazaId;
   await callable(owner, "aprobarOT")({businessId, otId, requestId: `gate-approve-${RUN_ID}`,
     expectedActualizadoEn: (await adminDb.doc(orderPath).get()).data().actualizadoEn.toMillis()});
   assert.equal((await adminDb.doc(orderPath).get()).data().estado, "en_reparacion");
+  assert.equal((await adminDb.doc(orderPath).get()).data().plazaId, mainPlazaId, "aprobar asigna la Plaza libre");
   const serviceRequestId = `service-create-${RUN_ID}`;
   await expectCallableError("ServicioOT rechaza Producto Core", () => callable(owner, "crearServicioOT")({
     businessId, otId, requestId: `service-wrong-${RUN_ID}`,
@@ -724,6 +734,8 @@ try {
   console.log("OK concurrencia OT: el contador entrega números únicos e incrementales");
 
   // Las pruebas de Plaza parten de la OT principal recién recibida, antes de aprobar el ingreso.
+  await callable(owner, "liberarPlazaOT")({businessId, otId,
+    expectedActualizadoEn: (await adminDb.doc(orderPath).get()).data().actualizadoEn.toMillis()});
   await adminDb.doc(orderPath).update({estado: "en_cola", estadoAprobacion: "pendiente"});
   await testWorkshopPlazas({
     adminDb, businessId, transitionOtId, transitionPlazaId: transitionPlaza.data.plaza.plazaId,
@@ -899,6 +911,8 @@ try {
     expectCallableError, expectFirestoreDenied, reception: workOrderReception(), runId: RUN_ID});
   await testWorkOrderEndToEnd({adminDb, businessId, owner, technician, callable, expectCallableError,
     reception: workOrderReception(), runId: RUN_ID});
+  await testWorkshopPlazaAutoAssignment({adminDb, businessId, owner, admin, technician, callable,
+    expectCallableError, reception: workOrderReception(), runId: RUN_ID});
   await testWorkshopSecurity({adminDb, businessId, otId, owner, member, technician, outsider,
     anonymous, callable, expectCallableError, expectFirestoreDenied, runId: RUN_ID});
 } finally {

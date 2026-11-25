@@ -4,9 +4,13 @@ import {
   adaptStoredWorkOrder,
   calculateWorkOrderScopeTotal,
   getWorkOrderApprovalLabel,
+  getWorkOrderDisplayStatusLabel,
+  getWorkOrderDisplayStatusVariant,
   getWorkOrderStatusLabel,
+  isWorkOrderWaitingForPlaza,
   matchesWorkOrderSearch,
 } from "../src/domain/workOrderModel.mjs";
+import {getWorkOrderHistoryDetail} from "../src/domain/workOrderHistoryModel.mjs";
 import {
   getReceptionFieldErrors,
   hasReceptionAnomaly as hasReceptionAnomalyForUi,
@@ -271,13 +275,37 @@ assert.equal(calculateWorkOrderScopeTotal([]), 0);
 assert.equal(calculateWorkOrderScopeTotal([{precioUnitario: null, productos: []}]), null, "sin precio no hay total");
 assert.equal(calculateWorkOrderScopeTotal([{precioUnitario: 100, productos: [{precioUnitario: 5, cantidad: undefined}]}]), null);
 {
-  // Rechazar exige motivo y devuelve la OT a planificación; enviar no se repite en esperando_aprobacion.
+  // La aprobación es una compuerta: rechazar exige motivo y no cambia el estado; ya no hay envío a aprobación.
   const fs = require("node:fs");
   const persistenceSource = fs.readFileSync("functions/workOrderPersistence.js", "utf8");
   assert.match(persistenceSource, /"El motivo del rechazo"[^\n]*\{required: true\}/);
-  assert.match(persistenceSource, /else estado = order\.plazaId \? "en_diagnostico" : "en_cola"/);
-  assert.match(persistenceSource, /El alcance ya fue enviado y espera una decisión de aprobación\./);
-  assert.match(persistenceSource, /order\.estado !== "esperando_aprobacion" &&\s+order\.estadoAprobacion !== "aprobada"/);
+  assert.match(persistenceSource, /El ingreso se aprueba o rechaza directamente; los trabajos se registran en la ejecución\./);
+  assert.match(persistenceSource, /action === "aprobar" \? \(waitsForPlaza \? "en_cola" : "en_reparacion"\) : gateOrder\.estado/);
 }
-console.log("OK alcance OT: total sin IVA, motivo de rechazo obligatorio, vuelta a planificación y sin reenvío duplicado");
+console.log("OK alcance OT: total sin IVA, motivo de rechazo obligatorio y aprobación como compuerta");
+{
+  // Espera de Plaza: misma regla en la interfaz y en el servidor.
+  const {isWaitingForPlaza} = require("../functions/workOrderPlazaAssignment.js");
+  const waiting = {recepcion: {kilometraje: 1}, estado: "en_cola", estadoAprobacion: "aprobada", plazaId: ""};
+  const cases = [
+    [waiting, true],
+    [{...waiting, plazaId: "plaza-1"}, false],
+    [{...waiting, estadoAprobacion: "pendiente"}, false],
+    [{...waiting, estado: "en_reparacion"}, false],
+    [{...waiting, recepcion: null}, false],
+  ];
+  for (const [order, expected] of cases) {
+    assert.equal(isWorkOrderWaitingForPlaza(order), expected);
+    assert.equal(isWaitingForPlaza({...order, plazaId: order.plazaId || null}), expected);
+  }
+  assert.equal(getWorkOrderDisplayStatusLabel(waiting), "En espera de plaza");
+  assert.equal(getWorkOrderDisplayStatusVariant(waiting), "warning");
+  assert.equal(getWorkOrderDisplayStatusLabel({...waiting, estadoAprobacion: "pendiente"}), "En cola");
+  assert.match(getWorkOrderHistoryDetail({tipo: "ot_aprobada", detalle: {estado: "en_cola", enEsperaDePlaza: true}}),
+    /En espera de plaza/);
+  assert.equal(getWorkOrderHistoryDetail({tipo: "plaza_asignada", detalle: {plazaId: "p", automatica: true}}),
+    "Asignada automáticamente.");
+  assert.equal(getWorkOrderHistoryDetail({tipo: "plaza_asignada", detalle: {plazaId: "p"}}), "");
+  console.log("OK espera de Plaza: etiqueta, variante e historial coinciden con la regla del servidor");
+}
 console.log("WORK_ORDER_MODEL_SMOKE_OK");
