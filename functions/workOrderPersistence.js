@@ -59,7 +59,6 @@ const RECEPTION_FUEL_LEVELS = new Set([
 const MAX_RECEPTION_MILEAGE_KM = 2_000_000;
 const DIAGNOSIS_INPUT_FIELDS = new Set(["responsableUid", "descripcion", "observaciones"]);
 const SERVICE_INPUT_FIELDS = new Set(["itemId", "responsableUid"]);
-const PLANNING_STATES = new Set(["en_cola", "en_diagnostico", "esperando_aprobacion", "esperando_repuestos", "en_reparacion"]);
 const CANCELLABLE_ORDER_STATES = new Set([
   "ingresada",
   "en_cola",
@@ -362,25 +361,15 @@ function plannedQuantity(value, HttpsError) {
 }
 
 function assertPlanningOrder(order, HttpsError) {
-  if (!order.recepcion || !PLANNING_STATES.has(order.estado)) {
-    fail(HttpsError, "failed-precondition", "El estado actual de la OT no permite modificar el alcance.");
+  // Flujo vigente: la aprobación es solo una compuerta y los trabajos se registran en la ejecución.
+  if (!order.recepcion || order.estado !== "en_reparacion" || order.estadoAprobacion !== "aprobada") {
+    fail(HttpsError, "failed-precondition", "Los trabajos y repuestos se registran durante la ejecución, una vez aprobado el ingreso.");
   }
 }
 
 function invalidateWorkOrderScope(transaction, orderRef, order, context, actorSnapshot, timestamp) {
-  const invalidated = order.estadoAprobacion === "aprobada" || ["esperando_aprobacion", "esperando_repuestos"].includes(order.estado);
-  transaction.update(orderRef, {
-    estado: invalidated ? (order.plazaId ? "en_diagnostico" : "en_cola") : order.estado,
-    estadoAprobacion: "pendiente",
-    actualizadoPorUid: context.uid, actualizadoEn: timestamp,
-  });
-  if (invalidated) {
-    appendPlanningEvent(transaction, orderRef, {
-      businessId: context.businessId, actorUid: context.uid, actorSnapshot, timestamp,
-      type: "aprobacion_invalidada", detail: {estadoAnterior: order.estado, aprobacionAnterior: order.estadoAprobacion,
-        estado: order.plazaId ? "en_diagnostico" : "en_cola", estadoAprobacion: "pendiente"},
-    });
-  }
+  // La aprobación es una compuerta de ingreso: agregar o cambiar trabajos no la invalida.
+  transaction.update(orderRef, {actualizadoPorUid: context.uid, actualizadoEn: timestamp});
 }
 
 function assertPlanningItem(snapshot, businessId, itemId, type, HttpsError) {
@@ -1148,12 +1137,8 @@ async function transitionServiceOT(request, dependencies, action) {
     const order = assertStoredWorkOrder(orderSnapshot, context.businessId, HttpsError);
     const service = assertService(serviceSnapshot, context.businessId, otId, HttpsError);
     assertDiagnosisRevision(service, expected, HttpsError, "servicio");
-    if (order.estado !== "en_reparacion" || order.estadoAprobacion !== "aprobada" ||
-        !approvalSnapshot.exists || approvalSnapshot.data().negocioId !== context.businessId ||
-        approvalSnapshot.data().otId !== otId ||
-        approvalSnapshot.data().scopeHash !== scopeFingerprint(servicesSnapshot.docs.map((snapshot) =>
-          assertService(snapshot, context.businessId, otId, HttpsError)))) {
-      fail(HttpsError, "failed-precondition", "La OT debe estar en reparación con el alcance vigente aprobado.");
+    if (order.estado !== "en_reparacion" || order.estadoAprobacion !== "aprobada") {
+      fail(HttpsError, "failed-precondition", "La OT debe estar en ejecución con el ingreso aprobado.");
     }
     const previous = action === "iniciar" ? "pendiente" : "en_progreso";
     const next = action === "iniciar" ? "en_progreso" : "completado";
@@ -1203,7 +1188,7 @@ async function transitionWorkOrderClosure(request, dependencies, action) {
   const fingerprint = createHash("sha256").update(JSON.stringify({otId, action, expected, actor: context.uid})).digest("hex");
   return db.runTransaction(async (transaction) => {
     const [previous, data] = await Promise.all([
-      transaction.get(requestRef), readApprovalContext(transaction, context, orderRef, dependencies, "skip"),
+      transaction.get(requestRef), readApprovalContext(transaction, context, orderRef, dependencies, action === "finalizar" ? "required" : "skip"),
     ]);
     if (previous.exists) {
       if (previous.data().negocioId !== context.businessId || previous.data().fingerprint !== fingerprint) {
@@ -1214,6 +1199,9 @@ async function transitionWorkOrderClosure(request, dependencies, action) {
     const {order, services} = data;
     assertDiagnosisRevision(order, expected, HttpsError, "orden de trabajo");
     const previousStatus = order.estado;
+    let frozenAtFinish = null;
+    let closureCurrency = null;
+    let closureDecimals = 0;
     if (action === "cancelar" ? !CANCELLABLE_ORDER_STATES.has(order.estado) :
       order.estado !== (action === "finalizar" ? "en_reparacion" : "pendiente_entrega")) {
       const message = action === "finalizar"
@@ -1227,13 +1215,21 @@ async function transitionWorkOrderClosure(request, dependencies, action) {
       if (!services.length || services.some((service) => service.estado !== "completado")) {
         fail(HttpsError, "failed-precondition", "Completa todos los servicios antes de finalizar la reparación.");
       }
-      const approval = await transaction.get(context.businessRef.collection("otApprovalState").doc(otId));
-      const approvalData = approval.data() || {};
-      if (order.estadoAprobacion !== "aprobada" || !approval.exists ||
-          approvalData.negocioId !== context.businessId || approvalData.otId !== otId ||
-          approvalData.scopeHash !== scopeFingerprint(services)) {
-        fail(HttpsError, "failed-precondition", "La OT no tiene un alcance vigente aprobado.");
+      if (order.estadoAprobacion !== "aprobada") {
+        fail(HttpsError, "failed-precondition", "El ingreso de la OT no está aprobado.");
       }
+      // Los precios se congelan aquí, al enviar a Ventas; el taller nunca los muestra.
+      closureCurrency = order.moneda || businessCurrency({businessSnapshot: {data: () => data.businessData}});
+      if (!closureCurrency) fail(HttpsError, "failed-precondition", "Configura una moneda válida en el negocio antes de finalizar.");
+      closureDecimals = workOrderAmountDecimals(order, closureCurrency);
+      frozenAtFinish = services.map((service) => {
+        const core = freezeCoreItem(data.items.get(service.itemId), context.businessId, service.itemId, "servicio", HttpsError, closureDecimals);
+        return {...frozenScope([service])[0], precioUnitario: core.precioUnitario, servicioSnapshot: core.snapshot,
+          productos: service.productos.map((product) => {
+            const coreProduct = freezeCoreItem(data.items.get(product.itemId), context.businessId, product.itemId, "producto", HttpsError, closureDecimals);
+            return {...product, precioUnitario: coreProduct.precioUnitario, productoSnapshot: coreProduct.snapshot};
+          })};
+      });
     }
     const estado = action === "finalizar" ? "pendiente_entrega" : action === "entregar" ? "cerrada" : "cancelada";
     const releasesPlaza = ["entregar", "cancelar"].includes(action);
@@ -1248,8 +1244,16 @@ async function transitionWorkOrderClosure(request, dependencies, action) {
         plazaLock.plazaId === plazaIdLiberada && plazaLock.otId === otId) {
       transaction.delete(plazaLockRef);
     }
+    if (frozenAtFinish) {
+      frozenAtFinish.forEach((service) => transaction.update(orderRef.collection("servicios").doc(service.servicioOtId), {
+        precioUnitario: service.precioUnitario, servicioSnapshot: service.servicioSnapshot, productos: service.productos,
+        actualizadoEn: timestamp, actualizadoPorUid: context.uid,
+      }));
+    }
     transaction.update(orderRef, {
       estado,
+      ...(closureCurrency ? {moneda: closureCurrency} : {}),
+      ...(closureCurrency && !order.moneda && closureDecimals > 0 ? {montoDecimales: closureDecimals} : {}),
       ...(releasesPlaza ? {plazaId: null} : {}),
       actualizadoPorUid: context.uid,
       actualizadoEn: timestamp,
@@ -1440,8 +1444,8 @@ async function obtenerResumenAprobacionOTHandler(request, dependencies) {
     return {alcance: scope, moneda: summaryCurrency,
       ...(decimals > 0 ? {montoDecimales: decimals} : {}),
       congelado: submitted, faltantes, puedeAprobar: canApproveWorkOrder(membership),
-      puedeEnviar: Boolean(order.recepcion && services.length && data.hasDiagnosis &&
-        PLANNING_STATES.has(order.estado) && order.estado !== "esperando_aprobacion" &&
+      puedeEnviar: false,
+      puedeDecidir: Boolean(order.recepcion && ["en_cola", "en_diagnostico"].includes(order.estado) &&
         order.estadoAprobacion !== "aprobada"),
       estado: order.estado, estadoAprobacion: order.estadoAprobacion,
       revision: order.actualizadoEn?.toMillis?.()};
@@ -1462,93 +1466,41 @@ async function approvalOperation(request, dependencies, action) {
     ? text(request?.data?.motivo, "El motivo del rechazo", 2000, HttpsError, {required: true})
     : text(request?.data?.motivo, "El motivo", 2000, HttpsError);
   const orderRef = context.businessRef.collection("ordenesTrabajo").doc(otId);
-  const stateRef = context.businessRef.collection("otApprovalState").doc(otId);
   const requestRef = context.businessRef.collection("otApprovalRequests").doc(requestId);
   const actorSnapshot = await diagnosisActor(dependencies, context.uid);
   const fingerprint = createHash("sha256").update(JSON.stringify({otId, action, motivo, actor: context.uid,
     revision: request?.data?.expectedActualizadoEn})).digest("hex");
+  if (action === "enviar" || action === "revalidar") {
+    fail(HttpsError, "failed-precondition", "El ingreso se aprueba o rechaza directamente; los trabajos se registran en la ejecución.");
+  }
   return db.runTransaction(async (transaction) => {
-    const [previous, approvalState] = await Promise.all([transaction.get(requestRef), transaction.get(stateRef)]);
-    const data = await readApprovalContext(transaction, context, orderRef, dependencies, previous.exists ? "skip" : "required");
-    const {order, services, items, faltantes, membership} = data;
-    if (["aprobar", "rechazar"].includes(action) && !canApproveWorkOrder(membership)) {
+    const previousDecision = await transaction.get(requestRef);
+    const gate = await readApprovalContext(transaction, context, orderRef, dependencies, "skip");
+    if (!canApproveWorkOrder(gate.membership)) {
       fail(HttpsError, "permission-denied", "No tienes la capacidad de aprobación de Taller.");
     }
-    if (previous.exists) {
-      if (previous.data().fingerprint !== fingerprint) fail(HttpsError, "already-exists", "La solicitud ya fue utilizada con otros datos.");
-      return {...previous.data().resultado, sinCambios: true};
+    if (previousDecision.exists) {
+      if (previousDecision.data().fingerprint !== fingerprint) fail(HttpsError, "already-exists", "La solicitud ya fue utilizada con otros datos.");
+      return {...previousDecision.data().resultado, sinCambios: true};
     }
-    assertDiagnosisRevision(order, request?.data?.expectedActualizadoEn, HttpsError, "alcance de la OT");
-    if (!order.recepcion || !data.hasDiagnosis || !services.length || !PLANNING_STATES.has(order.estado)) {
-      fail(HttpsError, "failed-precondition", "La OT requiere recepción, al menos un diagnóstico completado, servicios definidos y un estado compatible.");
+    const gateOrder = gate.order;
+    assertDiagnosisRevision(gateOrder, request?.data?.expectedActualizadoEn, HttpsError, "orden de trabajo");
+    if (!gateOrder.recepcion || !["en_cola", "en_diagnostico"].includes(gateOrder.estado) ||
+        gateOrder.estadoAprobacion === "aprobada") {
+      fail(HttpsError, "failed-precondition", "La OT debe tener la recepción registrada y estar pendiente de aprobación.");
     }
-    let estado = order.estado;
-    let estadoAprobacion = order.estadoAprobacion;
-    let moneda = order.moneda;
-    let decimals = adaptDocumentAmountDecimals(order, order.moneda);
-    let scope = frozenScope(services);
-    const scopeHash = scopeFingerprint(services);
-    let envioId = approvalState.data()?.envioId || null;
-    if (action === "enviar") {
-      if (order.estadoAprobacion === "aprobada") fail(HttpsError, "failed-precondition", "El alcance ya está aprobado.");
-      if (order.estado === "esperando_aprobacion") {
-        fail(HttpsError, "failed-precondition", "El alcance ya fue enviado y espera una decisión de aprobación.");
-      }
-      moneda = businessCurrency({businessSnapshot: {data: () => data.businessData}});
-      if (!moneda) fail(HttpsError, "failed-precondition", "Configura una moneda válida en el negocio antes de enviar.");
-      // Los decimales son los del documento guardado; solo si la moneda cambió salen del catálogo.
-      decimals = workOrderAmountDecimals(order, moneda);
-      scope = services.map((service) => {
-        const core = freezeCoreItem(items.get(service.itemId), context.businessId, service.itemId, "servicio", HttpsError, decimals);
-        return {...frozenScope([service])[0], precioUnitario: core.precioUnitario, servicioSnapshot: core.snapshot,
-          productos: service.productos.map((product) => {
-            const coreProduct = freezeCoreItem(items.get(product.itemId), context.businessId, product.itemId, "producto", HttpsError, decimals);
-            return {...product, precioUnitario: coreProduct.precioUnitario, productoSnapshot: coreProduct.snapshot};
-          })};
-      });
-      estado = faltantes.length ? "esperando_repuestos" : "esperando_aprobacion";
-      estadoAprobacion = "pendiente";
-      envioId = requestId;
-    } else {
-      if (!approvalState.exists || approvalState.data().scopeHash !== scopeHash || !approvalIsSubmitted(order)) {
-        fail(HttpsError, "failed-precondition", "El alcance cambió. Debes enviarlo nuevamente a aprobación.");
-      }
-      if (action === "aprobar" || action === "rechazar") {
-        if (order.estado !== "esperando_aprobacion" || order.estadoAprobacion !== "pendiente") {
-          fail(HttpsError, "failed-precondition", "La OT no está esperando una decisión de aprobación.");
-        }
-        estadoAprobacion = action === "aprobar" ? "aprobada" : "rechazada";
-        if (action === "aprobar") estado = faltantes.length ? "esperando_repuestos" : "en_reparacion";
-        // Un alcance rechazado vuelve a planificación (mismo estado que al invalidar la aprobación) para poder reenviarse.
-        else estado = order.plazaId ? "en_diagnostico" : "en_cola";
-      } else {
-        if (order.estado !== "esperando_repuestos" || order.estadoAprobacion === "rechazada") {
-          fail(HttpsError, "failed-precondition", "Esta OT no requiere revalidación de disponibilidad.");
-        }
-        estado = faltantes.length ? "esperando_repuestos" :
-          order.estadoAprobacion === "aprobada" ? "en_reparacion" : "esperando_aprobacion";
-      }
-    }
-    const timestamp = FieldValue.serverTimestamp();
-    if (action === "enviar") {
-      scope.forEach((service) => transaction.update(orderRef.collection("servicios").doc(service.servicioOtId), {
-        precioUnitario: service.precioUnitario, servicioSnapshot: service.servicioSnapshot, productos: service.productos,
-        actualizadoEn: timestamp, actualizadoPorUid: context.uid,
-      }));
-      transaction.set(stateRef, {negocioId: context.businessId, otId, scopeHash, envioId, actualizadoEn: timestamp});
-    }
-    // `montoDecimales` solo se toca al enviar y solo si cambia: con 0 decimales una OT queda como hoy (sin el campo).
-    const storedDecimals = adaptDocumentAmountDecimals(order, order.moneda);
-    const decimalsChange = action === "enviar" && decimals !== storedDecimals
-      ? {montoDecimales: decimals > 0 ? decimals : FieldValue.delete()} : {};
-    transaction.update(orderRef, {estado, estadoAprobacion, moneda, ...decimalsChange, actualizadoEn: timestamp, actualizadoPorUid: context.uid});
-    const type = {enviar: "ot_enviada_aprobacion", aprobar: "ot_aprobada", rechazar: "ot_rechazada", revalidar: "disponibilidad_revalidada"}[action];
-    appendPlanningEvent(transaction, orderRef, {businessId: context.businessId, actorUid: context.uid, actorSnapshot, timestamp,
-      type, detail: {envioId, moneda, alcance: scope, motivo, faltantes,
-        estadoAnterior: order.estado, estado, aprobacionAnterior: order.estadoAprobacion, estadoAprobacion}});
-    const resultado = {otId, estado, estadoAprobacion, faltantes, envioId};
-    transaction.create(requestRef, {negocioId: context.businessId, otId, fingerprint, resultado, creadoEn: timestamp});
-    return resultado;
+    const decidedEstado = action === "aprobar" ? "en_reparacion" : gateOrder.estado;
+    const decidedAprobacion = action === "aprobar" ? "aprobada" : "rechazada";
+    const decidedAt = FieldValue.serverTimestamp();
+    transaction.update(orderRef, {estado: decidedEstado, estadoAprobacion: decidedAprobacion,
+      actualizadoEn: decidedAt, actualizadoPorUid: context.uid});
+    appendPlanningEvent(transaction, orderRef, {businessId: context.businessId, actorUid: context.uid, actorSnapshot,
+      timestamp: decidedAt, type: action === "aprobar" ? "ot_aprobada" : "ot_rechazada",
+      detail: {motivo, estadoAnterior: gateOrder.estado, estado: decidedEstado,
+        aprobacionAnterior: gateOrder.estadoAprobacion, estadoAprobacion: decidedAprobacion}});
+    const decision = {otId, estado: decidedEstado, estadoAprobacion: decidedAprobacion, faltantes: [], envioId: null};
+    transaction.create(requestRef, {negocioId: context.businessId, otId, fingerprint, resultado: decision, creadoEn: decidedAt});
+    return decision;
   });
 }
 
