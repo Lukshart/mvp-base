@@ -140,7 +140,15 @@ assert.doesNotMatch(planningPanel, /getInventoryItems/);
 assert.match(planningPanel, /tipoItem === "servicio"/);
 assert.match(planningPanel, /tipoItem === "producto"/);
 assert.match(planningPanel, /cantidad planificada/i);
-assert.match(planningPanel, /Stock actual:/);
+// Stock de repuestos: el stock actual es una referencia no reservada y se recarga tras cada cambio.
+assert.match(planningPanel, /Stock actual en Inventario: \{itemById\(productDraft\.itemId\)\?\.stock/);
+assert.match(planningPanel, /no está reservado para esta OT/);
+assert.match(planningPanel, /· Stock: \{product\.stock/);
+assert.match(planningPanel, /reloadInventory\(\)/);
+assert.doesNotMatch(planningPanel, /\.disponible\b/);
+const persistenceForStock = fs.readFileSync("functions/workOrderPersistence.js", "utf8");
+assert.doesNotMatch(persistenceForStock, /readCommittedProductUnits|STOCK_COMMITTING_STATES/);
+assert.match(persistenceForStock, /Stock insuficiente de «\$\{nombre\}»: stock actual/);
 // El taller no muestra montos: ni valores de servicio, ni precios, ni subtotales.
 assert.doesNotMatch(planningPanel, /Valor Servicio|Precio vigente|priceLabel|currentPrice|precioEfectivo|formatBusinessMoney|Intl\.NumberFormat/);
 assert.doesNotMatch(planningPanel, /Esto retirará la solicitud de aprobación/);

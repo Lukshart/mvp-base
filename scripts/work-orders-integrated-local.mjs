@@ -7,6 +7,7 @@ import {testWorkOrderCancellation} from "./work-order-cancellation-cases.mjs";
 import {testWorkOrderEndToEnd} from "./work-order-end-to-end-cases.mjs";
 import {testWorkshopPlazas} from "./work-order-plaza-cases.mjs";
 import {testWorkshopPlazaAutoAssignment} from "./work-order-plaza-auto-cases.mjs";
+import {testWorkOrderStock} from "./work-order-stock-cases.mjs";
 import {testWorkshopSecurity} from "./workshop-security-cases.mjs";
 import {createRequire} from "node:module";
 import {deleteApp, initializeApp} from "firebase/app";
@@ -912,6 +913,8 @@ try {
   await testWorkOrderEndToEnd({adminDb, businessId, owner, technician, callable, expectCallableError,
     reception: workOrderReception(), runId: RUN_ID});
   await testWorkshopPlazaAutoAssignment({adminDb, businessId, owner, admin, technician, callable,
+    expectCallableError, reception: workOrderReception(), runId: RUN_ID});
+  await testWorkOrderStock({adminDb, businessId, owner, technician, callable,
     expectCallableError, reception: workOrderReception(), runId: RUN_ID});
   await testWorkshopSecurity({adminDb, businessId, otId, owner, member, technician, outsider,
     anonymous, callable, expectCallableError, expectFirestoreDenied, runId: RUN_ID});
