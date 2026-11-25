@@ -270,3 +270,53 @@ button.work-order-finalize-button:hover:not(:disabled) {
     grid-template-columns: 1fr;
   }
 }
+
+.work-order-steps {
+  display: flex;
+  gap: var(--space-2);
+  list-style: none;
+  margin: 0;
+  overflow-x: auto;
+  padding: 0;
+}
+
+.work-order-steps li {
+  flex: 1 1 0;
+  min-width: max-content;
+}
+
+.work-order-steps button {
+  align-items: center;
+  background: var(--color-surface-panel);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  width: 100%;
+}
+
+.work-order-steps button[aria-current="step"] {
+  border-color: var(--color-focus);
+  color: var(--color-text-brand);
+}
+
+.work-order-steps button[data-done="true"] {
+  color: var(--color-text-default);
+}
+
+.work-order-steps__number {
+  align-items: center;
+  background: var(--color-surface-brand);
+  border-radius: var(--radius-pill);
+  color: var(--color-text-default);
+  display: inline-flex;
+  height: var(--space-6);
+  justify-content: center;
+  width: var(--space-6);
+}

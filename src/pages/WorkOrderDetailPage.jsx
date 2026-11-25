@@ -1,12 +1,11 @@
 import {BUSINESS_PERMISSIONS, hasBusinessPermission} from "../domain/rbac.mjs";
 import React, {useCallback, useEffect, useRef, useState} from "react";
 import {ArrowLeft, Ban, RefreshCw, Save} from "lucide-react";
-import {useNavigate, useParams} from "react-router-dom";
+import {useLocation, useNavigate, useParams} from "react-router-dom";
 import Button from "../components/ui/Button";
 import LoadingState from "../components/ui/LoadingState";
 import ResponsiveDialog from "../components/ui/ResponsiveDialog";
 import StatusBadge from "../components/ui/StatusBadge";
-import DiagnosisPanel from "../features/workOrders/DiagnosisPanel";
 import ServicePlanningPanel from "../features/workOrders/ServicePlanningPanel";
 import ApprovalPanel from "../features/workOrders/ApprovalPanel";
 import WorkOrderPlazaControl from "../features/workOrders/WorkOrderPlazaControl";
@@ -37,7 +36,6 @@ import {
   createWorkOrderRequestId,
   ejecutarCierreOT,
   getWorkOrderErrorMessage,
-  listarDiagnosticos,
   listarServiciosOT,
   obtenerHistorialOT,
   obtenerOrdenTrabajo,
@@ -47,13 +45,21 @@ import {
 
 
 
-const DETAIL_SECTIONS = Object.freeze([
-  {id: "resumen", label: "Resumen"},
+// Flujo único y predecible: Recepción → Aprobación → Ejecución → Entrega.
+const FLOW_STEPS = Object.freeze([
   {id: "recepcion", label: "Recepción"},
-  {id: "diagnosticos", label: "Diagnósticos"},
-  {id: "servicios", label: "Servicios y repuestos"},
-  {id: "historial", label: "Historial"},
+  {id: "aprobacion", label: "Aprobación"},
+  {id: "ejecucion", label: "Ejecución"},
+  {id: "entrega", label: "Entrega"},
 ]);
+
+function currentFlowStep(order) {
+  if (!order.recepcion) return "recepcion";
+  if (order.estado === "en_reparacion") return "ejecucion";
+  if (["pendiente_entrega", "cerrada"].includes(order.estado)) return "entrega";
+  if (order.estado === "cancelada") return "recepcion";
+  return "aprobacion";
+}
 
 function DetailItem({label, value}) {
   return <div className="vehicle-detail-item"><dt>{label}</dt><dd>{value}</dd></div>;
@@ -172,14 +178,16 @@ function ReceptionPanel({businessId, onSaved, order, otId, role}) {
 export default function WorkOrderDetailPage({businessId, role}) {
   const {otId} = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const creationFeedback = String(location.state?.feedback || "");
   const [order, setOrder] = useState(null);
   const [vehicle, setVehicle] = useState(null);
-  const [diagnoses, setDiagnoses] = useState([]);
   const [services, setServices] = useState([]);
   const [plazas, setPlazas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [activeSection, setActiveSection] = useState("resumen");
+  const [selectedStep, setSelectedStep] = useState(null);
+  const [showHistory, setShowHistory] = useState(false);
   const [historyEvents, setHistoryEvents] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState("");
@@ -190,9 +198,6 @@ export default function WorkOrderDetailPage({businessId, role}) {
   const historyRequest = useRef(0);
   const canManage = hasBusinessPermission(role, BUSINESS_PERMISSIONS.TALLER_MANAGE);
   const canOperate = hasBusinessPermission(role, BUSINESS_PERMISSIONS.TALLER_OPERATE);
-  const detailSections = canManage
-    ? DETAIL_SECTIONS
-    : DETAIL_SECTIONS.filter((section) => section.id !== "historial");
 
   const load = useCallback(async () => {
     if (!businessId || !otId) return;
@@ -203,20 +208,18 @@ export default function WorkOrderDetailPage({businessId, role}) {
       if (!orderItem) {
         setOrder(null);
         setVehicle(null);
-        setDiagnoses([]);
         setServices([]);
         setPlazas([]);
         return;
       }
-      const [vehicleItem, diagnosisItems, serviceItems, plazaItems] = await Promise.all([
+      const [vehicleItem, serviceItems, plazaItems] = await Promise.all([
         obtenerVehiculo(businessId, orderItem.vehiculoId),
-        listarDiagnosticos(businessId, otId),
         listarServiciosOT(businessId, otId),
         listarPlazasTaller(businessId),
       ]);
       setOrder(orderItem);
+      setSelectedStep(null);
       setVehicle(vehicleItem);
-      setDiagnoses(diagnosisItems);
       setServices(serviceItems);
       setPlazas(plazaItems);
     } catch (loadError) {
@@ -249,23 +252,18 @@ export default function WorkOrderDetailPage({businessId, role}) {
   }, [businessId, canManage, otId]);
 
   useEffect(() => {
-    if (!canManage || activeSection !== "historial") return;
+    if (!canManage || !showHistory) return;
     void refreshHistory();
-  }, [activeSection, refreshHistory]);
+  }, [showHistory, refreshHistory]);
 
   // Refresca solo la OT (estado, recepción) sin la pantalla de carga completa de load().
   const refreshOrder = useCallback(async () => {
     const currentOrder = await obtenerOrdenTrabajo(businessId, otId);
-    if (currentOrder) setOrder(currentOrder);
-  }, [businessId, otId]);
-
-  const refreshDiagnoses = useCallback(async () => {
-    const [items, currentOrder] = await Promise.all([
-      listarDiagnosticos(businessId, otId),
-      obtenerOrdenTrabajo(businessId, otId),
-    ]);
-    setDiagnoses(items);
-    if (currentOrder) setOrder(currentOrder);
+    if (currentOrder) {
+      setOrder(currentOrder);
+      // Tras guardar la recepción se queda en ese paso para conservar el aviso; el stepper permite avanzar.
+      setSelectedStep((current) => current || "recepcion");
+    }
   }, [businessId, otId]);
 
   const refreshServices = useCallback(async () => {
@@ -273,7 +271,7 @@ export default function WorkOrderDetailPage({businessId, role}) {
       listarServiciosOT(businessId, otId), obtenerOrdenTrabajo(businessId, otId),
     ]);
     setServices(items);
-    if (currentOrder) setOrder(currentOrder);
+    if (currentOrder) { setOrder(currentOrder); setSelectedStep(null); }
   }, [businessId, otId]);
 
   const confirmClosure = async () => {
@@ -307,6 +305,8 @@ export default function WorkOrderDetailPage({businessId, role}) {
   if (!order) return <main className="erp-page"><div className="erp-empty-state" role="status"><h2>Orden de trabajo no encontrada</h2><p>Puede no existir o no pertenecer al negocio activo.</p><Button type="button" variant="secondary" icon={ArrowLeft} onClick={() => navigate("/taller/ordenes")}>Volver a órdenes</Button></div></main>;
 
   const otLabel = order.numeroOT ? `la orden ${order.numeroOT}` : "esta orden";
+  const flowStep = currentFlowStep(order);
+  const activeStep = selectedStep || flowStep;
   const vehicleLabel = vehicle ? `${vehicle.marca} ${vehicle.modelo}` : "Vehículo no disponible";
   const plazaLabel = plazas.find((plaza) => plaza.plazaId === order.plazaId)?.nombre || "Sin asignar";
   const completedServices = services.filter((service) => service.estado === "completado").length;
@@ -336,37 +336,37 @@ export default function WorkOrderDetailPage({businessId, role}) {
       <div className="erp-module-actions"><Button type="button" variant="secondary" icon={ArrowLeft} onClick={() => navigate("/taller/ordenes")}>Volver</Button><WorkOrderPlazaControl businessId={businessId} onChanged={load} order={order} plazas={plazas} role={role} />{canCancel && <Button type="button" variant="ghost-danger" icon={Ban} disabled={closureBusy} onClick={() => beginClosure("cancelar")}>Cancelar OT</Button>}</div>
     </header>
 
-    {order.estado === "pendiente_entrega" &&
-      <div className="vehicle-message vehicle-message--warning work-order-delivery-notice" role="status">
-        <strong>Vehículo listo para entrega.</strong>
-        {canOperate && <Button type="button" disabled={closureBusy} onClick={() => beginClosure("entregar")}>Registrar entrega</Button>}
-      </div>}
+    {creationFeedback && <div className="vehicle-message" role="status">{creationFeedback}</div>}
+    <nav aria-label="Pasos de la orden de trabajo"><ol className="work-order-steps">
+      {FLOW_STEPS.map((step, index) => <li key={step.id}><button type="button" aria-current={activeStep === step.id ? "step" : undefined}
+        data-done={FLOW_STEPS.findIndex((item) => item.id === flowStep) > index ? "true" : undefined}
+        onClick={() => setSelectedStep(step.id)}><span className="work-order-steps__number">{index + 1}</span>{step.label}</button></li>)}
+    </ol></nav>
 
-    <div className="work-order-tabs" role="tablist" aria-label="Secciones de la orden de trabajo">
-      {detailSections.map((section) => <button key={section.id} type="button" role="tab" aria-selected={activeSection === section.id} onClick={() => setActiveSection(section.id)}>{section.label}</button>)}
-    </div>
-
-    {activeSection === "resumen" && <section className="erp-panel" aria-labelledby="work-order-summary-title">
-      <div className="erp-panel-header"><div><h2 id="work-order-summary-title" className="erp-panel-title">Resumen</h2><p className="erp-secondary-text">Información disponible de la orden de trabajo.</p></div></div>
-      <dl className="vehicle-detail-grid">
-        <DetailItem label="Estado actual" value={<StatusBadge variant={getWorkOrderStatusVariant(order.estado)}>{getWorkOrderStatusLabel(order.estado)}</StatusBadge>} />
-        <DetailItem label="Aprobación" value={<StatusBadge variant={getWorkOrderApprovalVariant(order.estadoAprobacion)}>{getWorkOrderApprovalLabel(order.estadoAprobacion)}</StatusBadge>} />
-        <DetailItem label="Vehículo" value={vehicleLabel} />
-        <DetailItem label="Patente" value={vehicle?.patente || "No disponible"} />
-        <DetailItem label="Plaza" value={plazaLabel} />
-        <DetailItem label="Diagnósticos completados" value={diagnoses.filter((diagnosis) => diagnosis.estado === "completado").length} />
-        <DetailItem label="Servicios completados" value={`${completedServices} de ${services.length}`} />
-      </dl>
+    {activeStep === "recepcion" && <ReceptionPanel businessId={businessId} onSaved={refreshOrder} order={order} otId={otId} role={role} />}
+    {activeStep === "aprobacion" && (order.recepcion
+      ? <ApprovalPanel businessId={businessId} otId={otId} order={order} onChanged={refreshServices} />
+      : <div className="erp-empty-state" role="status">Registra la recepción para poder aprobar el ingreso.</div>)}
+    {activeStep === "ejecucion" && (order.estado === "en_reparacion"
+      ? <ServicePlanningPanel businessId={businessId}
+        canFinalizeWorkOrder={canOperate && order.estado === "en_reparacion" && allServicesCompleted && !closureBusy}
+        onChanged={refreshServices}
+        onFinalizeWorkOrder={canOperate ? () => beginClosure("finalizar") : null}
+        order={order} otId={otId} role={role} services={services} />
+      : <div className="erp-empty-state" role="status">La ejecución comienza cuando el ingreso está aprobado.</div>)}
+    {activeStep === "entrega" && <section className="erp-panel" aria-labelledby="work-order-delivery-title">
+      <div className="erp-panel-header"><div><h2 id="work-order-delivery-title" className="erp-panel-title">Entrega</h2><p className="erp-secondary-text">Cierra la orden cuando el cliente retira el vehículo.</p></div></div>
+      {order.estado === "pendiente_entrega"
+        ? <div className="vehicle-message vehicle-message--warning work-order-delivery-notice" role="status">
+          <strong>Vehículo listo para entrega.</strong>
+          {canOperate && <Button type="button" disabled={closureBusy} onClick={() => beginClosure("entregar")}>Registrar entrega</Button>}
+        </div>
+        : order.estado === "cerrada"
+          ? <div className="vehicle-message" role="status">Entrega registrada. La OT está cerrada.</div>
+          : <div className="erp-empty-state" role="status">El vehículo estará listo para entrega al finalizar la ejecución.</div>}
     </section>}
-    {activeSection === "recepcion" && <ReceptionPanel businessId={businessId} onSaved={refreshOrder} order={order} otId={otId} role={role} />}
-    {activeSection === "diagnosticos" && <DiagnosisPanel businessId={businessId} diagnoses={diagnoses} onChanged={refreshDiagnoses} order={order} otId={otId} role={role} />}
-    {activeSection === "servicios" && <ServicePlanningPanel businessId={businessId}
-      canFinalizeWorkOrder={canOperate && order.estado === "en_reparacion" && allServicesCompleted && !closureBusy}
-      onChanged={refreshServices}
-      onFinalizeWorkOrder={canOperate && order.estado === "en_reparacion" ? () => beginClosure("finalizar") : null}
-      order={order} otId={otId} role={role} services={services} />}
-    {["resumen", "servicios"].includes(activeSection) && <ApprovalPanel businessId={businessId} otId={otId} order={order} onChanged={refreshServices} />}
-    {canManage && activeSection === "historial" && <section className="erp-panel" aria-labelledby="work-order-history-title">
+    {canManage && <div className="vehicle-form-actions"><Button type="button" variant="secondary" onClick={() => setShowHistory((value) => !value)}>{showHistory ? "Ocultar historial" : "Ver historial"}</Button></div>}
+    {canManage && showHistory && <section className="erp-panel" aria-labelledby="work-order-history-title">
       <div className="erp-panel-header"><div><h2 id="work-order-history-title" className="erp-panel-title">Historial</h2><p className="erp-secondary-text">Eventos registrados de la orden de trabajo.</p></div></div>
       {historyLoading && <LoadingState variant="section" label="Cargando historial..." />}
       {historyError && <div className="vehicle-message vehicle-message--error" role="alert">{historyError} <Button type="button" variant="secondary" onClick={refreshHistory}>Reintentar</Button></div>}
