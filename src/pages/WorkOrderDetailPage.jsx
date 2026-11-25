@@ -12,8 +12,9 @@ import WorkOrderPlazaControl from "../features/workOrders/WorkOrderPlazaControl"
 import {
   getWorkOrderApprovalLabel,
   getWorkOrderApprovalVariant,
-  getWorkOrderStatusLabel,
-  getWorkOrderStatusVariant,
+  getWorkOrderDisplayStatusLabel,
+  getWorkOrderDisplayStatusVariant,
+  isWorkOrderWaitingForPlaza,
 } from "../domain/workOrderModel.mjs";
 import {
   formatWorkOrderHistoryDate,
@@ -328,7 +329,7 @@ export default function WorkOrderDetailPage({businessId, role}) {
         <h1 className="erp-page-header__title">{order.numeroOT || "Orden de trabajo"}</h1>
         <p className="erp-page-header__description">{vehicleLabel} · {vehicle?.patente || "Patente no disponible"}</p>
         <div className="work-order-header-meta" aria-label="Estado actual de la orden">
-          <StatusBadge variant={getWorkOrderStatusVariant(order.estado)}>{getWorkOrderStatusLabel(order.estado)}</StatusBadge>
+          <StatusBadge variant={getWorkOrderDisplayStatusVariant(order)}>{getWorkOrderDisplayStatusLabel(order)}</StatusBadge>
           <StatusBadge variant={getWorkOrderApprovalVariant(order.estadoAprobacion)}>{getWorkOrderApprovalLabel(order.estadoAprobacion)}</StatusBadge>
           <StatusBadge variant="neutral">Plaza: {plazaLabel}</StatusBadge>
         </div>
@@ -353,7 +354,9 @@ export default function WorkOrderDetailPage({businessId, role}) {
         onChanged={refreshServices}
         onFinalizeWorkOrder={canOperate ? () => beginClosure("finalizar") : null}
         order={order} otId={otId} role={role} services={services} />
-      : <div className="erp-empty-state" role="status">La ejecución comienza cuando el ingreso está aprobado.</div>)}
+      : <div className="erp-empty-state" role="status">{isWorkOrderWaitingForPlaza(order)
+        ? "Ingreso aprobado. La ejecución comienza cuando se asigne una plaza."
+        : "La ejecución comienza cuando el ingreso está aprobado."}</div>)}
     {activeStep === "entrega" && <section className="erp-panel" aria-labelledby="work-order-delivery-title">
       <div className="erp-panel-header"><div><h2 id="work-order-delivery-title" className="erp-panel-title">Entrega</h2><p className="erp-secondary-text">Cierra la orden cuando el cliente retira el vehículo.</p></div></div>
       {order.estado === "pendiente_entrega"

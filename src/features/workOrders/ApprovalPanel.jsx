@@ -6,6 +6,7 @@ import {
   createWorkOrderRequestId, ejecutarAccionAprobacionOT, getWorkOrderErrorMessage,
   obtenerResumenAprobacionOT,
 } from "../../services/workOrderService";
+import {isWorkOrderWaitingForPlaza} from "../../domain/workOrderModel.mjs";
 
 const ACTIONS = {aprobar: "Aprobar ingreso", rechazar: "Rechazar ingreso"};
 
@@ -51,11 +52,13 @@ export default function ApprovalPanel({businessId, otId, order, onChanged}) {
     }
     setBusy(true); setError("");
     try {
-      await ejecutarAccionAprobacionOT(businessId, otId, confirmation.action,
+      const result = await ejecutarAccionAprobacionOT(businessId, otId, confirmation.action,
         confirmation.requestId, confirmation.revision, reason);
       setConfirmation(null);
       setNotice(confirmation.action === "aprobar"
-        ? "Ingreso aprobado. Ya se pueden registrar los trabajos en la ejecución."
+        ? result?.enEsperaDePlaza
+          ? "Ingreso aprobado. No hay plazas libres: la OT queda en espera y se le asignará una plaza automáticamente."
+          : "Ingreso aprobado. Ya se pueden registrar los trabajos en la ejecución."
         : "Ingreso rechazado.");
       await onChanged();
       setReload((value) => value + 1);
@@ -66,6 +69,7 @@ export default function ApprovalPanel({businessId, otId, order, onChanged}) {
   }, [businessId, otId, confirmation, busy, reason, onChanged]);
 
   const approved = summary?.estadoAprobacion === "aprobada";
+  const waitingForPlaza = approved && isWorkOrderWaitingForPlaza(order);
   const rejected = summary?.estadoAprobacion === "rechazada";
   return <section className="erp-panel" aria-labelledby="work-order-approval-title">
     <div className="erp-panel-header"><div>
@@ -76,7 +80,8 @@ export default function ApprovalPanel({businessId, otId, order, onChanged}) {
     {error && <div className="vehicle-message vehicle-message--error" role="alert">{error}</div>}
     {notice && <div className="vehicle-message" role="status">{notice}</div>}
     {summary && !loading && <>
-      {approved && <div className="vehicle-message" role="status">Ingreso aprobado.</div>}
+      {approved && !waitingForPlaza && <div className="vehicle-message" role="status">Ingreso aprobado.</div>}
+      {waitingForPlaza && <div className="vehicle-message vehicle-message--warning" role="status"><strong>En espera de plaza.</strong> El ingreso está aprobado. Se asignará la primera plaza que se libere, por orden de aprobación.</div>}
       {rejected && <div className="vehicle-message vehicle-message--warning" role="status">Ingreso rechazado. Puedes aprobarlo si cambia la decisión.</div>}
       {!approved && !summary.puedeDecidir && <p className="erp-secondary-text">Registra la recepción para poder decidir el ingreso.</p>}
       {summary.puedeDecidir && !summary.puedeAprobar && <p className="erp-secondary-text">Tu membresía permite consultar la aprobación, pero no decidirla.</p>}

@@ -9,8 +9,8 @@ import StatusBadge from "../components/ui/StatusBadge";
 import {
   getWorkOrderApprovalLabel,
   getWorkOrderApprovalVariant,
-  getWorkOrderStatusLabel,
-  getWorkOrderStatusVariant,
+  getWorkOrderDisplayStatusLabel,
+  getWorkOrderDisplayStatusVariant,
   matchesWorkOrderSearch,
   WORK_ORDER_APPROVAL_STATUSES,
   WORK_ORDER_STATUSES,
@@ -30,7 +30,7 @@ import useBusinessFormat from "../hooks/useBusinessFormat";
 
 
 function OrderStatus({order}) {
-  return <StatusBadge variant={getWorkOrderStatusVariant(order.estado)}>{getWorkOrderStatusLabel(order.estado)}</StatusBadge>;
+  return <StatusBadge variant={getWorkOrderDisplayStatusVariant(order)}>{getWorkOrderDisplayStatusLabel(order)}</StatusBadge>;
 }
 
 function ApprovalStatus({order}) {

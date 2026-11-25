@@ -77,7 +77,11 @@ export function getWorkOrderHistoryDetail(event = {}) {
     if (detail.aprobacionAnterior) parts.push(`Aprobación anterior: ${getWorkOrderApprovalLabel(detail.aprobacionAnterior)}`);
     if (detail.estadoAprobacion) parts.push(`Aprobación actual: ${getWorkOrderApprovalLabel(detail.estadoAprobacion)}`);
     if (detail.motivo) parts.push(`Motivo: ${detail.motivo}`);
+    if (detail.enEsperaDePlaza) parts.push("En espera de plaza");
     return parts.join(" · ");
+  }
+  if (event.tipo === "plaza_asignada" && detail.automatica) {
+    return "Asignada automáticamente.";
   }
   if (["reparacion_finalizada", "vehiculo_entregado", "ot_cancelada"].includes(event.tipo) && detail.estado) {
     return `Estado actual: ${getWorkOrderStatusLabel(detail.estado)}.`;
