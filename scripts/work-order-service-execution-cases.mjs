@@ -19,12 +19,9 @@ export async function testServiceExecution({adminDb, businessId, otId, serviceId
     expectCallableError(label, () => call(client, name, input), codes);
 
   const order = await readOrder();
-  if (order.estadoAprobacion === "rechazada") {
-    await call(owner, "enviarOTAprobacion", {businessId, otId, requestId: requestId(),
-      expectedActualizadoEn: order.actualizadoEn.toMillis()});
-    const pending = await readOrder();
+  if (order.estadoAprobacion !== "aprobada") {
     await call(admin, "aprobarOT", {businessId, otId, requestId: requestId(),
-      expectedActualizadoEn: pending.actualizadoEn.toMillis()});
+      expectedActualizadoEn: order.actualizadoEn.toMillis()});
   }
   assert.equal((await readOrder()).estado, "en_reparacion");
   assert.equal((await readOrder()).estadoAprobacion, "aprobada");

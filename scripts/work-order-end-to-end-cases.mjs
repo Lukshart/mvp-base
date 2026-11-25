@@ -43,13 +43,7 @@ export async function testWorkOrderEndToEnd({adminDb, businessId, owner, technic
   const plazaId = (await call(owner, "crearPlazaTaller", {requestId: id(), plaza: {nombre: "Plaza E2E"}})).plaza.plazaId;
   await call(technician, "asignarPlazaOT", {otId, plazaId, expectedActualizadoEn: await revision(orderRef)});
   assert.equal((await order()).estado, "en_diagnostico");
-  const diagnostico = {responsableUid: technician.uid, descripcion: "Reemplazo de filtro", observaciones: ""};
-  const diagnosticoId = (await call(technician, "registrarDiagnostico", {otId, requestId: id(), diagnostico})).diagnosticoId;
-  const diagnosisRef = orderRef.collection("diagnosticos").doc(diagnosticoId);
-  assert.equal((await diagnosisRef.get()).data().estado, "borrador");
-  await call(technician, "completarDiagnostico", {otId, diagnosticoId, expectedActualizadoEn: await revision(diagnosisRef)});
-  await expectCallableError("E2E diagnóstico completado no editable", async () => call(technician, "actualizarDiagnostico",
-    {otId, diagnosticoId, diagnostico, expectedActualizadoEn: await revision(diagnosisRef)}), ["failed-precondition"]);
+  // El diagnóstico ya no es parte del flujo visible ni requisito: Recepción → Aprobación → Ejecución → Entrega.
 
   const serviceItemId = id();
   const productItemId = id();
@@ -59,30 +53,36 @@ export async function testWorkOrderEndToEnd({adminDb, businessId, owner, technic
   await itemRef.set({negocioId: businessId, tipoItem: "producto", estado: "activo",
     nombre: "Filtro E2E", precioInterno: 1000, unidad: "unidad", stock: 10, costoBase: 100, moneda: "CLP"});
   const stock = async () => (await itemRef.get()).data();
+  // Los trabajos se registran en la ejecución: antes de aprobar el ingreso el servidor los rechaza.
+  await expectCallableError("E2E trabajos antes de aprobar", () => call(technician, "crearServicioOT", {otId, requestId: id(),
+    servicio: {itemId: serviceItemId, responsableUid: technician.uid}}), ["failed-precondition"]);
+  await expectCallableError("E2E enviar a aprobación ya no existe", () => action("enviarOTAprobacion"), ["failed-precondition"]);
+  await expectCallableError("E2E el técnico no aprueba", () => action("aprobarOT"), ["permission-denied"]);
+  await action("aprobarOT", owner);
+  assert.equal((await order()).estado, "en_reparacion");
+  assert.equal((await order()).estadoAprobacion, "aprobada");
   const servicioOtId = (await call(technician, "crearServicioOT", {otId, requestId: id(),
     servicio: {itemId: serviceItemId, responsableUid: technician.uid}})).servicioOtId;
   const serviceRef = orderRef.collection("servicios").doc(servicioOtId);
   await call(technician, "agregarProductoOT", {otId, servicioOtId, itemId: productItemId, cantidad: 2, requestId: id()});
-  assert.equal((await stock()).stock, 10);
-  await action("enviarOTAprobacion");
-  assert.equal((await order()).estado, "esperando_aprobacion");
-  await action("aprobarOT", owner);
-  assert.equal((await order()).estado, "en_reparacion");
-  assert.equal((await order()).estadoAprobacion, "aprobada");
-  assert.equal((await stock()).stock, 10, "Aprobar no reserva ni descuenta stock");
-  const frozen = (await serviceRef.get()).data();
-  assert.equal(frozen.precioUnitario, 5000);
-  assert.equal(frozen.productos[0].precioUnitario, 1000);
-  // A subsequent Core catalog change cannot rewrite approved history.
-  await itemRef.update({precioInterno: 2000, nombre: "Filtro renombrado"});
+  assert.equal((await order()).estadoAprobacion, "aprobada", "Agregar trabajos no invalida la aprobación");
+  assert.equal((await stock()).stock, 10, "Aprobar y planificar no reservan ni descuentan stock");
+  assert.equal((await serviceRef.get()).data().precioUnitario, null, "Antes de finalizar no hay precios congelados");
   await call(technician, "iniciarServicioOT", {otId, servicioOtId, requestId: id(),
     expectedActualizadoEn: await revision(serviceRef)});
-  assert.deepEqual((await serviceRef.get()).data().productos, frozen.productos);
   const salesBefore = (await adminDb.collection(`${base}/ventas`).get()).size;
   await call(technician, "completarServicioOT", {otId, servicioOtId, requestId: id(),
     expectedActualizadoEn: await revision(serviceRef)});
   await action("finalizarReparacionOT");
   assert.equal((await order()).estado, "pendiente_entrega");
+  // Los precios se congelan al finalizar (envío a Ventas) y el taller no los muestra.
+  const frozen = (await serviceRef.get()).data();
+  assert.equal(frozen.precioUnitario, 5000);
+  assert.equal(frozen.productos[0].precioUnitario, 1000);
+  assert.ok((await order()).moneda, "La OT guarda la moneda al finalizar");
+  // Un cambio posterior del catálogo Core no reescribe el historial congelado.
+  await itemRef.update({precioInterno: 2000, nombre: "Filtro renombrado"});
+  assert.deepEqual((await serviceRef.get()).data().productos, frozen.productos);
   await action("registrarEntregaOT");
   assert.equal((await order()).estado, "cerrada");
   assert.equal((await order()).plazaId, null);
@@ -97,8 +97,8 @@ export async function testWorkOrderEndToEnd({adminDb, businessId, owner, technic
   assert.equal(listed.docs[0].data().clienteId, clienteId);
   assert.equal(listed.docs[0].data().estado, "cerrada");
   const history = (await call(owner, "obtenerHistorialOT", {otId})).eventos;
-  for (const type of ["ot_creada", "recepcion_registrada", "plaza_asignada", "diagnostico_creado",
-    "diagnostico_completado", "servicio_ot_creado", "producto_ot_agregar", "ot_enviada_aprobacion", "ot_aprobada",
+  for (const type of ["ot_creada", "recepcion_registrada", "plaza_asignada",
+    "ot_aprobada", "servicio_ot_creado", "producto_ot_agregar",
     "servicio_ot_iniciado", "servicio_ot_completado",
     "reparacion_finalizada", "vehiculo_entregado"]) {
     assert.equal(history.filter((event) => event.tipo === type).length, 1, `Evento E2E: ${type}`);
@@ -106,7 +106,7 @@ export async function testWorkOrderEndToEnd({adminDb, businessId, owner, technic
   assert.ok(history.every((event) => event.actorNombre && Number.isSafeInteger(event.fecha)));
   await expectCallableError("E2E cerrada no admite liberar Plaza", async () => call(owner, "liberarPlazaOT",
     {otId, expectedActualizadoEn: await revision(orderRef)}), ["failed-precondition"]);
-  console.log("WORK_ORDER_END_TO_END_OK: Cliente Core → Vehículo → OT → recepción → Plaza → diagnóstico → aprobación → planificación → entrega");
+  console.log("WORK_ORDER_END_TO_END_OK: Cliente Core → Vehículo → OT → recepción → Plaza → aprobación → ejecución → entrega");
 
   // Separate legacy fixtures prove that terminal records retaining a Plaza cannot be altered.
   for (const estado of ["cerrada", "cancelada"]) {

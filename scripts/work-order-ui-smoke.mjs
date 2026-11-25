@@ -24,6 +24,9 @@ for (const column of [
 }
 assert.match(list, /matchesWorkOrderSearch/);
 assert.match(list, /listarOrdenesTrabajo/);
+assert.match(list, /className="erp-module-intro"/);
+assert.match(list, /placeholder=\{countryCopy\.workOrderSearchExample\}/);
+assert.match(list, /formatDate\(order\.actualizadoEn, locale\)/);
 assert.doesNotMatch(list, /Cliente histórico|listarClientes|clientsById/);
 
 const creation = fs.readFileSync("src/pages/NewWorkOrderPage.jsx", "utf8");
@@ -36,19 +39,18 @@ assert.match(creation, /Vehículos disponibles/);
 assert.match(creation, /Crear vehículo/);
 assert.match(creation, /\/taller\/vehiculos\/nuevo/);
 assert.match(creation, /createWorkOrderRequestId/);
+// Al crear la OT se abre su ficha directamente.
+assert.match(creation, /navigate\(`\/taller\/ordenes\/\$\{order\.otId\}`/);
 assert.doesNotMatch(creation, /numeroOT\s*:/);
 assert.doesNotMatch(creation, /clienteId\s*:/);
 
 const detail = fs.readFileSync("src/pages/WorkOrderDetailPage.jsx", "utf8");
-for (const section of [
-  "Resumen",
-  "Recepción",
-  "Diagnósticos",
-  "Servicios y repuestos",
-  "Historial",
-]) {
-  assert.match(detail, new RegExp(section));
+// Flujo único sin pestañas: Recepción → Aprobación → Ejecución → Entrega.
+for (const step of ["Recepción", "Aprobación", "Ejecución", "Entrega"]) {
+  assert.match(detail, new RegExp(`label: "${step}"`));
 }
+assert.doesNotMatch(detail, /role="tablist"|role="tab"|<DiagnosisPanel/);
+assert.match(detail, /aria-current=\{activeStep === step\.id \? "step" : undefined\}/);
 assert.match(detail, /obtenerOrdenTrabajo/);
 assert.match(detail, /order\.plazaId/);
 assert.match(detail, /getWorkOrderStatusLabel/);
@@ -58,7 +60,6 @@ assert.match(detail, /RECEPTION_FUEL_LEVELS/);
 assert.match(detail, /max=\{MAX_RECEPTION_MILEAGE_KM\}/);
 assert.match(detail, /Selecciona una opción/);
 assert.match(detail, /registrarRecepcionOrdenTrabajo/);
-assert.match(detail, /<DiagnosisPanel/);
 assert.match(detail, /<ServicePlanningPanel/);
 assert.match(detail, /<ApprovalPanel/);
 assert.match(detail, /<WorkOrderPlazaControl/);
@@ -72,8 +73,7 @@ assert.match(detail, /allServicesCompleted/);
 assert.match(detail, /ejecutarCierreOT/);
 assert.match(detail, /obtenerHistorialOT/);
 assert.match(detail, /const canManage = hasBusinessPermission\(role, BUSINESS_PERMISSIONS\.TALLER_MANAGE\)/);
-assert.match(detail, /DETAIL_SECTIONS\.filter\(\(section\) => section\.id !== "historial"\)/);
-assert.match(detail, /canManage && activeSection === "historial"/);
+assert.match(detail, /canManage && showHistory/);
 assert.doesNotMatch(detail, /Cliente histórico|listarClientes|clientLabel/);
 assert.match(detail, /work-order-history-list/);
 assert.match(detail, /getWorkOrderHistoryEventLabel/);
@@ -99,6 +99,8 @@ assert.match(plazasPage, /Propietario o Administrador pueden administrar esta se
 assert.doesNotMatch(plazasPage, /OWNER o ADMIN/);
 assert.match(plazasPage, /erp-table/);
 assert.match(plazasPage, /erp-card-list erp-mobile-only/);
+assert.match(plazasPage, /className="erp-module-intro"/);
+assert.doesNotMatch(plazasPage, /className="erp-page-header"/);
 assert.doesNotMatch(plazasPage, /setDoc|updateDoc|estado:\s*["'](?:ocupada|disponible)["']/);
 const plazaControl = fs.readFileSync("src/features/workOrders/WorkOrderPlazaControl.jsx", "utf8");
 assert.match(plazaControl, /Asignar Plaza/);
@@ -107,26 +109,28 @@ assert.match(plazaControl, /Liberar Plaza/);
 assert.match(plazaControl, /plaza\.estado !== "activa"/);
 assert.doesNotMatch(plazaControl, /setDoc|updateDoc/);
 const approvalPanel = fs.readFileSync("src/features/workOrders/ApprovalPanel.jsx", "utf8");
-for (const action of ["Enviar a aprobación", "Aprobar", "Rechazar", "Revalidar disponibilidad"]) {
+for (const action of ["Aprobar ingreso", "Rechazar ingreso"]) {
   assert.ok(approvalPanel.includes(action));
 }
 assert.match(approvalPanel, /summary\.puedeAprobar/);
-// Total bajo la tabla, motivo obligatorio al rechazar y "Enviar a aprobación" inactivo si ya está enviado.
-assert.match(approvalPanel, /<tfoot>[\s\S]*Total[\s\S]*calculateWorkOrderScopeTotal/);
+// Compuerta de ingreso: motivo obligatorio al rechazar, sin alcance, totales ni montos.
 assert.match(approvalPanel, /Motivo \*/);
 assert.doesNotMatch(approvalPanel, /Motivo \(opcional\)/);
 assert.match(approvalPanel, /confirmation\.action === "rechazar" && !reason\.trim\(\)/);
-assert.match(approvalPanel, /summary\.estado === "esperando_aprobacion"\) && <Button type="button" disabled=\{busy \|\| !summary\.puedeEnviar\}/);
+assert.doesNotMatch(approvalPanel, /Enviar a aprobación|Revalidar|summary\.alcance|calculateWorkOrderScopeTotal|precioUnitario|Subtotal|<th>Precio<\/th>|amount\(|formatBusinessMoney/);
 assert.match(approvalPanel, /ResponsiveDialog/);
-assert.match(approvalPanel, /<LoadingState variant="section" label="Cargando alcance\.\.\." \/>/);
+assert.match(approvalPanel, /<LoadingState variant="section" label="Cargando aprobación\.\.\." \/>/);
 assert.match(approvalPanel, /confirmation\.revision/);
-assert.doesNotMatch(approvalPanel, /erp-empty-state" role="status">Cargando alcance/);
+assert.doesNotMatch(approvalPanel, /erp-empty-state" role="status">Cargando/);
 assert.doesNotMatch(approvalPanel, /setDoc|updateDoc|<select|type="number"/);
 const diagnosisPanel = fs.readFileSync("src/features/workOrders/DiagnosisPanel.jsx", "utf8");
 assert.match(diagnosisPanel, /Guardar borrador/);
 assert.match(diagnosisPanel, /Completar diagnóstico/);
 assert.match(diagnosisPanel, /diagnosis\.estado === "borrador"/);
 assert.match(diagnosisPanel, /"pendiente_entrega", "cerrada", "cancelada"/);
+assert.match(diagnosisPanel, /useBusinessFormat/);
+assert.match(diagnosisPanel, /formatTimestamp\(value, locale\)/);
+assert.doesNotMatch(diagnosisPanel, /toLocaleString\("es-CL"/);
 const planningPanel = fs.readFileSync("src/features/workOrders/ServicePlanningPanel.jsx", "utf8");
 const workOrderService = fs.readFileSync("src/services/workOrderService.js", "utf8");
 assert.match(planningPanel, /listarCatalogoTaller/);
@@ -137,8 +141,9 @@ assert.match(planningPanel, /tipoItem === "servicio"/);
 assert.match(planningPanel, /tipoItem === "producto"/);
 assert.match(planningPanel, /cantidad planificada/i);
 assert.match(planningPanel, /Stock actual:/);
-assert.match(planningPanel, /Valor Servicio/);
-assert.match(planningPanel, /Esto retirará la solicitud de aprobación y habrá que reenviarla\./);
+// El taller no muestra montos: ni valores de servicio, ni precios, ni subtotales.
+assert.doesNotMatch(planningPanel, /Valor Servicio|Precio vigente|priceLabel|currentPrice|precioEfectivo|formatBusinessMoney|Intl\.NumberFormat/);
+assert.doesNotMatch(planningPanel, /Esto retirará la solicitud de aprobación/);
 assert.match(planningPanel, /withScopeWarning\(/);
 assert.match(planningPanel, /const cancelProduct = \(\) => \{ setProductServiceId\(null\); setError\(""\); \}/);
 assert.match(planningPanel, /Iniciar servicio/);
@@ -157,11 +162,12 @@ assert.doesNotMatch(planningPanel, /<th>Stock actual<\/th>/);
 assert.match(planningPanel, /type="number" min="1" step="1"/);
 assert.doesNotMatch(planningPanel, /type="number"[^>]*precio/);
 assert.match(planningPanel, /className="erp-table work-order-products-table"/);
-assert.match(planningPanel, /<th>Producto<\/th><th>Cantidad<\/th><th>Precio<\/th>/);
+assert.match(planningPanel, /<th>Producto<\/th><th>Cantidad<\/th>/);
+assert.doesNotMatch(planningPanel, /<th>Precio<\/th>/);
 assert.match(planningPanel, /Sin productos planificados/);
 assert.doesNotMatch(planningPanel, /ServiceMaterialsPanel|obtenerMaterialesOT|Registrar consumo|Registrar devolución|movimientos de inventario/);
 assert.doesNotMatch(workOrderService, /registrarSalidaMaterialOT|registrarDevolucionMaterialOT|obtenerMaterialesOT/);
-assert.match(approvalPanel, /work-order-approval-table/);
+assert.doesNotMatch(approvalPanel, /work-order-approval-table/);
 assert.match(approvalPanel, /work-order-approval-actions/);
 const tallerStyles = fs.readFileSync("src/features/taller/taller.css", "utf8");
 const interiorStyles = fs.readFileSync("src/styles/interior.css", "utf8");

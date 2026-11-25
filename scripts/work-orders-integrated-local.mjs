@@ -458,6 +458,10 @@ try {
     orderAfterReception.recepcion.recibidoEn.toMillis());
   console.log("OK actualización recepción: rol operativo autorizado y autoría inicial preservada");
 
+  // Los trabajos se registran en la ejecución: primero el Owner aprueba el ingreso (compuerta).
+  await callable(owner, "aprobarOT")({businessId, otId, requestId: `gate-approve-${RUN_ID}`,
+    expectedActualizadoEn: (await adminDb.doc(orderPath).get()).data().actualizadoEn.toMillis()});
+  assert.equal((await adminDb.doc(orderPath).get()).data().estado, "en_reparacion");
   const serviceRequestId = `service-create-${RUN_ID}`;
   await expectCallableError("ServicioOT rechaza Producto Core", () => callable(owner, "crearServicioOT")({
     businessId, otId, requestId: `service-wrong-${RUN_ID}`,
@@ -719,6 +723,8 @@ try {
   );
   console.log("OK concurrencia OT: el contador entrega números únicos e incrementales");
 
+  // Las pruebas de Plaza parten de la OT principal recién recibida, antes de aprobar el ingreso.
+  await adminDb.doc(orderPath).update({estado: "en_cola", estadoAprobacion: "pendiente"});
   await testWorkshopPlazas({
     adminDb, businessId, transitionOtId, transitionPlazaId: transitionPlaza.data.plaza.plazaId,
     primaryOtId: otId, concurrentOtIds: concurrent.map((result) => result.data.ordenTrabajo.otId),
@@ -882,7 +888,7 @@ try {
   assert.ok((await getDoc(doc(member.db, servicePath))).exists());
   console.log("OK perfil Taller: catálogo sin costos y precios solo con PRICING_READ");
   console.log("WORK_ORDERS_INTEGRATED_LOCAL_OK");
-  await testWorkOrderApproval({adminDb, businessId, otId, serviceId, diagnosisPath,
+  await testWorkOrderApproval({adminDb, businessId, otId, serviceId,
     owner, admin, technician, member, outsider, callable, expectCallableError, expectFirestoreDenied, runId: RUN_ID});
   await testServiceExecution({adminDb, businessId, otId, serviceId, owner, admin, technician, member,
     outsider, callable, expectCallableError, expectFirestoreDenied, runId: RUN_ID});
