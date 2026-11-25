@@ -366,6 +366,36 @@ function plannedQuantity(value, HttpsError) {
   return value;
 }
 
+// Stock de repuestos: Inventario solo se lee (ni se descuenta ni se reserva).
+// El taller valida que el total de un repuesto en la OT no supere el stock actual. No considera otras OT:
+// la validación y el descuento definitivos quedan en Ventas, cuando se integre con las OT.
+// TODO(validar): definir cómo actúa Ventas si al confirmar la venta ya no hay stock suficiente.
+
+// Las cantidades admiten hasta tres decimales: se suman en milésimas para evitar errores de redondeo.
+function quantityUnits(value) {
+  return Math.round(Number(value) * 1000);
+}
+
+function formatQuantityUnits(units) {
+  return (units / 1000).toLocaleString("es-CL", {maximumFractionDigits: 3});
+}
+
+function orderProductUnits(services, businessId, otId, itemId) {
+  return services.reduce((total, service) => {
+    if (service.negocioId !== businessId || service.otId !== otId) return total;
+    return (Array.isArray(service.productos) ? service.productos : []).reduce((sum, product) =>
+      product?.itemId === itemId && typeof product.cantidad === "number" && Number.isFinite(product.cantidad)
+        ? sum + quantityUnits(product.cantidad) : sum, total);
+  }, 0);
+}
+
+function productStockUnits(item, HttpsError) {
+  if (typeof item.stock !== "number" || !Number.isFinite(item.stock) || item.stock < 0) {
+    fail(HttpsError, "failed-precondition", "El producto no tiene stock válido en Inventario. Revisa el catálogo.");
+  }
+  return quantityUnits(item.stock);
+}
+
 function assertPlanningOrder(order, HttpsError) {
   // Flujo vigente: la aprobación es solo una compuerta y los trabajos se registran en la ejecución.
   if (!order.recepcion || order.estado !== "en_reparacion" || order.estadoAprobacion !== "aprobada") {
@@ -1052,9 +1082,11 @@ async function changeProductoOTHandler(request, dependencies, action) {
     if (action !== "agregar") assertDiagnosisRevision(stored, expected, HttpsError, "servicio");
     if (action === "agregar") assertPlanningItem(itemSnapshot, context.businessId, itemId, "producto", HttpsError);
     if (action !== "agregar" && !existing) fail(HttpsError, "not-found", "No se encontró el producto planificado.");
+    let stockSnapshot = itemSnapshot;
     if (action === "actualizar") {
       const existingItemRef = context.businessRef.collection("inventario").doc(existing.itemId);
-      assertPlanningItem(await transaction.get(existingItemRef), context.businessId, existing.itemId, "producto", HttpsError);
+      stockSnapshot = await transaction.get(existingItemRef);
+      assertPlanningItem(stockSnapshot, context.businessId, existing.itemId, "producto", HttpsError);
     }
     const next = action === "agregar"
       ? [...products, {productoOtId: productId, itemId, cantidad: quantity,
@@ -1062,6 +1094,26 @@ async function changeProductoOTHandler(request, dependencies, action) {
       : action === "eliminar"
         ? products.filter((product) => product.productoOtId !== productId)
         : products.map((product) => product.productoOtId === productId ? {...product, cantidad: quantity} : product);
+    // Agregar o aumentar exige que el total del repuesto en esta OT no supere el stock actual;
+    // disminuir siempre se permite. Solo se leen el ítem y los servicios de esta OT.
+    const increases = action === "agregar" || (action === "actualizar" && quantity > existing.cantidad);
+    if (increases) {
+      const stockItemId = existing?.itemId || itemId;
+      const stockItem = stockSnapshot.data() || {};
+      const stockUnits = productStockUnits(stockItem, HttpsError);
+      const orderServices = await transaction.get(orderRef.collection("servicios"));
+      const ownServices = orderServices.docs.map((document) => document.data() || {})
+        .filter((service) => service.servicioOtId !== serviceId)
+        .concat([{...stored, productos: next}]);
+      const requiredUnits = orderProductUnits(ownServices, context.businessId, otId, stockItemId);
+      if (requiredUnits > stockUnits) {
+        const nombre = String(stockItem.nombre || stockItem.descripcionItem || "el producto").trim();
+        fail(HttpsError, "failed-precondition", stockUnits === 0
+          ? `No hay stock de «${nombre}» en Inventario.`
+          : `Stock insuficiente de «${nombre}»: stock actual ${formatQuantityUnits(stockUnits)} y esta OT ` +
+            `necesita ${formatQuantityUnits(requiredUnits)}. Ajusta la cantidad.`);
+      }
+    }
     const timestamp = FieldValue.serverTimestamp();
     transaction.update(serviceRef, {productos: next, actualizadoPorUid: context.uid, actualizadoEn: timestamp});
     if (action !== "actualizar" || existing.cantidad !== quantity) {
