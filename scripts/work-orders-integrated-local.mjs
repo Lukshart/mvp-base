@@ -8,6 +8,8 @@ import {testWorkOrderEndToEnd} from "./work-order-end-to-end-cases.mjs";
 import {testWorkshopPlazas} from "./work-order-plaza-cases.mjs";
 import {testWorkshopPlazaAutoAssignment} from "./work-order-plaza-auto-cases.mjs";
 import {testWorkOrderStock} from "./work-order-stock-cases.mjs";
+import {receptionPhotosFixture} from "./work-order-photo-fixtures.mjs";
+import {RECEPTION_VEHICLE_ZONES} from "../src/domain/workOrderReceptionPhotoModel.mjs";
 import {testWorkshopSecurity} from "./workshop-security-cases.mjs";
 import {createRequire} from "node:module";
 import {deleteApp, initializeApp} from "firebase/app";
@@ -135,26 +137,17 @@ function storedVehicle(businessId, vehiculoId, clienteId, patente) {
   };
 }
 
-function workOrderReception({checklist: checklistOverrides = {}, ...overrides} = {}) {
+const RECEPTION_REASON = "Ruido al frenar y vibración en el volante.";
+
+function workOrderReception(overrides = {}) {
   return {
+    motivoCliente: RECEPTION_REASON,
     kilometraje: 45210,
     nivelCombustible: "1/2",
-    checklist: {
-      carroceriaPintura: "SIN_DANOS_VISIBLES",
-      vidriosEspejos: "SIN_DANOS_VISIBLES",
-      lucesOpticos: "SIN_DANOS_VISIBLES",
-      neumaticosLlantas: "SIN_DANOS_VISIBLES",
-      interior: "SIN_DANOS_VISIBLES",
-      tableroIndicadores: "SIN_ALERTAS_VISIBLES",
-      encendido: "NO_PROBADO",
-      fugasVisibles: "NO_REVISADO",
-      nivelesVisibles: "SIN_OBSERVACIONES",
-      estadoGeneral: "SIN_OBSERVACIONES",
-      ...checklistOverrides,
-    },
-    accesorios: ["Llave de rueda"],
-    danosObservados: "Ninguno",
-    observaciones: "Sin novedades visibles.",
+    testigosEncendidos: false,
+    testigos: [],
+    ingresaNombre: "Marta Rojas",
+    ingresaDocumento: "12.345.678-5",
     ...overrides,
   };
 }
@@ -352,30 +345,22 @@ try {
     ["failed-precondition"], /recepción/i
   );
 
-  await expectCallableError(
-    "anomalía de recepción sin descripción",
-    () => callable(owner, "registrarRecepcionOrdenTrabajo")({
-      businessId,
-      otId,
-      recepcion: workOrderReception({
-        checklist: {encendido: "NO_ENCIENDE"},
-      }),
-    }),
-    ["invalid-argument"],
-    /Describe los daños/i
-  );
-  await expectCallableError(
-    "recepción sin checklist completa",
-    () => callable(owner, "registrarRecepcionOrdenTrabajo")({
-      businessId,
-      otId,
-      recepcion: workOrderReception({
-        checklist: {interior: ""},
-      }),
-    }),
-    ["invalid-argument"],
-    /obligatorio/i
-  );
+  const invalidReceptions = [
+    ["recepción sin relato del cliente", {motivoCliente: "  "}, /motivo del cliente.*obligatorio/i],
+    ["combustible fuera de la lista", {nivelCombustible: "Medio"}, /nivel de combustible válido/i],
+    ["testigos encendidos sin indicar cuáles", {testigosEncendidos: true, testigos: []}, /Elige cuáles sensores/i],
+    ["testigos con la opción «sin sensores»", {testigosEncendidos: false, testigos: ["abs"]}, /lista debe estar vacía/i],
+    ["testigo desconocido", {testigosEncendidos: true, testigos: ["turbo"]}, /sensores encendidos no son válidos/i],
+    ["testigos sin responder", {testigosEncendidos: undefined, testigos: []}, /Indica si hay sensores encendidos/i],
+  ];
+  for (const [label, overrides, message] of invalidReceptions) {
+    await expectCallableError(label, () => callable(owner, "registrarRecepcionOrdenTrabajo")({
+      businessId, otId, recepcion: workOrderReception(overrides),
+    }), ["invalid-argument"], message);
+  }
+  await expectCallableError("campo de la checklist anterior", () => callable(owner, "registrarRecepcionOrdenTrabajo")({
+    businessId, otId, recepcion: workOrderReception({checklist: {}}),
+  }), ["invalid-argument"], /campo de recepción checklist no está admitido/i);
   await expectCallableError(
     "kilometraje de recepción sobre el máximo",
     () => callable(owner, "registrarRecepcionOrdenTrabajo")({
@@ -388,6 +373,17 @@ try {
     ["invalid-argument"],
     /kilometraje.*no puede superar/i
   );
+  // Las seis fotos del vehículo y la del tablero se exigen para registrar la recepción.
+  await expectCallableError("recepción sin fotos", () => callable(owner, "registrarRecepcionOrdenTrabajo")({
+    businessId, otId, recepcion: workOrderReception(),
+  }), ["failed-precondition"], /Faltan fotos de recepción: Delantera, Lateral izq\. delantero, Lateral izq\. trasero, Lateral der\. delantero, Lateral der\. trasero, Trasera, Tablero\. Complétalas antes de registrar la recepción\./);
+  await adminDb.doc(orderPath).update({fotosRecepcion: receptionPhotosFixture(RECEPTION_VEHICLE_ZONES.map((zone) => zone.id))});
+  await expectCallableError("recepción sin foto del tablero", () => callable(owner, "registrarRecepcionOrdenTrabajo")({
+    businessId, otId, recepcion: workOrderReception(),
+  }), ["failed-precondition"], /Faltan fotos de recepción: Tablero\./);
+  assert.equal((await adminDb.doc(orderPath).get()).data().recepcion, null);
+  await adminDb.doc(orderPath).update({fotosRecepcion: receptionPhotosFixture()});
+  console.log("OK fotos obligatorias: registrar la recepción exige las seis zonas y el tablero");
   const registeredReception = await callable(owner, "registrarRecepcionOrdenTrabajo")({
     businessId,
     otId,
@@ -396,7 +392,9 @@ try {
   assert.equal(registeredReception.data.ordenTrabajo.estado, "en_cola");
   const orderAfterReception = (await adminDb.doc(orderPath).get()).data();
   assert.equal(orderAfterReception.estado, "en_cola");
-  assert.equal(orderAfterReception.recepcion.danosObservados, "Ninguno");
+  assert.equal(orderAfterReception.recepcion.motivoCliente, RECEPTION_REASON);
+  assert.equal(orderAfterReception.recepcion.testigosEncendidos, false);
+  assert.deepEqual(orderAfterReception.recepcion.testigos, []);
   assert.equal(orderAfterReception.recepcion.recibidoPorUid, owner.uid);
   assert.ok(orderAfterReception.recepcion.recibidoEn?.toDate());
   assert.equal(orderAfterReception.actualizadoPorUid, owner.uid);
@@ -407,92 +405,118 @@ try {
   assert.ok(registrationEvents[0].data().actorSnapshot?.nombre);
   assert.ok(registrationEvents[0].data().fecha?.toDate());
   assert.deepEqual(registrationEvents[0].data().detalle.cambios.kilometraje, {anterior: null, nuevo: 45210});
-  console.log("OK recepción OT: checklist completa, autoría backend y transición sin Plaza");
+  // Quién entrega el vehículo: nombre en la OT; el RUT solo en el documento del servidor y nunca en el historial.
+  assert.equal(orderAfterReception.recepcion.ingresaNombre, "Marta Rojas");
+  assert.equal(orderAfterReception.recepcion.ingresaTieneDocumento, true);
+  assert.equal(orderAfterReception.recepcion.ingresaDocumento, undefined);
+  assert.equal((await adminDb.doc(`${orderPath}/recepcionActa/persona`).get()).data().documento, "12.345.678-5");
+  assert.doesNotMatch(JSON.stringify(registrationEvents[0].data()), /12\.345\.678-5/);
+  assert.equal(registrationEvents[0].data().detalle.cambios.ingresaDocumento?.modificado, true);
+  console.log("OK recepción OT: relato, tablero, autoría backend y transición sin Plaza");
 
   const updatedReception = await callable(technician, "registrarRecepcionOrdenTrabajo")({
     businessId,
     otId,
-    recepcion: workOrderReception({
-      checklist: {carroceriaPintura: "CON_OBSERVACIONES"},
-      danosObservados: "Rayón visible en puerta trasera.",
-    }),
+    recepcion: workOrderReception({nivelCombustible: "3/4", testigosEncendidos: true, testigos: ["abs", "frenos"]}),
   });
   assert.equal(updatedReception.data.ordenTrabajo.estado, "en_cola");
   const orderAfterReceptionUpdate = (await adminDb.doc(orderPath).get()).data();
   assert.equal(orderAfterReceptionUpdate.recepcion.recibidoPorUid, owner.uid);
-  assert.equal(orderAfterReceptionUpdate.recepcion.danosObservados, "Rayón visible en puerta trasera.");
+  assert.equal(orderAfterReceptionUpdate.recepcion.nivelCombustible, "3/4");
+  assert.deepEqual(orderAfterReceptionUpdate.recepcion.testigos, ["abs", "frenos"]);
   assert.equal(orderAfterReceptionUpdate.actualizadoPorUid, technician.uid);
   const updatedEvents = (await receptionEventsRef.where("tipo", "==", "recepcion_actualizada").get()).docs;
   assert.equal(updatedEvents.length, 1);
   assert.equal(updatedEvents[0].data().actorUid, technician.uid);
-  assert.deepEqual(updatedEvents[0].data().detalle.cambios["checklist.carroceriaPintura"],
-    {anterior: "SIN_DANOS_VISIBLES", nuevo: "CON_OBSERVACIONES"});
-  assert.deepEqual(updatedEvents[0].data().detalle.cambios.danosObservados,
-    {anterior: "Ninguno", nuevo: "Rayón visible en puerta trasera."});
+  assert.deepEqual(updatedEvents[0].data().detalle.cambios.nivelCombustible, {anterior: "1/2", nuevo: "3/4"});
+  assert.deepEqual(updatedEvents[0].data().detalle.cambios.testigos, {anterior: [], nuevo: ["abs", "frenos"]});
+  assert.equal(updatedEvents[0].data().detalle.cambios.motivoCliente, undefined);
   const noChangeRevision = orderAfterReceptionUpdate.actualizadoEn.toMillis();
   const repeatedReception = await callable(technician, "registrarRecepcionOrdenTrabajo")({
     businessId, otId,
-    recepcion: workOrderReception({
-      checklist: {carroceriaPintura: "CON_OBSERVACIONES"},
-      danosObservados: "Rayón visible en puerta trasera.",
-    }),
+    recepcion: workOrderReception({nivelCombustible: "3/4", testigosEncendidos: true, testigos: ["abs", "frenos"]}),
   });
   assert.equal(repeatedReception.data.ordenTrabajo.sinCambios, true);
   assert.equal((await adminDb.doc(orderPath).get()).data().actualizadoEn.toMillis(), noChangeRevision);
   assert.equal((await receptionEventsRef.where("tipo", "==", "recepcion_actualizada").get()).size, 1);
   const receptionRace = await Promise.allSettled([
     callable(owner, "registrarRecepcionOrdenTrabajo")({businessId, otId,
-      recepcion: workOrderReception({checklist: {carroceriaPintura: "CON_OBSERVACIONES"},
-        danosObservados: "Rayón visible en puerta trasera.", observaciones: "Revisión A."})}),
+      recepcion: workOrderReception({nivelCombustible: "3/4", testigosEncendidos: true, testigos: ["abs", "frenos"],
+        motivoCliente: "Revisión A."})}),
     callable(technician, "registrarRecepcionOrdenTrabajo")({businessId, otId,
-      recepcion: workOrderReception({checklist: {carroceriaPintura: "CON_OBSERVACIONES"},
-        danosObservados: "Rayón visible en puerta trasera.", observaciones: "Revisión B."})}),
+      recepcion: workOrderReception({nivelCombustible: "3/4", testigosEncendidos: true, testigos: ["abs", "frenos"],
+        motivoCliente: "Revisión B."})}),
   ]);
   assert.ok(receptionRace.every((entry) => entry.status === "fulfilled"),
     receptionRace.map((entry) => entry.reason?.message || entry.status).join(" | "));
   const raceEvents = (await receptionEventsRef.where("tipo", "==", "recepcion_actualizada").get()).docs;
   assert.equal(raceEvents.length, 3);
-  const raceChanges = raceEvents.map((entry) => entry.data().detalle.cambios.observaciones).filter(Boolean);
+  const raceChanges = raceEvents.map((entry) => entry.data().detalle.cambios.motivoCliente).filter(Boolean);
   assert.equal(raceChanges.length, 2);
-  assert.ok(raceChanges.some((change) => change.anterior === "Sin novedades visibles."));
+  assert.ok(raceChanges.some((change) => change.anterior === RECEPTION_REASON));
   assert.ok(raceChanges.some((change) => ["Revisión A.", "Revisión B."].includes(change.anterior)));
   assert.equal((await adminDb.doc(orderPath).get()).data().recepcion.recibidoEn.toMillis(),
     orderAfterReception.recepcion.recibidoEn.toMillis());
   console.log("OK actualización recepción: rol operativo autorizado y autoría inicial preservada");
 
   // Los trabajos se registran en la ejecución: primero el Owner aprueba el ingreso (compuerta).
+  // La aprobación revalida las fotos (OT registradas antes de exigirlas); el resumen informa faltantes y daños.
+  const approveMain = async (requestId) => callable(owner, "aprobarOT")({businessId, otId, requestId,
+    responsableUid: technician.uid, expectedActualizadoEn: (await adminDb.doc(orderPath).get()).data().actualizadoEn.toMillis()});
+  await adminDb.doc(orderPath).update({fotosRecepcion: receptionPhotosFixture(RECEPTION_VEHICLE_ZONES.map((zone) => zone.id))});
+  await expectCallableError("aprobar con la foto del tablero pendiente", () => approveMain(`gate-one-photo-${RUN_ID}`),
+    ["failed-precondition"], /Faltan fotos de recepción: Tablero\. Complétalas antes de aprobar el ingreso\./);
+  assert.equal((await adminDb.doc(orderPath).get()).data().estadoAprobacion, "pendiente");
+  assert.deepEqual((await callable(owner, "obtenerResumenAprobacionOT")({businessId, otId})).data.fotosFaltantes, ["Tablero"]);
+  await adminDb.doc(orderPath).update({fotosRecepcion: {...receptionPhotosFixture(),
+    "lateral-izquierdo-delantero": {...receptionPhotosFixture()["lateral-izquierdo-delantero"],
+      conDanos: true, marcas: [{x: 0.4, y: 0.5, nota: "rayón de 15 cm en puerta delantera"}]}}});
+  assert.deepEqual((await callable(owner, "obtenerResumenAprobacionOT")({businessId, otId})).data.danosPrevios,
+    [{zona: "Lateral izq. delantero", notas: ["rayón de 15 cm en puerta delantera"]}]);
+  // Rechazar no exige fotos; aprobar sí. Una OT rechazada puede aprobarse si cambia la decisión.
+  await callable(owner, "rechazarOT")({businessId, otId, requestId: `gate-reject-no-photos-${RUN_ID}`,
+    motivo: "Faltan fotos de recepción.",
+    expectedActualizadoEn: (await adminDb.doc(orderPath).get()).data().actualizadoEn.toMillis()});
+  assert.equal((await adminDb.doc(orderPath).get()).data().estadoAprobacion, "rechazada");
+  console.log("OK fotos obligatorias: la aprobación revalida las fotos e informa los daños previos");
   // Un negocio sin Plazas activas no puede aprobar ingresos.
   await expectCallableError("aprobar sin Plazas activas", async () => callable(owner, "aprobarOT")({
-    businessId, otId, requestId: `gate-no-plaza-${RUN_ID}`,
+    businessId, otId, requestId: `gate-no-plaza-${RUN_ID}`, responsableUid: technician.uid,
     expectedActualizadoEn: (await adminDb.doc(orderPath).get()).data().actualizadoEn.toMillis(),
   }), ["failed-precondition"], /al menos una Plaza activa/i);
   const mainPlazaId = (await callable(owner, "crearPlazaTaller")({
     businessId, requestId: `plaza-main-${RUN_ID}`, plaza: {nombre: "Taller - Plaza principal"},
   })).data.plaza.plazaId;
   await callable(owner, "aprobarOT")({businessId, otId, requestId: `gate-approve-${RUN_ID}`,
-    expectedActualizadoEn: (await adminDb.doc(orderPath).get()).data().actualizadoEn.toMillis()});
+    responsableUid: technician.uid, expectedActualizadoEn: (await adminDb.doc(orderPath).get()).data().actualizadoEn.toMillis()});
   assert.equal((await adminDb.doc(orderPath).get()).data().estado, "en_reparacion");
   assert.equal((await adminDb.doc(orderPath).get()).data().plazaId, mainPlazaId, "aprobar asigna la Plaza libre");
+  assert.equal((await adminDb.doc(orderPath).get()).data().responsableUid, technician.uid, "aprobar guarda el responsable de la OT");
   const serviceRequestId = `service-create-${RUN_ID}`;
   await expectCallableError("ServicioOT rechaza Producto Core", () => callable(owner, "crearServicioOT")({
     businessId, otId, requestId: `service-wrong-${RUN_ID}`,
-    servicio: {itemId: "producto-core", responsableUid: technician.uid},
+    servicio: {itemId: "producto-core"},
   }), ["failed-precondition"], /servicio activo/i);
   await expectCallableError("ServicioOT rechaza ítem de otro negocio", () => callable(owner, "crearServicioOT")({
     businessId, otId, requestId: `service-cross-${RUN_ID}`,
-    servicio: {itemId: "servicio-externo", responsableUid: technician.uid},
+    servicio: {itemId: "servicio-externo"},
   }), ["failed-precondition"], /mismo negocio/i);
-  await expectCallableError("ServicioOT rechaza responsable externo", () => callable(owner, "crearServicioOT")({
+  // El responsable es de la OT (se elige al aprobar); el trabajo ya no tiene uno propio.
+  await expectCallableError("ServicioOT no admite responsable propio", () => callable(owner, "crearServicioOT")({
     businessId, otId, requestId: `service-responsible-${RUN_ID}`,
     servicio: {itemId: "servicio-core", responsableUid: outsider.uid},
-  }), ["failed-precondition"], /responsable asignable/i);
+  }), ["invalid-argument"], /no está admitido/i);
+  await expectCallableError("solo el responsable, Admin u Owner crean trabajos", () => callable(member, "crearServicioOT")({
+    businessId, otId, requestId: `service-not-responsible-${RUN_ID}`,
+    servicio: {itemId: "servicio-core"},
+  }), ["permission-denied"], /Solo el responsable de la OT/i);
   await expectCallableError("ServicioOT rechaza precio manual", () => callable(owner, "crearServicioOT")({
     businessId, otId, requestId: `service-price-${RUN_ID}`,
-    servicio: {itemId: "servicio-core", responsableUid: technician.uid, precioUnitario: 1},
+    servicio: {itemId: "servicio-core", precioUnitario: 1},
   }), ["invalid-argument"], /no está admitido/i);
   const createdService = await callable(technician, "crearServicioOT")({
     businessId, otId, requestId: serviceRequestId,
-    servicio: {itemId: "servicio-core", responsableUid: technician.uid},
+    servicio: {itemId: "servicio-core"},
   });
   const serviceId = createdService.data.servicioOtId;
   const servicePath = `${orderPath}/servicios/${serviceId}`;
@@ -504,7 +528,7 @@ try {
   assert.equal(service.creadoPorUid, technician.uid);
   assert.equal((await callable(technician, "crearServicioOT")({
     businessId, otId, requestId: serviceRequestId,
-    servicio: {itemId: "servicio-core", responsableUid: technician.uid},
+    servicio: {itemId: "servicio-core"},
   })).data.sinCambios, true);
   assert.equal((await adminDb.collection(`${orderPath}/servicios`).get()).size, 1);
   await expectCallableError("ProductoOT rechaza Servicio Core", () => callable(owner, "agregarProductoOT")({
@@ -533,11 +557,15 @@ try {
   })).data.sinCambios, true);
   await callable(admin, "actualizarServicioOT")({
     businessId, otId, servicioOtId: serviceId, expectedActualizadoEn: service.actualizadoEn.toMillis(),
-    servicio: {itemId: "servicio-core", responsableUid: member.uid},
+    servicio: {itemId: "servicio-core"},
   });
   service = (await adminDb.doc(servicePath).get()).data();
-  assert.equal(service.responsableUid, member.uid);
-  await callable(member, "actualizarProductoOT")({
+  assert.equal(service.responsableUid, undefined, "El trabajo no guarda responsable propio");
+  await expectCallableError("solo el responsable, Admin u Owner cambian repuestos", () => callable(member, "actualizarProductoOT")({
+    businessId, otId, servicioOtId: serviceId, productoOtId: productId, cantidad: 3,
+    expectedActualizadoEn: service.actualizadoEn.toMillis(),
+  }), ["permission-denied"], /Solo el responsable de la OT/i);
+  await callable(technician, "actualizarProductoOT")({
     businessId, otId, servicioOtId: serviceId, productoOtId: productId, cantidad: 3,
     expectedActualizadoEn: service.actualizadoEn.toMillis(),
   });
@@ -558,7 +586,7 @@ try {
   await expectFirestoreDenied("otro negocio no lee ServicioOT", () => getDoc(doc(outsider.db, servicePath)));
   assert.equal((await getDocs(query(collection(technician.db, `${orderPath}/servicios`),
     where("negocioId", "==", businessId), where("otId", "==", otId)))).size, 1);
-  console.log("OK planificación OT: referencias Core, responsable, idempotencia, cantidad, stock intacto y RBAC");
+  console.log("OK trabajos OT: referencias Core, responsable de la OT, idempotencia, cantidad, stock intacto y RBAC");
 
   const assignable = await callable(technician, "listarPersonasAsignablesTaller")({businessId});
   assert.ok(assignable.data.personas.some((person) => person.uid === technician.uid));
@@ -699,6 +727,7 @@ try {
     businessId, otId: transitionOtId, plazaId: transitionPlaza.data.plaza.plazaId,
     expectedActualizadoEn: (await transitionOrderRef.get()).data().actualizadoEn.toMillis(),
   });
+  await transitionOrderRef.update({fotosRecepcion: receptionPhotosFixture()});
   const receptionWithPlaza = await callable(admin, "registrarRecepcionOrdenTrabajo")({
     businessId,
     otId: transitionOtId,

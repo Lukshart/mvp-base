@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import {completeDeliveryPhotos, deliveryInput} from "./work-order-delivery-fixtures.mjs";
 import {collection, getDocs, query, where} from "firebase/firestore";
 import {buildClientMutationPayload} from "../src/domain/clientModel.mjs";
+import {completeReceptionPhotos} from "./work-order-photo-fixtures.mjs";
 
 // The continuous lifecycle uses only catalog fixtures and public Functions for transitions.
 // Separate terminal regressions at the end use legacy fixtures, not a simulated cancellation action.
@@ -38,6 +40,9 @@ export async function testWorkOrderEndToEnd({adminDb, businessId, owner, technic
     {otId, requestId: id(), expectedActualizadoEn: await revision(orderRef)});
   await call(owner, "cambiarPropietarioVehiculo", {vehiculoId: vehicle.vehiculoId, clienteId: "cliente-b"});
   assert.equal((await order()).clienteId, clienteId, "La OT no sigue al propietario actual");
+  await expectCallableError("E2E recepción sin fotos", () => call(technician, "registrarRecepcionOrdenTrabajo",
+    {otId, recepcion: reception}), ["failed-precondition"], /Faltan fotos de recepción/);
+  await completeReceptionPhotos(orderRef);
   await call(technician, "registrarRecepcionOrdenTrabajo", {otId, recepcion: reception});
   assert.equal((await order()).estado, "en_cola");
   const plazaId = (await call(owner, "crearPlazaTaller", {requestId: id(), plaza: {nombre: "Plaza E2E"}})).plaza.plazaId;
@@ -55,14 +60,16 @@ export async function testWorkOrderEndToEnd({adminDb, businessId, owner, technic
   const stock = async () => (await itemRef.get()).data();
   // Los trabajos se registran en la ejecución: antes de aprobar el ingreso el servidor los rechaza.
   await expectCallableError("E2E trabajos antes de aprobar", () => call(technician, "crearServicioOT", {otId, requestId: id(),
-    servicio: {itemId: serviceItemId, responsableUid: technician.uid}}), ["failed-precondition"]);
-  await expectCallableError("E2E enviar a aprobación ya no existe", () => action("enviarOTAprobacion"), ["failed-precondition"]);
+    servicio: {itemId: serviceItemId}}), ["failed-precondition"]);
+  await expectCallableError("E2E enviar a aprobación ya no existe", () => action("enviarOTAprobacion", owner), ["failed-precondition"]);
   await expectCallableError("E2E el técnico no aprueba", () => action("aprobarOT"), ["permission-denied"]);
-  await action("aprobarOT", owner);
+  await call(owner, "aprobarOT", {otId, requestId: id(), responsableUid: technician.uid,
+    expectedActualizadoEn: await revision(orderRef)});
+  assert.equal((await order()).responsableUid, technician.uid);
   assert.equal((await order()).estado, "en_reparacion");
   assert.equal((await order()).estadoAprobacion, "aprobada");
   const servicioOtId = (await call(technician, "crearServicioOT", {otId, requestId: id(),
-    servicio: {itemId: serviceItemId, responsableUid: technician.uid}})).servicioOtId;
+    servicio: {itemId: serviceItemId}})).servicioOtId;
   const serviceRef = orderRef.collection("servicios").doc(servicioOtId);
   await call(technician, "agregarProductoOT", {otId, servicioOtId, itemId: productItemId, cantidad: 2, requestId: id()});
   assert.equal((await order()).estadoAprobacion, "aprobada", "Agregar trabajos no invalida la aprobación");
@@ -71,9 +78,12 @@ export async function testWorkOrderEndToEnd({adminDb, businessId, owner, technic
   await call(technician, "iniciarServicioOT", {otId, servicioOtId, requestId: id(),
     expectedActualizadoEn: await revision(serviceRef)});
   const salesBefore = (await adminDb.collection(`${base}/ventas`).get()).size;
+  // Un trabajo solo se termina con los repuestos definidos; aquí tiene repuestos del inventario.
   await call(technician, "completarServicioOT", {otId, servicioOtId, requestId: id(),
     expectedActualizadoEn: await revision(serviceRef)});
-  await action("finalizarReparacionOT");
+  // Finalizar la ejecución es del Owner o del Administrador, no del responsable técnico.
+  await expectCallableError("E2E el técnico no finaliza la ejecución", () => action("finalizarReparacionOT"), ["permission-denied"]);
+  await action("finalizarReparacionOT", owner);
   assert.equal((await order()).estado, "pendiente_entrega");
   // Los precios se congelan al finalizar (envío a Ventas) y el taller no los muestra.
   const frozen = (await serviceRef.get()).data();
@@ -83,7 +93,8 @@ export async function testWorkOrderEndToEnd({adminDb, businessId, owner, technic
   // Un cambio posterior del catálogo Core no reescribe el historial congelado.
   await itemRef.update({precioInterno: 2000, nombre: "Filtro renombrado"});
   assert.deepEqual((await serviceRef.get()).data().productos, frozen.productos);
-  await action("registrarEntregaOT");
+  await completeDeliveryPhotos(orderRef);
+  await call(technician, "registrarEntregaOT", {otId, requestId: id(), expectedActualizadoEn: await revision(orderRef), ...deliveryInput()});
   assert.equal((await order()).estado, "cerrada");
   assert.equal((await order()).plazaId, null);
   assert.equal((await adminDb.doc(`${base}/plazaOccupancyKeys/${plazaId}`).get()).exists, false);

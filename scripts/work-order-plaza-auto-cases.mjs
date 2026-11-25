@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import {completeDeliveryPhotos, deliveryInput} from "./work-order-delivery-fixtures.mjs";
+import {completeReceptionPhotos} from "./work-order-photo-fixtures.mjs";
 
 // Asignación automática de Plaza: al aprobar, la cola FIFO de OT en espera y la promoción
 // cuando una Plaza queda libre (entrega, cancelación, liberación, creación, activación y cambio).
@@ -20,12 +22,13 @@ export async function testWorkshopPlazaAutoAssignment({adminDb, businessId, owne
     const order = (await call(owner, "crearOrdenTrabajo", {
       requestId: id(), ordenTrabajo: {vehiculoId: "vehiculo-a"},
     })).ordenTrabajo;
+    await completeReceptionPhotos(refFor(order.otId));
     await call(technician, "registrarRecepcionOrdenTrabajo", {otId: order.otId, recepcion: reception});
     assert.equal((await read(order.otId)).estado, "en_cola");
     return order.otId;
   };
   const approve = async (otId, client = owner) => call(client, "aprobarOT", {
-    otId, requestId: id(), expectedActualizadoEn: await revision(otId),
+    otId, requestId: id(), responsableUid: technician.uid, expectedActualizadoEn: await revision(otId),
   });
   const createPlaza = async (nombre) => (await call(admin, "crearPlazaTaller", {
     requestId: id(), plaza: {nombre},
@@ -98,7 +101,7 @@ export async function testWorkshopPlazaAutoAssignment({adminDb, businessId, owne
   const waitingApproval = (await events(first, "ot_aprobada")).at(-1);
   assert.equal(waitingApproval.detalle.enEsperaDePlaza, true);
   await expectCallableError("OT en espera no inicia servicios", () => call(owner, "crearServicioOT", {
-    otId: first, requestId: id(), servicio: {itemId: "servicio-core", responsableUid: technician.uid},
+    otId: first, requestId: id(), servicio: {itemId: "servicio-core"},
   }), ["failed-precondition"]);
   console.log("OK Plaza automática: sin Plaza libre la OT aprobada queda en espera con aprobadaEn");
 
@@ -125,8 +128,9 @@ export async function testWorkshopPlazaAutoAssignment({adminDb, businessId, owne
   await approve(third);
   await assertWaiting(third, "tercera en espera");
   await refFor(first).update({estado: "pendiente_entrega"});
+  await completeDeliveryPhotos(refFor(first));
   const delivered = await call(owner, "registrarEntregaOT", {
-    otId: first, requestId: id(), expectedActualizadoEn: await revision(first),
+    otId: first, requestId: id(), expectedActualizadoEn: await revision(first), ...deliveryInput(),
   });
   assert.equal(delivered.estado, "cerrada");
   assert.equal(delivered.otPromovidaId, third);

@@ -19,7 +19,7 @@ export async function testWorkOrderApproval({adminDb, businessId, otId, serviceI
     expectCallableError(label, () => callable(client, name)(data), codes);
   const events = async () => (await orderRef.collection("historial").get()).docs.map((snapshot) => snapshot.data());
   const planning = (extra = {}) => ({businessId, otId, requestId: requestId(),
-    servicio: {itemId: "servicio-core", responsableUid: technician.uid}, ...extra});
+    servicio: {itemId: "servicio-core"}, ...extra});
 
   // La compuerta se prueba sobre una OT recibida y pendiente de decisión, sin importar el estado previo.
   await orderRef.update({estado: "en_diagnostico", estadoAprobacion: "pendiente"});
@@ -36,14 +36,14 @@ export async function testWorkOrderApproval({adminDb, businessId, otId, serviceI
   // Precondiciones y autoridad se validan en el servidor.
   const reception = (await order()).recepcion;
   await orderRef.update({recepcion: null});
-  await reject("aprobar sin recepción", "aprobarOT", await payload());
+  await reject("aprobar sin recepción", "aprobarOT", await payload({responsableUid: technician.uid}));
   await orderRef.update({recepcion: reception});
   await reject("precio manual", "aprobarOT", await payload({precioUnitario: 1}), owner, ["invalid-argument"]);
   await reject("snapshot aportado por frontend", "aprobarOT", await payload({snapshot: {precioUnitario: 1}}), owner, ["invalid-argument"]);
   await reject("negocio ajeno", "aprobarOT", await payload(), outsider, ["permission-denied"]);
   await reject("membresía operativa no concede aprobación", "aprobarOT", await payload(), technician, ["permission-denied"]);
   await reject("perfil Taller no concede aprobación", "aprobarOT", await payload(), member, ["permission-denied"]);
-  await reject("revisión obsoleta", "aprobarOT", await payload({expectedActualizadoEn: 1}), owner, ["aborted"]);
+  await reject("revisión obsoleta", "aprobarOT", await payload({expectedActualizadoEn: 1, responsableUid: technician.uid}), owner, ["aborted"]);
 
   // Rechazar exige motivo y deja la OT esperando una nueva decisión; no habilita trabajos.
   await reject("rechazar sin motivo", "rechazarOT", await payload(), admin, ["invalid-argument"]);
@@ -52,20 +52,31 @@ export async function testWorkOrderApproval({adminDb, businessId, otId, serviceI
   assert.equal(rejection.estadoAprobacion, "rechazada");
   assert.ok(["en_cola", "en_diagnostico"].includes(rejection.estado), "rechazar no inicia la ejecución");
   assert.equal((await order()).estadoAprobacion, "rechazada");
-  const rejectedEvent = (await events()).find((event) => event.tipo === "ot_rechazada");
-  assert.equal(rejectedEvent.detalle.motivo, "Falta autorización del cliente");
+  assert.equal((await order()).motivoRechazo, "Falta autorización del cliente", "la OT guarda el motivo de la espera");
+  // La OT puede traer rechazos anteriores de la suite: se busca el de esta decisión.
+  const rejectedEvent = (await events()).find((event) =>
+    event.tipo === "ot_rechazada" && event.detalle.motivo === "Falta autorización del cliente");
+  assert.ok(rejectedEvent, "el rechazo registra su motivo en el historial");
   await reject("trabajos tras rechazar", "crearServicioOT", planning(), technician);
 
   // Aprobar es idempotente, no exige servicios ni congela precios.
   const approvedEventsBefore = (await events()).filter((event) => event.tipo === "ot_aprobada").length;
-  const approveRequest = await payload();
+  // Aprobar exige elegir el responsable de la OT, que debe ser un miembro asignable y activo del negocio.
+  await reject("aprobar sin responsable", "aprobarOT", await payload(), admin, ["invalid-argument"]);
+  await reject("responsable de otro negocio", "aprobarOT", await payload({responsableUid: outsider.uid}), admin);
+  await reject("rechazar no asigna responsable", "rechazarOT", await payload({motivo: "No", responsableUid: technician.uid}), admin, ["invalid-argument"]);
+  const approveRequest = await payload({responsableUid: technician.uid});
   const approved = (await callable(admin, "aprobarOT")(approveRequest)).data;
   assert.equal(approved.estado, "en_reparacion");
   assert.equal(approved.estadoAprobacion, "aprobada");
   assert.equal((await callable(admin, "aprobarOT")(approveRequest)).data.sinCambios, true);
   assert.equal((await events()).filter((event) => event.tipo === "ot_aprobada").length, approvedEventsBefore + 1);
   await reject("requestId reutilizado con otros datos", "aprobarOT", {...approveRequest, motivo: "otro"}, admin, ["already-exists"]);
-  await reject("aprobar de nuevo", "aprobarOT", await payload());
+  assert.equal((await order()).responsableUid, technician.uid, "Aprobar guarda el responsable de la OT");
+  assert.ok((await order()).responsableNombre, "Aprobar guarda el nombre visible del responsable");
+  const approvalEvent = (await events()).filter((event) => event.tipo === "ot_aprobada").at(-1);
+  assert.ok(approvalEvent.detalle.responsableNombre, "El historial indica quién quedó como responsable");
+  await reject("aprobar de nuevo", "aprobarOT", await payload({responsableUid: technician.uid}));
   await reject("rechazar una OT ya aprobada", "rechazarOT", await payload({motivo: "Tarde"}), admin);
   assert.equal((await service()).precioUnitario, null, "Aprobar no congela precios");
 

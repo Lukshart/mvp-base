@@ -12,9 +12,14 @@ import {
 } from "../src/domain/workOrderModel.mjs";
 import {getWorkOrderHistoryDetail} from "../src/domain/workOrderHistoryModel.mjs";
 import {
+  appendReceptionReason,
+  buildReceptionMutationPayload,
   getReceptionFieldErrors,
-  hasReceptionAnomaly as hasReceptionAnomalyForUi,
   MAX_RECEPTION_MILEAGE_KM,
+  RECEPTION_FUEL_LEVELS,
+  RECEPTION_WARNING_LIGHTS,
+  receptionRequirements,
+  receptionValuesFromStored,
 } from "../src/domain/workOrderReceptionModel.mjs";
 import {
   adaptStoredWorkshopPlaza,
@@ -31,7 +36,6 @@ const {
   freezeCoreItem,
   canApproveWorkOrder,
   formatWorkOrderNumber,
-  hasReceptionAnomaly,
   listarCatalogoTallerHandler,
   normalizeDiagnosisInput,
   normalizeReceptionInput,
@@ -88,9 +92,11 @@ assert.throws(
 assert.equal(formatWorkOrderNumber(1), "OT-000001");
 assert.equal(formatWorkOrderNumber(42), "OT-000042");
 assert.equal(formatWorkOrderNumber(1000000), "OT-1000000");
-assert.deepEqual(normalizeServiceInput({itemId: "service-1", responsableUid: "member-1"}, TestHttpsError),
-  {itemId: "service-1", responsableUid: "member-1"});
-assert.throws(() => normalizeServiceInput({itemId: "service-1", responsableUid: "member-1", precioUnitario: 1}, TestHttpsError),
+// El trabajo no tiene responsable propio: el responsable es de la OT y se elige al aprobar.
+assert.deepEqual(normalizeServiceInput({itemId: "service-1"}, TestHttpsError), {itemId: "service-1"});
+assert.throws(() => normalizeServiceInput({itemId: "service-1", responsableUid: "member-1"}, TestHttpsError),
+  (error) => error.code === "invalid-argument");
+assert.throws(() => normalizeServiceInput({itemId: "service-1", precioUnitario: 1}, TestHttpsError),
   (error) => error.code === "invalid-argument");
 assert.equal(plannedQuantity(1.25, TestHttpsError), 1.25);
 assert.throws(() => plannedQuantity(0, TestHttpsError), (error) => error.code === "invalid-argument");
@@ -176,82 +182,102 @@ assert.equal(deriveWorkshopPlazaOccupancy([plaza], [
 console.log("OK dominio Plaza: estado persistido separado de ocupación derivada y permisos UI");
 
 const reception = {
+  motivoCliente: "Ruido al frenar y vibración en el volante.",
   kilometraje: 125000,
   nivelCombustible: "1/2",
-  checklist: {
-    carroceriaPintura: "NO_REVISADO",
-    vidriosEspejos: "SIN_DANOS_VISIBLES",
-    lucesOpticos: "SIN_DANOS_VISIBLES",
-    neumaticosLlantas: "SIN_DANOS_VISIBLES",
-    interior: "SIN_DANOS_VISIBLES",
-    tableroIndicadores: "NO_REVISADO",
-    encendido: "NO_PROBADO",
-    fugasVisibles: "NO_REVISADO",
-    nivelesVisibles: "SIN_OBSERVACIONES",
-    estadoGeneral: "SIN_OBSERVACIONES",
-  },
-  accesorios: ["Llave de rueda"],
-  danosObservados: "Ninguno",
-  observaciones: "",
+  testigosEncendidos: false,
+  testigos: [],
+  ingresaNombre: "Marta Rojas",
+  ingresaDocumento: "12.345.678-5",
 };
 assert.deepEqual(normalizeReceptionInput(reception, TestHttpsError), reception);
+const rejectsBearer = (input, pattern) => assert.throws(
+  () => normalizeReceptionInput(input, TestHttpsError),
+  (error) => error.code === "invalid-argument" && pattern.test(error.message)
+);
+// Quien entrega puede no ser el titular: nombre y RUT válido son obligatorios (el RUT puede omitirse si ya está guardado).
+rejectsBearer({...reception, ingresaNombre: " "}, /nombre de quien entrega.*obligatorio/i);
+rejectsBearer({...reception, ingresaDocumento: ""}, /documento de identidad.*obligatorio/i);
+rejectsBearer({...reception, ingresaDocumento: "12.345.678-9"}, /RUT válido/i);
+assert.equal(normalizeReceptionInput({...reception, ingresaDocumento: ""}, TestHttpsError, {hasStoredDocument: true}).ingresaDocumento, "");
+assert.equal(normalizeReceptionInput({...reception, ingresaDocumento: "123456785"}, TestHttpsError).ingresaDocumento, "12.345.678-5");
 assert.equal(MAX_BACKEND_RECEPTION_MILEAGE_KM, MAX_RECEPTION_MILEAGE_KM);
 assert.deepEqual(
   normalizeReceptionInput({...reception, kilometraje: MAX_RECEPTION_MILEAGE_KM}, TestHttpsError),
   {...reception, kilometraje: MAX_RECEPTION_MILEAGE_KM}
 );
-assert.throws(
-  () => normalizeReceptionInput({...reception, kilometraje: MAX_RECEPTION_MILEAGE_KM + 1}, TestHttpsError),
-  (error) => error.code === "invalid-argument" && /kilometraje.*no puede superar/i.test(error.message)
+const rejectsReception = (input, pattern) => assert.throws(
+  () => normalizeReceptionInput(input, TestHttpsError),
+  (error) => error.code === "invalid-argument" && pattern.test(error.message)
 );
-assert.equal(hasReceptionAnomaly(reception.checklist), false);
-assert.equal(hasReceptionAnomalyForUi(reception.checklist), false);
+rejectsReception({...reception, kilometraje: MAX_RECEPTION_MILEAGE_KM + 1}, /kilometraje.*no puede superar/i);
 assert.equal(receptionNextStatus({estado: "ingresada", plazaId: null}), "en_cola");
 assert.equal(receptionNextStatus({estado: "ingresada", plazaId: "plaza-1"}), "en_diagnostico");
 assert.equal(receptionNextStatus({estado: "en_cola", plazaId: null}), "en_cola");
-assert.throws(
-  () => normalizeReceptionInput({...reception, danosObservados: "Sin novedades"}, TestHttpsError),
-  (error) => error.code === "invalid-argument" && /exactamente Ninguno/i.test(error.message)
-);
-const withAnomaly = {
-  ...reception,
-  checklist: {...reception.checklist, encendido: "NO_ENCIENDE"},
-  danosObservados: "El motor no enciende al probarlo.",
-};
-assert.deepEqual(normalizeReceptionInput(withAnomaly, TestHttpsError), withAnomaly);
-assert.equal(hasReceptionAnomaly(withAnomaly.checklist), true);
-assert.throws(
-  () => normalizeReceptionInput({...withAnomaly, danosObservados: "Ninguno"}, TestHttpsError),
-  (error) => error.code === "invalid-argument" && /Describe los daños/i.test(error.message)
-);
-assert.throws(
-  () => normalizeReceptionInput({...reception, checklist: {...reception.checklist, encendido: "INVÁLIDO"}}, TestHttpsError),
-  (error) => error.code === "invalid-argument" && /no permitido/i.test(error.message)
-);
-assert.throws(
-  () => normalizeReceptionInput({...reception, checklist: {...reception.checklist, interior: ""}}, TestHttpsError),
-  (error) => error.code === "invalid-argument" && /obligatorio/i.test(error.message)
-);
-assert.throws(
-  () => normalizeReceptionInput({...reception, nivelCombustible: "Medio"}, TestHttpsError),
-  (error) => error.code === "invalid-argument" && /nivel de combustible válido/i.test(error.message)
-);
-assert.equal(Object.keys(getReceptionFieldErrors({...reception, kilometraje: "125000", accesoriosTexto: "Llave de rueda"})).length, 0);
-assert.match(
-  getReceptionFieldErrors({...reception, kilometraje: String(MAX_RECEPTION_MILEAGE_KM + 1)}).kilometraje,
-  /no puede superar/i
-);
+// Prototipo: relato, kilometraje, combustible y sensores; la checklist anterior ya no se admite.
+rejectsReception({...reception, motivoCliente: "   "}, /motivo del cliente.*obligatorio/i);
+rejectsReception({...reception, nivelCombustible: "Medio"}, /nivel de combustible válido/i);
+rejectsReception({...reception, nivelCombustible: "Vacío"}, /nivel de combustible válido/i);
+rejectsReception({...reception, testigosEncendidos: undefined}, /Indica si hay sensores encendidos/i);
+rejectsReception({...reception, testigosEncendidos: true, testigos: []}, /Elige cuáles sensores/i);
+rejectsReception({...reception, testigosEncendidos: false, testigos: ["abs"]}, /lista debe estar vacía/i);
+rejectsReception({...reception, testigosEncendidos: true, testigos: ["turbo"]}, /no son válidos/i);
+rejectsReception({...reception, testigosEncendidos: true, testigos: ["abs", "abs"]}, /no son válidos/i);
+rejectsReception({...reception, checklist: {}}, /campo de recepción checklist no está admitido/i);
+rejectsReception({...reception, danosObservados: "Ninguno"}, /danosObservados no está admitido/i);
+const withLights = {...reception, testigosEncendidos: true, testigos: ["frenos", "abs"]};
+assert.deepEqual(normalizeReceptionInput(withLights, TestHttpsError).testigos, ["abs", "frenos"]);
+// La interfaz y el servidor comparten las mismas listas.
+const serverLights = require("node:fs").readFileSync("functions/workOrderPersistence.js", "utf8").match(/RECEPTION_WARNING_LIGHTS = Object\.freeze\(\[([^\]]+)\]/)[1];
+assert.deepEqual(serverLights.match(/"([^"]+)"/g).map((item) => item.slice(1, -1)), RECEPTION_WARNING_LIGHTS.map((light) => light.value));
+assert.deepEqual(RECEPTION_FUEL_LEVELS.map((level) => level.value), ["Reserva", "1/4", "1/2", "3/4", "Lleno"]);
+
+const formValues = {motivoCliente: "Ruido", kilometraje: "125000", nivelCombustible: "1/2", testigosEncendidos: false, testigos: [],
+  ingresaNombre: "Marta Rojas",  ingresaDocumento: "12.345.678-5", ingresaTieneDocumento: false};
+assert.equal(Object.keys(getReceptionFieldErrors(formValues)).length, 0);
+assert.match(getReceptionFieldErrors({...formValues, kilometraje: String(MAX_RECEPTION_MILEAGE_KM + 1)}).kilometraje, /no puede superar/i);
+assert.match(getReceptionFieldErrors({...formValues, kilometraje: "0"}).kilometraje, /mayor que cero/i);
+assert.match(getReceptionFieldErrors({...formValues, motivoCliente: " "}).motivoCliente, /motivo de ingreso/i);
+assert.match(getReceptionFieldErrors({...formValues, nivelCombustible: ""}).nivelCombustible, /combustible/i);
+assert.match(getReceptionFieldErrors({...formValues, testigosEncendidos: null}).testigos, /Indica si hay sensores/i);
+assert.match(getReceptionFieldErrors({...formValues, testigosEncendidos: true}).testigos, /Elige cuáles/i);
+assert.deepEqual(buildReceptionMutationPayload({...formValues, testigosEncendidos: true, testigos: ["frenos", "abs"]}),
+  {motivoCliente: "Ruido", kilometraje: 125000, nivelCombustible: "1/2", testigosEncendidos: true, testigos: ["abs", "frenos"],
+    ingresaNombre: "Marta Rojas",  ingresaDocumento: "12.345.678-5"});
+assert.match(getReceptionFieldErrors({...formValues, ingresaNombre: " "}).ingresaNombre, /nombre de quien entrega/i);
+assert.match(getReceptionFieldErrors({...formValues, ingresaDocumento: ""}).ingresaDocumento, /RUT/i);
+assert.equal(getReceptionFieldErrors({...formValues, ingresaDocumento: "", ingresaTieneDocumento: true}).ingresaDocumento, undefined);
+assert.deepEqual(buildReceptionMutationPayload({...formValues, testigos: ["abs"]}).testigos, []);
+assert.deepEqual(receptionValuesFromStored(null), {motivoCliente: "", kilometraje: "", nivelCombustible: "", testigosEncendidos: null, testigos: [],
+  ingresaNombre: "", ingresaDocumento: "", ingresaTieneDocumento: false});
+const storedBearer = receptionValuesFromStored({...reception, ingresaTieneDocumento: true});
+assert.equal(storedBearer.ingresaDocumento, "", "el RUT no se vuelve a mostrar en el formulario");
+assert.equal(storedBearer.ingresaTieneDocumento, true);
+assert.equal(receptionValuesFromStored({...reception, testigosEncendidos: true, testigos: ["abs"]}).testigos[0], "abs");
+assert.equal(appendReceptionReason("", "Fuga"), "Fuga");
+assert.equal(appendReceptionReason("Ruido en frenos.", "Fuga"), "Ruido en frenos. Fuga");
+assert.equal(appendReceptionReason("Vibración", "Fuga"), "Vibración. Fuga");
+// Requisitos del prototipo, en su orden.
+const photosDone = {completedVehicle: 6, totalVehicle: 6, dashboard: {completed: true}};
+const photosNone = {completedVehicle: 2, totalVehicle: 6, dashboard: {completed: false}};
+assert.deepEqual(receptionRequirements(formValues, photosDone).map((item) => item.label),
+  ["Relato del cliente", "Nombre y RUT de quien entrega", "6 fotos del vehículo (6/6)", "Foto del tablero", "Kilometraje", "Nivel de combustible", "Sensores indicados"]);
+assert.equal(receptionRequirements(formValues, photosDone).every((item) => item.done), true);
+assert.deepEqual(receptionRequirements(receptionValuesFromStored(null), photosNone).map((item) => item.done),
+  [false, false, false, false, false, false, false]);
+assert.equal(receptionRequirements({...formValues, testigosEncendidos: true}, photosDone).at(-1).label, "Sensores indicados (elige cuáles)");
+assert.equal(receptionRequirements({...formValues, testigosEncendidos: true, testigos: ["abs"]}, photosDone).at(-1).done, true);
 assert.deepEqual(normalizeDiagnosisInput({responsableUid: "member-1", descripcion: "  Falla en arranque  ", observaciones: ""}, TestHttpsError), {
   responsableUid: "member-1", descripcion: "Falla en arranque", observaciones: "",
 });
 assert.throws(() => normalizeDiagnosisInput({responsableUid: "member-1", descripcion: "", observaciones: "", estado: "completado"}, TestHttpsError),
   (error) => error.code === "invalid-argument" && /estado.*no está admitido/i.test(error.message));
-console.log("OK recepción OT: enums, anomalías, NO_REVISADO/NO_PROBADO y transición autoritativa");
+console.log("OK recepción OT: relato, combustible, sensores, requisitos del prototipo y transición autoritativa");
 // Mensajes de error que ve la persona: Inventario, sin la palabra interna «Core».
 {
   const fs = require("node:fs");
   const visible = [];
-  assert.throws(() => normalizeServiceInput({itemId: "", responsableUid: "member-1"}, TestHttpsError),
+  assert.throws(() => normalizeServiceInput({itemId: ""}, TestHttpsError),
     (error) => { visible.push(error.message); return error.code === "invalid-argument" && /El servicio de Inventario/.test(error.message); });
   const missing = {exists: false, id: "x", data: () => undefined};
   assert.throws(() => freezeCoreItem(missing, "negocio-1", "x", "servicio", TestHttpsError),
@@ -306,6 +332,72 @@ console.log("OK alcance OT: total sin IVA, motivo de rechazo obligatorio y aprob
   assert.equal(getWorkOrderHistoryDetail({tipo: "plaza_asignada", detalle: {plazaId: "p", automatica: true}}),
     "Asignada automáticamente.");
   assert.equal(getWorkOrderHistoryDetail({tipo: "plaza_asignada", detalle: {plazaId: "p"}}), "");
+  assert.equal(getWorkOrderHistoryDetail({tipo: "foto_recepcion_registrada", detalle: {zona: "lateral-izquierdo-delantero", conDanos: true, cantidadDanos: 2}}),
+    "Zona: Lateral izq. delantero · 2 daño(s) anotado(s).");
+  assert.equal(getWorkOrderHistoryDetail({tipo: "foto_recepcion_registrada", detalle: {zona: "trasera", conDanos: false}}),
+    "Zona: Trasera · sin daños.");
+  assert.equal(getWorkOrderHistoryDetail({tipo: "foto_recepcion_registrada", detalle: {zona: "tablero"}}), "Zona: Tablero.");
+  {
+    const {receptionPhotoProgress} = await import("../src/domain/workOrderReceptionPhotoModel.mjs");
+    const {receptionPhotoDamages, missingReceptionPhotoZones} = require("../functions/workOrderReceptionPhotoZones.js");
+    const order = {fotosRecepcion: {
+      "delantera": {hash: "a", conDanos: false, marcas: []},
+      "lateral-izquierdo-delantero": {hash: "b", conDanos: true, marcas: [{x: 0.1, y: 0.2, nota: "rayón"}]},
+    }};
+    const progress = receptionPhotoProgress(order);
+    assert.equal(progress.completedVehicle, 2);
+    assert.equal(progress.damagedZones, 1);
+    assert.equal(progress.dashboard.completed, false);
+    assert.equal(progress.complete, false);
+    assert.deepEqual(progress.missing, missingReceptionPhotoZones(order), "faltantes iguales en cliente y servidor");
+    assert.deepEqual(receptionPhotoDamages(order), [{zona: "Lateral izq. delantero", notas: ["rayón"]}]);
+  }
   console.log("OK espera de Plaza: etiqueta, variante e historial coinciden con la regla del servidor");
 }
 console.log("WORK_ORDER_MODEL_SMOKE_OK");
+
+// Ejecución: responsable por OT, repuestos definidos y requisitos para finalizar (cliente y servidor coinciden).
+{
+  const {
+    canOperateOrderWorks, executionRequirements, getPartsSourceLabel, receptionSummary, worksPartsDefined, workProgress,
+  } = await import("../src/domain/workOrderExecutionModel.mjs");
+  const persistence = require("../functions/workOrderPersistence.js");
+  const order = {responsableUid: "tec-1"};
+  assert.equal(canOperateOrderWorks({canManage: false, canOperate: true, order, uid: "tec-1"}), true);
+  assert.equal(canOperateOrderWorks({canManage: false, canOperate: true, order, uid: "tec-2"}), false);
+  assert.equal(canOperateOrderWorks({canManage: true, canOperate: true, order, uid: "admin"}), true);
+  assert.equal(canOperateOrderWorks({canManage: true, canOperate: false, order, uid: "admin"}), false);
+  assert.equal(canOperateOrderWorks({canManage: false, canOperate: true, order: {}, uid: "tec-2"}), true, "OT sin responsable (anterior)");
+  // Mismo criterio en el servidor.
+  const operator = {rol: "TECNICO"};
+  const manager = {rol: "ADMIN"};
+  assert.equal(persistence.canOperateWorks(operator, order, "tec-1"), true);
+  assert.equal(persistence.canOperateWorks(operator, order, "tec-2"), false);
+  assert.equal(persistence.canOperateWorks(manager, order, "otro"), true);
+  assert.equal(persistence.canOperateWorks(operator, {}, "tec-2"), true);
+  assert.throws(() => persistence.assertWorkOperator(operator, order, "tec-2", TestHttpsError),
+    (error) => error.code === "permission-denied" && /Solo el responsable de la OT/.test(error.message));
+  // Repuestos definidos: del inventario, del cliente o ninguno.
+  assert.equal(worksPartsDefined({productos: []}), false);
+  assert.equal(worksPartsDefined({productos: [{productoOtId: "p1"}]}), true);
+  assert.equal(worksPartsDefined({repuestosModo: "cliente"}), true);
+  assert.equal(worksPartsDefined({repuestosModo: "ninguno"}), true);
+  assert.equal(worksPartsDefined({repuestosModo: "otro"}), false);
+  assert.equal(getPartsSourceLabel({repuestosModo: "cliente"}), "Repuestos del cliente");
+  assert.equal(getPartsSourceLabel({repuestosModo: "ninguno"}), "No requiere repuestos");
+  assert.equal(getPartsSourceLabel({productos: [{productoOtId: "p1"}]}), "Del inventario");
+  assert.deepEqual(workProgress([{estado: "completado"}, {estado: "pendiente"}]), {done: 1, total: 2, complete: false});
+  assert.equal(workProgress([]).complete, false);
+  assert.deepEqual(executionRequirements([]).map((item) => item.done), [false, false]);
+  assert.deepEqual(executionRequirements([{estado: "completado"}]).map((item) => item.done), [true, true]);
+  const summary = receptionSummary({recepcion: {motivoCliente: "Ruido", kilometraje: 120000, nivelCombustible: "1/2",
+    testigosEncendidos: true, testigos: ["abs"]},
+  fotosRecepcion: {delantera: {hash: "h", conDanos: true, marcas: [{x: 0.1, y: 0.2, nota: "Rayón"}]}, tablero: {hash: "t"}}});
+  assert.equal(summary.fotosSelladas, 2);
+  assert.deepEqual(summary.previousDamages, [{zona: "Delantera", notas: ["Rayón"]}]);
+  assert.equal(summary.kilometraje, 120000);
+  // Historial de los eventos nuevos.
+  assert.match(getWorkOrderHistoryDetail({tipo: "servicio_ot_repuestos_definidos", detalle: {modo: "cliente"}}), /trae el cliente/);
+  assert.match(getWorkOrderHistoryDetail({tipo: "foto_servicio_registrada", detalle: {momento: "despues"}}), /después/);
+  assert.match(getWorkOrderHistoryDetail({tipo: "ot_aprobada", detalle: {responsableNombre: "Ana Soto"}}), /Responsable: Ana Soto/);
+}

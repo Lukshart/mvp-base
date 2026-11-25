@@ -15,7 +15,7 @@ export const WORK_ORDER_STATUSES = Object.freeze([
 export const WORK_ORDER_APPROVAL_STATUSES = Object.freeze([
   {value: "pendiente", label: "Pendiente"},
   {value: "aprobada", label: "Aprobada"},
-  {value: "rechazada", label: "Rechazada"},
+  {value: "rechazada", label: "En espera"},
 ]);
 
 const STATUS_LABELS = new Map(

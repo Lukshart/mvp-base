@@ -52,6 +52,8 @@ const {
 const {
   iniciarServicioOTHandler,
   completarServicioOTHandler,
+  reabrirServicioOTHandler,
+  definirRepuestosServicioOTHandler,
   finalizarReparacionOTHandler,
   registrarEntregaOTHandler,
   cancelarOTHandler,
@@ -2477,6 +2479,12 @@ exports.iniciarServicioOT = onCall(vehicleCallableOptions, async (request) =>
 exports.completarServicioOT = onCall(vehicleCallableOptions, async (request) =>
   completarServicioOTHandler(request, workOrderPersistenceDependencies)
 );
+exports.reabrirServicioOT = onCall(vehicleCallableOptions, async (request) =>
+  reabrirServicioOTHandler(request, workOrderPersistenceDependencies)
+);
+exports.definirRepuestosServicioOT = onCall(vehicleCallableOptions, async (request) =>
+  definirRepuestosServicioOTHandler(request, workOrderPersistenceDependencies)
+);
 exports.finalizarReparacionOT = onCall(vehicleCallableOptions, (request) =>
   finalizarReparacionOTHandler(request, workOrderPersistenceDependencies));
 exports.registrarEntregaOT = onCall(vehicleCallableOptions, (request) =>
@@ -2487,6 +2495,31 @@ exports.obtenerEventosCierreOT = onCall(vehicleCallableOptions, (request) =>
   obtenerEventosCierreOTHandler(request, workOrderPersistenceDependencies));
 exports.obtenerHistorialOT = onCall(vehicleCallableOptions, (request) =>
   obtenerHistorialOTHandler(request, workOrderPersistenceDependencies));
+
+// Fotos de recepción del Taller: el archivo se valida y se guarda solo desde el servidor.
+const {fotosRecepcionOTHandler} = require("./workOrderReceptionPhotos");
+exports.fotosRecepcionOT = onCall(
+  {maxInstances: 10, concurrency: 4, memory: "256MiB", timeoutSeconds: 60, region: DEFAULT_FUNCTION_REGION},
+  (request) => fotosRecepcionOTHandler(request, {...workOrderPersistenceDependencies, bucket: adminStorageBucket})
+);
+// Fotos «antes» y «después» de un trabajo (opcionales), con el mismo tratamiento que las de recepción.
+const {fotosServicioOTHandler} = require("./workOrderServicePhotos");
+exports.fotosServicioOT = onCall(
+  {maxInstances: 10, concurrency: 4, memory: "256MiB", timeoutSeconds: 60, region: DEFAULT_FUNCTION_REGION},
+  (request) => fotosServicioOTHandler(request, {...workOrderPersistenceDependencies, bucket: adminStorageBucket})
+);
+// Entrega con trazabilidad: fotos selladas, acta de quien retira y contacto rápido con el cliente.
+const {entregaOTHandler} = require("./workOrderDelivery");
+exports.entregaOT = onCall(
+  {maxInstances: 10, concurrency: 4, memory: "256MiB", timeoutSeconds: 60, region: DEFAULT_FUNCTION_REGION},
+  (request) => entregaOTHandler(request, {...workOrderPersistenceDependencies, bucket: adminStorageBucket})
+);
+// Hallazgos de la ejecución: observaciones con foto obligatoria; solo Owner/Administrador las convierten en trabajo.
+const {hallazgosOTHandler} = require("./workOrderFindings");
+exports.hallazgosOT = onCall(
+  {maxInstances: 10, concurrency: 4, memory: "256MiB", timeoutSeconds: 60, region: DEFAULT_FUNCTION_REGION},
+  (request) => hallazgosOTHandler(request, {...workOrderPersistenceDependencies, bucket: adminStorageBucket})
+);
 exports.agregarProductoOT = onCall(vehicleCallableOptions, async (request) =>
   agregarProductoOTHandler(request, workOrderPersistenceDependencies)
 );

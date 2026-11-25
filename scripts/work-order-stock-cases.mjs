@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import {completeReceptionPhotos} from "./work-order-photo-fixtures.mjs";
 
 // Stock de repuestos en la Ejecución: el total de un repuesto en la OT no puede superar el stock actual
 // de Inventario. No se consideran otras OT ni se reserva stock: Ventas confirma al vender.
@@ -24,16 +25,17 @@ export async function testWorkOrderStock({adminDb, businessId, owner, technician
       creadoPorUid: owner.uid, creadoEn: now, actualizadoPorUid: owner.uid, actualizadoEn: now});
   };
   const createService = async (otId) => (await call(owner, "crearServicioOT", {
-    otId, requestId: id(), servicio: {itemId: "servicio-core", responsableUid: technician.uid},
+    otId, requestId: id(), servicio: {itemId: "servicio-core"},
   })).servicioOtId;
   // OT en reparación con un servicio pendiente, lista para planificar repuestos.
   const orderInExecution = async () => {
     const otId = (await call(owner, "crearOrdenTrabajo", {
       requestId: id(), ordenTrabajo: {vehiculoId: "vehiculo-a"},
     })).ordenTrabajo.otId;
+    await completeReceptionPhotos(refFor(otId));
     await call(technician, "registrarRecepcionOrdenTrabajo", {otId, recepcion: reception});
     await freePlaza();
-    await call(owner, "aprobarOT", {otId, requestId: id(), expectedActualizadoEn: await revision(otId)});
+    await call(owner, "aprobarOT", {otId, requestId: id(), responsableUid: technician.uid, expectedActualizadoEn: await revision(otId)});
     assert.equal((await refFor(otId).get()).data().estado, "en_reparacion");
     return {otId, servicioOtId: await createService(otId)};
   };
