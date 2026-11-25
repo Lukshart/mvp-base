@@ -14,6 +14,12 @@ const {
 const {ASSIGNABLE_BUSINESS_ROLES} = require("./rbac");
 const {adaptDocumentAmountDecimals, currencyAmountDecimals} = require("./localization");
 const {isMoneyAmount, roundMoney} = require("./money");
+const {
+  automaticAssignmentDetail,
+  readFreePlaza,
+  readPromotionCandidate,
+  writePromotion,
+} = require("./workOrderPlazaAssignment");
 
 function canReadCorePricing(membership) {
   if (!PRICING_READ_ROLES.includes(membership?.rol)) return false;
@@ -1239,11 +1245,14 @@ async function transitionWorkOrderClosure(request, dependencies, action) {
       : null;
     const plazaLockSnapshot = plazaLockRef ? await transaction.get(plazaLockRef) : null;
     const plazaLock = plazaLockSnapshot?.data() || null;
+    const ownsPlazaLock = Boolean(plazaLockSnapshot?.exists && plazaLock?.negocioId === context.businessId &&
+      plazaLock.plazaId === plazaIdLiberada && plazaLock.otId === otId);
+    // La Plaza liberada pasa a la OT aprobada más antigua que espera (lectura antes de escribir).
+    const promotion = plazaIdLiberada && (ownsPlazaLock || !plazaLockSnapshot?.exists)
+      ? await readPromotionCandidate(transaction, context.businessRef, context.businessId, plazaIdLiberada, otId)
+      : null;
     const timestamp = FieldValue.serverTimestamp();
-    if (plazaLockSnapshot?.exists && plazaLock?.negocioId === context.businessId &&
-        plazaLock.plazaId === plazaIdLiberada && plazaLock.otId === otId) {
-      transaction.delete(plazaLockRef);
-    }
+    if (ownsPlazaLock && !promotion) transaction.delete(plazaLockRef);
     if (frozenAtFinish) {
       frozenAtFinish.forEach((service) => transaction.update(orderRef.collection("servicios").doc(service.servicioOtId), {
         precioUnitario: service.precioUnitario, servicioSnapshot: service.servicioSnapshot, productos: service.productos,
@@ -1263,8 +1272,11 @@ async function transitionWorkOrderClosure(request, dependencies, action) {
       type: action === "finalizar" ? "reparacion_finalizada" : action === "entregar" ? "vehiculo_entregado" : "ot_cancelada",
       detail: {estadoAnterior: previousStatus, estado, plazaIdLiberada},
     });
+    const promoted = writePromotion(transaction, promotion, {appendPlanningEvent, businessId: context.businessId,
+      actorUid: context.uid, actorSnapshot, timestamp, origen: action === "entregar" ? "entrega" : "cancelacion"});
     const resultado = {otId, estado, estadoAprobacion: order.estadoAprobacion,
-      plazaId: releasesPlaza ? null : order.plazaId || null};
+      plazaId: releasesPlaza ? null : order.plazaId || null,
+      ...(promoted ? {otPromovidaId: promoted.otId} : {})};
     transaction.create(requestRef, {negocioId: context.businessId, otId, fingerprint, resultado, creadoEn: timestamp});
     return resultado;
   });
@@ -1489,16 +1501,39 @@ async function approvalOperation(request, dependencies, action) {
         gateOrder.estadoAprobacion === "aprobada") {
       fail(HttpsError, "failed-precondition", "La OT debe tener la recepción registrada y estar pendiente de aprobación.");
     }
-    const decidedEstado = action === "aprobar" ? "en_reparacion" : gateOrder.estado;
+    // Al aprobar sin Plaza se busca la primera libre; si todas están ocupadas, la OT queda en espera.
+    // El negocio debe tener al menos una Plaza activa para aprobar ingresos.
+    const freePlaza = action === "aprobar" && !gateOrder.plazaId
+      ? await readFreePlaza(transaction, context.businessRef, context.businessId)
+      : null;
+    if (freePlaza && !freePlaza.hasActivePlazas) {
+      fail(HttpsError, "failed-precondition", "Crea al menos una Plaza activa en Taller > Plazas antes de aprobar el ingreso.");
+    }
+    const assignedPlazaId = freePlaza?.plazaId || null;
+    const waitsForPlaza = Boolean(freePlaza && !assignedPlazaId);
+    const decidedEstado = action === "aprobar" ? (waitsForPlaza ? "en_cola" : "en_reparacion") : gateOrder.estado;
     const decidedAprobacion = action === "aprobar" ? "aprobada" : "rechazada";
     const decidedAt = FieldValue.serverTimestamp();
     transaction.update(orderRef, {estado: decidedEstado, estadoAprobacion: decidedAprobacion,
+      ...(action === "aprobar" ? {aprobadaEn: decidedAt} : {}),
+      ...(assignedPlazaId ? {plazaId: assignedPlazaId} : {}),
       actualizadoEn: decidedAt, actualizadoPorUid: context.uid});
+    if (assignedPlazaId) {
+      transaction.set(freePlaza.lockRef, {negocioId: context.businessId, plazaId: assignedPlazaId, otId});
+    }
     appendPlanningEvent(transaction, orderRef, {businessId: context.businessId, actorUid: context.uid, actorSnapshot,
       timestamp: decidedAt, type: action === "aprobar" ? "ot_aprobada" : "ot_rechazada",
       detail: {motivo, estadoAnterior: gateOrder.estado, estado: decidedEstado,
-        aprobacionAnterior: gateOrder.estadoAprobacion, estadoAprobacion: decidedAprobacion}});
-    const decision = {otId, estado: decidedEstado, estadoAprobacion: decidedAprobacion, faltantes: [], envioId: null};
+        aprobacionAnterior: gateOrder.estadoAprobacion, estadoAprobacion: decidedAprobacion,
+        ...(action === "aprobar" ? {enEsperaDePlaza: waitsForPlaza} : {})}});
+    if (assignedPlazaId) {
+      appendPlanningEvent(transaction, orderRef, {businessId: context.businessId, actorUid: context.uid, actorSnapshot,
+        timestamp: decidedAt, type: "plaza_asignada",
+        detail: automaticAssignmentDetail(assignedPlazaId, gateOrder.estado, "aprobacion")});
+    }
+    const decision = {otId, estado: decidedEstado, estadoAprobacion: decidedAprobacion,
+      plazaId: assignedPlazaId || gateOrder.plazaId || null, enEsperaDePlaza: waitsForPlaza,
+      faltantes: [], envioId: null};
     transaction.create(requestRef, {negocioId: context.businessId, otId, fingerprint, resultado: decision, creadoEn: decidedAt});
     return decision;
   });
