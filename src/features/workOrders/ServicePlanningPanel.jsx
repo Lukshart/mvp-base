@@ -64,6 +64,11 @@ export default function ServicePlanningPanel({
     return () => { active = false; };
   }, [businessId]);
 
+  // El stock de Inventario puede cambiar en otras pantallas: se recarga tras cada cambio de repuestos.
+  const reloadInventory = async () => {
+    try { setInventory(await listarCatalogoTaller(businessId)); } catch (_reloadError) { /* conserva el catálogo anterior */ }
+  };
+
   const serviceOptions = useMemo(() => inventory.filter((item) => item.tipoItem === "servicio" && item.estado === "activo"), [inventory]);
   const productOptions = useMemo(() => inventory.filter((item) => item.tipoItem === "producto" && item.estado === "activo"), [inventory]);
   const itemById = (itemId) => inventory.find((item) => item.itemId === itemId);
@@ -123,7 +128,7 @@ export default function ServicePlanningPanel({
       setBusy(true); setError("");
       try {
         await agregarProductoOT(businessId, otId, productServiceId, productDraft.itemId, quantity, productRequestId);
-        await onChanged();
+        await Promise.all([onChanged(), reloadInventory()]);
         setProductServiceId(null);
         setError("");
         setNotice("Producto agregado a la planificación. El stock no se modificó.");
@@ -146,7 +151,7 @@ export default function ServicePlanningPanel({
       try {
         await actualizarProductoOT(businessId, otId, service.servicioOtId, quantityEdit.productoOtId,
           quantity, service.actualizadoEn?.toMillis?.());
-        await onChanged();
+        await Promise.all([onChanged(), reloadInventory()]);
         setQuantityEdit(null);
         setError("");
         setNotice("Cantidad planificada actualizada. El stock no se modificó.");
@@ -164,7 +169,7 @@ export default function ServicePlanningPanel({
     try {
       await eliminarProductoOT(businessId, otId, removeTarget.servicioOtId,
         removeTarget.productoOtId, service?.actualizadoEn?.toMillis?.());
-      await onChanged();
+      await Promise.all([onChanged(), reloadInventory()]);
       setRemoveTarget(null);
       setNotice("Producto quitado de la planificación. El stock no se modificó.");
     } catch (removeError) { setRemoveTarget(null); setError(getWorkOrderErrorMessage(removeError)); }
@@ -261,9 +266,9 @@ export default function ServicePlanningPanel({
           </div>}
           {productServiceId === service.servicioOtId && <form className="vehicle-form work-order-diagnosis-form" onSubmit={saveProduct} noValidate>
             <h4>Producto planificado</h4><div className="work-order-reception-grid">
-              <label className="erp-field"><span className="erp-field__label">Producto *</span><select className="erp-control" value={productDraft.itemId} disabled={busy || loading} onChange={(event) => { setProductDraft((current) => ({...current, itemId: event.target.value})); setError(""); }}><option value="">Selecciona un producto</option>{productOptions.map((product) => <option key={product.itemId} value={product.itemId}>{product.codigoInterno ? `${product.codigoInterno} · ` : ""}{product.nombre} · Stock: {product.stock}</option>)}</select></label>
+              <label className="erp-field"><span className="erp-field__label">Producto *</span><select className="erp-control" value={productDraft.itemId} disabled={busy || loading} onChange={(event) => { setProductDraft((current) => ({...current, itemId: event.target.value})); setError(""); }}><option value="">Selecciona un producto</option>{productOptions.map((product) => <option key={product.itemId} value={product.itemId}>{product.codigoInterno ? `${product.codigoInterno} · ` : ""}{product.nombre} · Stock: {product.stock ?? "—"}</option>)}</select></label>
               <label className="erp-field"><span className="erp-field__label">Cantidad *</span><input className="erp-control" type="number" min="1" step="1" value={productDraft.cantidad} disabled={busy} onChange={(event) => { setProductDraft((current) => ({...current, cantidad: event.target.value})); setError(""); }} /></label>
-            </div><p className="erp-secondary-text">Stock actual: {itemById(productDraft.itemId)?.stock ?? "—"}</p>
+            </div><p className="erp-secondary-text">Stock actual en Inventario: {itemById(productDraft.itemId)?.stock ?? "—"}. Es una referencia: no está reservado para esta OT y Ventas lo confirma al vender.</p>
             <div className="vehicle-form-actions"><Button type="button" variant="secondary" disabled={busy} onClick={cancelProduct}>Cancelar</Button><Button type="submit" icon={Save} disabled={busy || loading || Boolean(loadError)}>{busy ? "Guardando..." : "Agregar a planificación"}</Button></div>
           </form>}
           {!products.length ? <p className="erp-secondary-text">Sin productos planificados.</p> :
@@ -277,7 +282,8 @@ export default function ServicePlanningPanel({
                 <td>{(frozen ? product.productoSnapshot?.nombre : core?.nombre) || "Producto no disponible"}</td>
                 <td>{editing ? <input className="erp-control work-order-products-table__quantity"
                   aria-label="Cantidad" type="number" min="1" step="1" value={quantityEdit.cantidad}
-                  onChange={(event) => { setQuantityEdit((current) => ({...current, cantidad: event.target.value})); setError(""); }} /> : product.cantidad}</td>
+                  onChange={(event) => { setQuantityEdit((current) => ({...current, cantidad: event.target.value})); setError(""); }} /> : product.cantidad}
+                  {editing && <span className="erp-secondary-text"> Stock actual: {core?.stock ?? "—"} (no reservado).</span>}</td>
                 {canEditServicePlanning && <td><div className="erp-actions">
                   {editing ? <><Button type="button" disabled={busy} onClick={() => saveQuantity(service)}>Guardar</Button>
                     <Button type="button" variant="secondary" disabled={busy} onClick={cancelQuantity}>Cancelar</Button></> : <>
