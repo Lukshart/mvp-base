@@ -124,18 +124,18 @@ export default function WorkshopPlazasPage({businessId, role}) {
 
   if (!canManage) {
     return <main className="erp-page workshop-plazas-page">
-      <header className="erp-page-header">
-        <div className="erp-page-header__content"><p className="erp-page-header__eyebrow">Taller</p><h1 className="erp-page-header__title">Plazas</h1><p className="erp-page-header__description">Administración de ubicaciones físicas del Taller.</p></div>
-      </header>
+      <div className="erp-module-intro">
+        <div className="erp-page-intro"><p>Administración de ubicaciones físicas del Taller.</p></div>
+      </div>
       <div className="vehicle-message vehicle-message--warning" role="status">El acceso a Plazas está restringido para tu perfil. Propietario o Administrador pueden administrar esta sección.</div>
     </main>;
   }
 
   return <main className="erp-page workshop-plazas-page">
-    <header className="erp-page-header">
-      <div className="erp-page-header__content"><p className="erp-page-header__eyebrow">Taller</p><h1 className="erp-page-header__title">Plazas</h1><p className="erp-page-header__description">Administra ubicaciones físicas y consulta su ocupación actual.</p></div>
+    <div className="erp-module-intro">
+      <div className="erp-page-intro"><p>Administra ubicaciones físicas y consulta su ocupación actual.</p></div>
       {canManage && <Button type="button" icon={Plus} onClick={openCreate}>Nueva Plaza</Button>}
-    </header>
+    </div>
     {notice && <div className="vehicle-message" role="status">{notice}</div>}
     {error && <div className="vehicle-message vehicle-message--error" role="alert"><span>{error}</span><Button type="button" variant="secondary" icon={RefreshCw} onClick={load}>Reintentar</Button></div>}
     <section className="erp-panel" aria-labelledby="workshop-plazas-title">
