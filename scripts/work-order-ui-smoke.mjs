@@ -152,7 +152,17 @@ assert.match(diagnosisPanel, /useBusinessFormat/);
 assert.match(diagnosisPanel, /formatTimestamp\(value, locale\)/);
 assert.doesNotMatch(diagnosisPanel, /toLocaleString\("es-CL"/);
 const executionPanel = fs.readFileSync("src/features/workOrders/ExecutionPanel.jsx", "utf8");
+// Repuestos: se puede pasar de «del cliente» / «no requiere» a «Del inventario» (lo elegido manda sobre el modo guardado).
 const workItem = fs.readFileSync("src/features/workOrders/ExecutionWorkItem.jsx", "utf8");
+assert.match(workItem, /products\.length \? "inventario" : picked \|\| service\.repuestosModo/);
+assert.doesNotMatch(workItem, /service\.repuestosModo \|\| picked/, "el modo guardado no puede bloquear «Del inventario»");
+assert.match(workItem, /setPicked\(null\); actions\.setPartsMode\(service, mode\)/);
+// Al finalizar: venta en borrador para Ventas (solo su número, nunca montos) y Plaza liberada.
+assert.match(executionPanel, /Se generó la venta/);
+assert.match(executionPanel, /hasBusinessPermission\(role, BUSINESS_PERMISSIONS\.SALES_READ\)/, "el enlace a la venta solo con permiso de Ventas");
+assert.match(executionPanel, /<Link to=\{`\/ventas\/\$\{order\.ventaId\}`\}>\{order\.ventaNumero\}<\/Link>/);
+assert.doesNotMatch(executionPanel, /order\.(total|neto|iva)\b/, "el taller no muestra montos de la venta");
+assert.match(fs.readFileSync("src/pages/WorkOrderDetailPage.jsx", "utf8"), /La Plaza quedó libre/);
 const workPhotos = fs.readFileSync("src/features/workOrders/ServiceWorkPhotos.jsx", "utf8");
 const executionModelSource = fs.readFileSync("src/domain/workOrderExecutionModel.mjs", "utf8");
 const workOrderService = fs.readFileSync("src/services/workOrderService.js", "utf8");
