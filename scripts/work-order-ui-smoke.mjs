@@ -432,6 +432,14 @@ assert.doesNotMatch(trackingPage, /PRGZ63|ABCD12/, "la pantalla pública no mues
 const newOrderPage = fs.readFileSync("src/pages/NewWorkOrderPage.jsx", "utf8");
 assert.match(newOrderPage, /getCountryFormCopy\(countryCode\)\.vehiclePlateExample/);
 assert.doesNotMatch(newOrderPage, /ABCD12/, "Nueva OT: la patente de ejemplo depende del país");
+// Nueva OT: crear un vehículo sin salir del flujo (llega con la patente buscada y vuelve con el vehículo seleccionado).
+assert.match(newOrderPage, /Nuevo vehículo/);
+assert.match(newOrderPage, /returnTo: "\/taller\/ordenes\/nueva", patente: normalizedSearch/);
+assert.doesNotMatch(newOrderPage, /navigate\("\/taller\/vehiculos\/nuevo"\)/, "todos los accesos a crear vehículo vuelven a Nueva OT");
+const newVehiclePage = fs.readFileSync("src/pages/NewVehiclePage.jsx", "utf8");
+assert.match(newVehiclePage, /location\.state\?\.returnTo === NEW_WORK_ORDER_PATH/, "solo se acepta la ruta de vuelta de Nueva OT");
+assert.match(newVehiclePage, /navigate\(NEW_WORK_ORDER_PATH, \{replace: true, state: \{vehiculoId: vehicle\.vehiculoId\}\}\)/);
+assert.match(newVehiclePage, /normalizeVehiclePlate\(location\.state\?\.patente\)/);
 const trackingServer = fs.readFileSync("functions/workOrderTracking.js", "utf8");
 assert.match(trackingServer, /requireTallerAccess\(request, dependencies, "operate"\)/);
 assert.match(fs.readFileSync("functions/index.js", "utf8"), /exports\.consultarSeguimientoTaller = onCall\(/);

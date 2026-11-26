@@ -1270,3 +1270,5 @@ a.workshop-home__tile:focus-visible { outline: 2px solid var(--color-focus); out
   justify-content: space-between;
   padding: var(--space-2) var(--space-3);
 }
+
+.work-order-new__actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
