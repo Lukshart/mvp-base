@@ -163,7 +163,7 @@ export default function ExecutionPanel({
       {receptionOpen && <ReceptionSummary order={order} />}
     </Card>
 
-    <Card title={finished ? "Trabajos realizados · Sin montos" : "Trabajos · Sin montos"} hint={order.responsableNombre ? `Responsable: ${order.responsableNombre}` : ""}>
+    <Card title={finished ? "Trabajos realizados" : "Trabajos"} hint={order.responsableNombre ? `Responsable: ${order.responsableNombre}` : ""}>
       {finished && <div className="vehicle-message" role="status"><strong>Ejecución finalizada.</strong> Estos son los trabajos que se realizaron en la orden ({progress.done} de {progress.total} terminados).</div>}
       {error && <div className="vehicle-message vehicle-message--error" role="alert">{error}</div>}
       {notice && <div className="vehicle-message" role="status">{notice}</div>}

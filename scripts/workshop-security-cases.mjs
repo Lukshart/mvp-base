@@ -21,7 +21,7 @@ export async function testWorkshopSecurity({adminDb, businessId, otId, owner, me
     revalidarDisponibilidadOT: {}, obtenerResumenAprobacionOT: {},
     finalizarReparacionOT: {}, registrarEntregaOT: {}, cancelarOT: {}, obtenerHistorialOT: {}, obtenerEventosCierreOT: {},
     listarCatalogoTaller: {}, listarPersonasAsignablesTaller: {},
-    entregaOT: {operacion: "estado", otId}, hallazgosOT: {operacion: "listar", otId},
+    entregaOT: {operacion: "estado", otId}, hallazgosOT: {operacion: "listar", otId}, seguimientoOT: {operacion: "enlace", otId},
     crearPlazaTaller: {requestId: `security-${runId}`, plaza: {nombre: "Prueba"}},
     actualizarPlazaTaller: {plazaId: "plaza", plaza: {nombre: "Prueba"}, expectedActualizadoEn: 1},
     activarPlazaTaller: {plazaId: "plaza", expectedActualizadoEn: 1},
@@ -36,6 +36,10 @@ export async function testWorkshopSecurity({adminDb, businessId, otId, owner, me
   }
   await deniedMatrix("sin sesión", anonymous, "unauthenticated");
   await deniedMatrix("negocio ajeno", outsider);
+  // El seguimiento público responde sin sesión, pero con un mensaje genérico ante datos inválidos.
+  await expectCallableError("público: enlace inválido", () => callable(anonymous, "consultarSeguimientoTaller")({token: "x"}), ["not-found"]);
+  await expectCallableError("público: patente sin vehículo en el taller", () => callable(anonymous, "buscarSeguimientoTaller")({
+    patente: "ZZZZ99", rut: "12.345.678-5"}), ["not-found"]);
   // Revoke after the Core guard succeeds, before the vehicle transaction starts.
   const technicianRef = adminDb.doc(`membresias/${businessId}__${technician.uid}`);
   const originalTechnician = (await technicianRef.get()).data();

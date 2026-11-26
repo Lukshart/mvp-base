@@ -10,6 +10,7 @@ import ExecutionPanel from "../features/workOrders/ExecutionPanel";
 import DeliveryPanel from "../features/workOrders/DeliveryPanel";
 import ApprovalPanel from "../features/workOrders/ApprovalPanel";
 import AdminOverviewCards from "../features/workOrders/AdminOverviewCards";
+import TrackingLinkCard from "../features/workOrders/TrackingLinkCard";
 import ReceptionPanel from "../features/workOrders/ReceptionPanel";
 import WorkOrderPlazaControl from "../features/workOrders/WorkOrderPlazaControl";
 import {
@@ -213,6 +214,10 @@ export default function WorkOrderDetailPage({businessId, role}) {
     {activeStep === "entrega" && <DeliveryPanel businessId={businessId} canManage={canManage} canOperate={canOperate}
       onChanged={refreshServices} order={order} otId={otId}
       vehicleLabel={`${vehicleLabel}${vehicle?.patente ? ` (${vehicle.patente})` : ""}`} />}
+    {canOperate && activeStep === "ejecucion" && order.estadoAprobacion === "aprobada" &&
+      ["en_reparacion", "pendiente_entrega"].includes(order.estado) &&
+      <TrackingLinkCard businessId={businessId} order={order} otId={otId}
+        vehicleLabel={`${vehicleLabel}${vehicle?.patente ? ` (${vehicle.patente})` : ""}`} />}
     {canManage && <AdminOverviewCards businessId={businessId} order={order} otId={otId} plazas={plazas} revision={order.actualizadoEn?.toMillis?.()} services={services} />}
     <ResponsiveDialog open={Boolean(closureTarget)} onClose={() => !closureBusy && setClosureTarget(null)} size="small" eyebrow="Taller"
       title={closureTarget?.action === "finalizar" ? "Finalizar ejecución" : closureTarget?.action === "entregar" ? "Registrar entrega" : "Cancelar orden de trabajo"}

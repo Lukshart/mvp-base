@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import {createHash} from "node:crypto";
 import {MAX_RECEPTION_MILEAGE_KM} from "../src/domain/workOrderReceptionModel.mjs";
 import {testWorkOrderApproval} from "./work-order-approval-cases.mjs";
 import {testServiceExecution} from "./work-order-service-execution-cases.mjs";
@@ -412,6 +413,9 @@ try {
   assert.equal((await adminDb.doc(`${orderPath}/recepcionActa/persona`).get()).data().documento, "12.345.678-5");
   assert.doesNotMatch(JSON.stringify(registrationEvents[0].data()), /12\.345\.678-5/);
   assert.equal(registrationEvents[0].data().detalle.cambios.ingresaDocumento?.modificado, true);
+  // La recepción deja la patente en el índice de la consulta pública /seguimiento (id por hash, sin la patente en claro).
+  const plateIndexDoc = await adminDb.doc(`tallerSeguimientoPatentes/${createHash("sha256").update("patente|ABCD12").digest("hex")}`).get();
+  assert.ok(plateIndexDoc.data()?.negocios?.includes(businessId), "la recepción indexa la patente para la consulta pública");
   console.log("OK recepción OT: relato, tablero, autoría backend y transición sin Plaza");
 
   const updatedReception = await callable(technician, "registrarRecepcionOrdenTrabajo")({
@@ -939,7 +943,7 @@ try {
     reception: workOrderReception(), runId: RUN_ID});
   await testWorkOrderCancellation({adminDb, businessId, owner, technician, outsider, callable,
     expectCallableError, expectFirestoreDenied, reception: workOrderReception(), runId: RUN_ID});
-  await testWorkOrderEndToEnd({adminDb, businessId, owner, technician, callable, expectCallableError,
+  await testWorkOrderEndToEnd({adminDb, businessId, owner, technician, anonymous, callable, expectCallableError,
     reception: workOrderReception(), runId: RUN_ID});
   await testWorkshopPlazaAutoAssignment({adminDb, businessId, owner, admin, technician, callable,
     expectCallableError, reception: workOrderReception(), runId: RUN_ID});

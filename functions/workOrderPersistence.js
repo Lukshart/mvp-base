@@ -22,6 +22,7 @@ const {
 } = require("./workOrderPlazaAssignment");
 const {missingReceptionPhotoZones, receptionPhotoDamages} = require("./workOrderReceptionPhotoZones");
 const {missingDeliveryZones, normalizeDeliveryInput, normalizePersonDocument} = require("./workOrderDeliveryRules");
+const {PLATE_INDEX_COLLECTION, normalizePlate, plateIndexId} = require("./workOrderTrackingRules");
 
 function canReadCorePricing(membership) {
   if (!PRICING_READ_ROLES.includes(membership?.rol)) return false;
@@ -420,6 +421,9 @@ async function listarCatalogoTallerHandler(request, dependencies) {
       codigoInterno: String(item.codigoInterno || item.sku || "").trim(),
       stock: item.tipoItem === "producto" && Number.isFinite(Number(item.stock))
         ? Number(item.stock) : null,
+      // Stock mínimo definido en Inventario: el panel del taller avisa cuando un repuesto llega a él (solo lectura).
+      stockMinimo: item.tipoItem === "producto" && item.stockMinimo !== null && item.stockMinimo !== "" &&
+        Number.isFinite(Number(item.stockMinimo)) && Number(item.stockMinimo) > 0 ? Number(item.stockMinimo) : null,
       precioEfectivo: canReadPrices && price !== null && Number.isFinite(price) && price >= 0
         ? (decimals === 0 ? Math.round(price) : roundMoney(price, decimals)) : null,
     }];
@@ -740,6 +744,9 @@ async function registrarRecepcionOrdenTrabajoHandler(request, dependencies) {
     );
     const existingReception = stored.recepcion;
     const personSnapshot = await transaction.get(personRef);
+    // Patente del vehículo para el índice de la consulta pública (/seguimiento con patente + RUT).
+    const trackingVehicle = stored.vehiculoId
+      ? await transaction.get(context.businessRef.collection("vehiculos").doc(stored.vehiculoId)) : null;
     const storedPerson = personSnapshot.exists ? personSnapshot.data() : null;
     const {ingresaDocumento, ...input} = normalizeReceptionInput(request?.data?.recepcion, HttpsError,
       {countryCode, hasStoredDocument: Boolean(storedPerson?.documento)});
@@ -771,6 +778,11 @@ async function registrarRecepcionOrdenTrabajoHandler(request, dependencies) {
     };
     const estado = receptionNextStatus(stored);
     if (Object.keys(changes).length) {
+      const trackingPlate = normalizePlate(trackingVehicle?.data()?.patente);
+      if (trackingPlate) {
+        transaction.set(db.collection(PLATE_INDEX_COLLECTION).doc(plateIndexId(trackingPlate)),
+          {negocios: FieldValue.arrayUnion(context.businessId), actualizadoEn: timestamp}, {merge: true});
+      }
       if (ingresaDocumento) {
         transaction.set(personRef, {
           negocioId: context.businessId, otId, nombre: input.ingresaNombre,
@@ -1346,6 +1358,9 @@ async function transitionWorkOrderClosure(request, dependencies, action) {
     }
     const actaRef = orderRef.collection("entrega").doc("acta");
     const actaSnapshot = action === "entregar" ? await transaction.get(actaRef) : null;
+    // Seguimiento público: al confirmar la entrega (o anular) el enlace del cliente se inactiva en la misma transacción.
+    const trackingLinkSnapshot = action === "finalizar" ? null
+      : await transaction.get(orderRef.collection("seguimiento").doc("enlace"));
     if (action === "entregar") {
       const missing = missingDeliveryZones(actaSnapshot.exists ? actaSnapshot.data() : {});
       if (missing.length) {
@@ -1403,6 +1418,12 @@ async function transitionWorkOrderClosure(request, dependencies, action) {
       actualizadoPorUid: context.uid,
       actualizadoEn: timestamp,
     });
+    const trackingTokenHash = trackingLinkSnapshot?.exists ? trackingLinkSnapshot.data()?.tokenHash : "";
+    if (typeof trackingTokenHash === "string" && /^[a-f0-9]{64}$/.test(trackingTokenHash)) {
+      transaction.set(db.collection("tallerSeguimientoTokens").doc(trackingTokenHash), {
+        estado: "inactivo", inactivadoEn: timestamp, motivoInactivacion: action === "entregar" ? "entregada" : "anulada",
+      }, {merge: true});
+    }
     if (delivery) {
       // El acta guarda las fotos selladas y quién retira el vehículo (con su documento): solo la lee el Owner/Administrador.
       transaction.set(actaRef, {

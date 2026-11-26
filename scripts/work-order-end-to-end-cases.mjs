@@ -6,7 +6,7 @@ import {completeReceptionPhotos} from "./work-order-photo-fixtures.mjs";
 
 // The continuous lifecycle uses only catalog fixtures and public Functions for transitions.
 // Separate terminal regressions at the end use legacy fixtures, not a simulated cancellation action.
-export async function testWorkOrderEndToEnd({adminDb, businessId, owner, technician,
+export async function testWorkOrderEndToEnd({adminDb, businessId, owner, technician, anonymous,
   callable, expectCallableError, reception, runId}) {
   const base = `negocios/${businessId}`;
   let sequence = 0;
@@ -94,8 +94,17 @@ export async function testWorkOrderEndToEnd({adminDb, businessId, owner, technic
   await itemRef.update({precioInterno: 2000, nombre: "Filtro renombrado"});
   assert.deepEqual((await serviceRef.get()).data().productos, frozen.productos);
   await completeDeliveryPhotos(orderRef);
+  // Seguimiento del cliente: el enlace funciona hasta confirmar la entrega y se inactiva en la misma transacción.
+  const tracking = await call(technician, "seguimientoOT", {otId, operacion: "enlace"});
+  const trackingToken = tracking.url.split("/").pop();
+  assert.equal((await callable(anonymous, "consultarSeguimientoTaller")({token: trackingToken})).data.seguimiento.etapa.clave, "listo");
   await call(technician, "registrarEntregaOT", {otId, requestId: id(), expectedActualizadoEn: await revision(orderRef), ...deliveryInput()});
   assert.equal((await order()).estado, "cerrada");
+  const trackingHash = (await orderRef.collection("seguimiento").doc("enlace").get()).data().tokenHash;
+  const trackingTokenDoc = (await adminDb.doc(`tallerSeguimientoTokens/${trackingHash}`).get()).data();
+  assert.equal(trackingTokenDoc.estado, "inactivo", "La entrega inactiva el enlace de seguimiento");
+  assert.equal(trackingTokenDoc.motivoInactivacion, "entregada");
+  await expectCallableError("E2E enlace inactivo tras la entrega", () => callable(anonymous, "consultarSeguimientoTaller")({token: trackingToken}), ["not-found"]);
   assert.equal((await order()).plazaId, null);
   assert.equal((await adminDb.doc(`${base}/plazaOccupancyKeys/${plazaId}`).get()).exists, false);
   assert.equal((await stock()).stock, 10, "Planificar, ejecutar y entregar no modifican stock");

@@ -26,7 +26,11 @@ import {
   canAssignWorkshopPlazas,
   canManageWorkshopPlazas,
   deriveWorkshopPlazaOccupancy,
+  getPlazaBayStatus,
   getWorkshopPlazaFieldErrors,
+  plazaWorkProgress,
+  workshopOccupancySummary,
+  workshopWaitingQueue,
 } from "../src/domain/workshopPlazaModel.mjs";
 
 const require = createRequire(import.meta.url);
@@ -103,6 +107,8 @@ assert.throws(() => plannedQuantity(0, TestHttpsError), (error) => error.code ==
 const catalogDocuments = [
   {id: "service-1", data: () => ({negocioId: "business-1", tipoItem: "servicio", estado: "activo", nombre: "Servicio", precioInterno: 25000, costoBase: 10000})},
   {id: "foreign", data: () => ({negocioId: "business-2", tipoItem: "producto", estado: "activo", nombre: "Ajeno"})},
+  {id: "part-1", data: () => ({negocioId: "business-1", tipoItem: "producto", estado: "activo", nombre: "Pastillas", stock: 3, stockMinimo: 5})},
+  {id: "part-2", data: () => ({negocioId: "business-1", tipoItem: "producto", estado: "activo", nombre: "Filtro", stock: 9, stockMinimo: ""})},
 ];
 const catalogFor = (membership) => listarCatalogoTallerHandler({data: {businessId: "business-1"}}, {
   db: {}, HttpsError: TestHttpsError,
@@ -116,7 +122,13 @@ const catalogFor = (membership) => listarCatalogoTallerHandler({data: {businessI
 const technicianCatalog = await catalogFor({rol: "TECNICO"});
 assert.deepEqual(technicianCatalog.items, [{
   itemId: "service-1", tipoItem: "servicio", estado: "activo", nombre: "Servicio",
-  codigoInterno: "", stock: null, precioEfectivo: null,
+  codigoInterno: "", stock: null, stockMinimo: null, precioEfectivo: null,
+}, {
+  itemId: "part-1", tipoItem: "producto", estado: "activo", nombre: "Pastillas",
+  codigoInterno: "", stock: 3, stockMinimo: 5, precioEfectivo: null,
+}, {
+  itemId: "part-2", tipoItem: "producto", estado: "activo", nombre: "Filtro",
+  codigoInterno: "", stock: 9, stockMinimo: null, precioEfectivo: null,
 }]);
 assert.equal((await catalogFor({rol: "OWNER"})).items[0].precioEfectivo, 25000);
 assert.equal((await catalogFor({rol: "MEMBER"})).items[0].precioEfectivo, 25000);
@@ -354,6 +366,119 @@ console.log("OK alcance OT: total sin IVA, motivo de rechazo obligatorio y aprob
   }
   console.log("OK espera de Plaza: etiqueta, variante e historial coinciden con la regla del servidor");
 }
+// Plazas en vista gráfica: estado de cada bahía, ocupación (solo plazas activas), cola por orden de aprobación y avance.
+assert.deepEqual(getPlazaBayStatus({estado: "en_diagnostico"}), {key: "revision", label: "En revisión", tone: "warning"});
+assert.deepEqual(getPlazaBayStatus({estado: "en_reparacion"}), {key: "reparacion", label: "En reparación", tone: "info"});
+assert.deepEqual(getPlazaBayStatus({estado: "pendiente_entrega"}), {key: "listo", label: "Listo para retiro", tone: "success"});
+{
+  const plazasDemo = [{plazaId: "p1", estado: "activa"}, {plazaId: "p2", estado: "activa"}, {plazaId: "p3", estado: "inactiva"}];
+  const occupancyDemo = deriveWorkshopPlazaOccupancy(plazasDemo, [
+    {otId: "o1", plazaId: "p1", estado: "en_reparacion"}, {otId: "o3", plazaId: "p3", estado: "en_reparacion"}]);
+  assert.deepEqual(workshopOccupancySummary(plazasDemo, occupancyDemo), {activas: 2, ocupadas: 1, porcentaje: 50});
+  assert.deepEqual(workshopOccupancySummary([], new Map()), {activas: 0, ocupadas: 0, porcentaje: 0});
+  const waiting = workshopWaitingQueue([
+    {otId: "b", recepcion: {}, estado: "en_cola", estadoAprobacion: "aprobada", aprobadaEn: {toMillis: () => 20}},
+    {otId: "a", recepcion: {}, estado: "en_cola", estadoAprobacion: "aprobada", aprobadaEn: {toMillis: () => 10}},
+    {otId: "c", recepcion: {}, estado: "en_cola", estadoAprobacion: "pendiente"},
+    {otId: "d", recepcion: {}, estado: "en_cola", estadoAprobacion: "aprobada", plazaId: "p1"},
+  ]);
+  assert.deepEqual(waiting.map((order) => order.otId), ["a", "b"]);
+  assert.deepEqual(plazaWorkProgress([{estado: "completado"}, {estado: "en_progreso"}, {estado: "pendiente"}]),
+    {terminados: 1, total: 3, porcentaje: 33});
+  assert.deepEqual(plazaWorkProgress([]), {terminados: 0, total: 0, porcentaje: 0});
+}
+console.log("OK Plazas: estado por bahía, ocupación, cola de espera y avance");
+// Panel del taller: indicadores sin repetir, vistas de la lista, pendientes por antigüedad (con detenidos), actividad y técnico.
+{
+  const home = await import("../src/domain/workshopHomeModel.mjs");
+  const ts = (value) => ({toMillis: () => value});
+  const now = new Date(2026, 10, 25, 15, 0);
+  const hour = 60 * 60 * 1000;
+  const at = (hoursAgo) => ts(now.getTime() - hoursAgo * hour);
+  const orders = [
+    {otId: "r", numeroOT: "OT-1", estado: "ingresada", estadoAprobacion: "pendiente"},
+    {otId: "a", numeroOT: "OT-2", estado: "en_diagnostico", estadoAprobacion: "pendiente", recepcion: {recibidoEn: at(5)}},
+    {otId: "q", numeroOT: "OT-3", estado: "en_cola", estadoAprobacion: "aprobada", recepcion: {}, aprobadaEn: at(2)},
+    {otId: "e", numeroOT: "OT-4", estado: "en_reparacion", estadoAprobacion: "aprobada", recepcion: {}, responsableUid: "tec", actualizadoEn: at(1)},
+    {otId: "f", numeroOT: "OT-5", estado: "en_reparacion", estadoAprobacion: "aprobada", recepcion: {}, responsableUid: "otro", actualizadoEn: at(3)},
+    {otId: "s", numeroOT: "OT-8", estado: "en_reparacion", estadoAprobacion: "aprobada", recepcion: {}, actualizadoEn: at(30)},
+    {otId: "l", numeroOT: "OT-6", estado: "pendiente_entrega", estadoAprobacion: "aprobada", recepcion: {}, responsableUid: "tec", actualizadoEn: at(60)},
+    {otId: "c", numeroOT: "OT-7", estado: "cerrada", recepcion: {}, responsableUid: "tec", actualizadoEn: at(1)},
+    {otId: "x", numeroOT: "OT-9", estado: "cerrada", recepcion: {}, actualizadoEn: at(40)},
+  ];
+  const services = new Map([
+    ["e", [{estado: "completado"}, {estado: "en_progreso", itemId: "frenos", actualizadoEn: at(1)}]],
+    ["f", [{estado: "completado", actualizadoEn: at(3)}]],
+    ["s", [{estado: "pendiente", actualizadoEn: at(26)}]],
+  ]);
+  assert.deepEqual(home.workshopHomeTiles(orders, services, now),
+    {porAprobar: 1, enReparacion: 3, enCola: 1, listos: 1});
+  assert.deepEqual(home.workshopHeadline(orders), {enTaller: 5, enCola: 1, listos: 1});
+  assert.deepEqual(home.workOrdersForView(orders, "por-aprobar", now).map((order) => order.otId), ["a"]);
+  assert.equal(home.WORKSHOP_HOME_VIEWS["entregados-hoy"], undefined, "sin «Entregados hoy» por decisión del usuario");
+  assert.equal(home.WORKSHOP_HOME_VIEWS["por-recibir"], undefined, "una OT sin recepción no cuenta en el panel");
+  assert.equal(home.workOrdersForView(orders, "inexistente", now).length, orders.length, "una vista desconocida no filtra");
+  const attention = home.workshopAttentionItems({orders, servicesByOrder: services, now,
+    findingsByOrder: new Map([["e", [{urgente: true, convertido: false, creadoEn: now.getTime() - hour}, {urgente: true, convertido: true}]],
+      ["f", [{urgente: false}]]])});
+  assert.deepEqual(attention.map((item) => item.kind), ["hallazgo", "retiro", "detenido", "aprobar", "finalizar", "cola"],
+    "hallazgos urgentes primero; el resto del más antiguo al más reciente");
+  assert.equal(attention[0].detail, "OT-4 · informar al cliente");
+  assert.equal(attention.find((item) => item.kind === "detenido").detail, "OT-8 · revisar con el responsable");
+  assert.equal(attention.find((item) => item.kind === "finalizar").detail, "OT-5 terminó todos sus trabajos");
+  assert.equal(attention.at(-1).to, "/taller/plazas");
+  assert.deepEqual(home.workshopAttentionItems({orders: [], now}), []);
+  // Stock: avisa en o bajo el mínimo y también cerca de él (hasta 20 %, mínimo 1 unidad); sin mínimo no avisa.
+  const catalog = [
+    {tipoItem: "producto", nombre: "Pastillas delanteras", stock: 6, stockMinimo: 6},
+    {tipoItem: "producto", nombre: "Bujes de parrilla", stock: 1, stockMinimo: 4},
+    {tipoItem: "producto", nombre: "Filtro", stock: 20, stockMinimo: 5},
+    {tipoItem: "producto", nombre: "Aceite", stock: 6, stockMinimo: 5},
+    {tipoItem: "producto", nombre: "Bujías", stock: 7, stockMinimo: 5},
+    {tipoItem: "producto", nombre: "Líquido", stock: 24, stockMinimo: 20},
+    {tipoItem: "producto", nombre: "Correa", stock: 25, stockMinimo: 20},
+    {tipoItem: "producto", nombre: "Sin mínimo", stock: 0, stockMinimo: null},
+    {tipoItem: "servicio", nombre: "Alineación", stock: null, stockMinimo: null},
+  ];
+  assert.equal(home.stockNearLimit(5), 6);
+  assert.equal(home.stockNearLimit(20), 24);
+  assert.equal(home.stockNearLimit(1), 2);
+  const lowItems = home.lowStockItems(catalog);
+  assert.deepEqual(lowItems.map((item) => [item.nombre, item.nivel]), [
+    ["Bujes de parrilla", "bajo"], ["Pastillas delanteras", "bajo"], ["Aceite", "cercano"], ["Líquido", "cercano"]]);
+  assert.deepEqual(home.lowStockAttention(catalog), {tone: "info", kind: "stock", title: "Stock bajo en 4 repuestos",
+    detail: "Bujes de parrilla (1 de mín. 4) · Pastillas delanteras (6 de mín. 6) · Aceite (6 de mín. 5) · y 1 más", to: "/inventario", since: 0});
+  assert.equal(home.lowStockAttention([catalog[2]]), null);
+  assert.equal(home.lowStockAttention([catalog[4]]), null, "7 con mínimo 5: aún lejos");
+  assert.equal(home.lowStockAttention([catalog[3]]).title, "Stock cerca del mínimo", "solo cercanos: no dice «bajo»");
+  assert.match(home.lowStockAttention(Array.from({length: 5}, (_, index) => ({tipoItem: "producto", nombre: `R${index}`, stock: 0, stockMinimo: 1}))).detail,
+    /y 2 más$/);
+  assert.equal(home.elapsedLabel(0, now), "", "sin antigüedad no se muestra «hace…»");
+  assert.equal(home.elapsedLabel(now.getTime() - 30 * 1000, now), "recién");
+  assert.equal(home.elapsedLabel(now.getTime() - 5 * 60 * 1000, now), "hace 5 min");
+  assert.equal(home.elapsedLabel(now.getTime() - 3 * hour, now), "hace 3 h");
+  assert.equal(home.elapsedLabel(now.getTime() - 26 * hour, now), "hace 1 día");
+  assert.equal(home.elapsedLabel(now.getTime() - 60 * hour, now), "hace 2 días");
+  const today = new Date(2026, 10, 25, 9, 0).getTime();
+  const activity = home.workshopTodayActivity([{otId: "x", actualizadoEn: ts(today)}, {otId: "y", actualizadoEn: ts(today + 1000)},
+    {otId: "z", actualizadoEn: ts(new Date(2026, 10, 24, 23, 0).getTime())}], now);
+  assert.deepEqual(activity.map((order) => order.otId), ["y", "x"]);
+  const mine = home.technicianWorkOrders(orders, "tec");
+  assert.deepEqual(mine.map((order) => order.otId), ["e", "l"], "solo OT abiertas a su cargo");
+  assert.deepEqual(home.technicianWorkOrders(orders, ""), []);
+  assert.equal(home.technicianPendingWorks(mine, services), 1);
+  assert.equal(home.nextPendingWork(services.get("e")).itemId, "frenos", "el trabajo en curso va antes que los pendientes");
+  assert.equal(home.nextPendingWork([{estado: "completado"}]), null);
+  assert.equal(home.workshopGreeting(new Date(2026, 0, 1, 9)), "Buenos días");
+  assert.equal(home.workshopGreeting(new Date(2026, 0, 1, 15)), "Buenas tardes");
+  assert.equal(home.workshopGreeting(new Date(2026, 0, 1, 21)), "Buenas noches");
+  // Saludo con nombre y apellido del perfil; sin ambos se conserva el saludo actual (cadena vacía).
+  assert.equal(home.greetingPersonName({nombres: "Matías Andrés", apellidos: "Alamos Soto"}), "Matías Alamos");
+  assert.equal(home.greetingPersonName({nombres: "Matías", apellidos: ""}), "");
+  assert.equal(home.greetingPersonName({nombres: "", apellidos: "Alamos"}), "");
+  assert.equal(home.greetingPersonName(null), "");
+}
+console.log("OK Panel del taller: indicadores, vistas, atención por antigüedad, detenidos, actividad y técnico");
 console.log("WORK_ORDER_MODEL_SMOKE_OK");
 
 // Ejecución: responsable por OT, repuestos definidos y requisitos para finalizar (cliente y servidor coinciden).

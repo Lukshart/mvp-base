@@ -101,18 +101,24 @@ for (const event of ["ot_creada", "recepcion_registrada", "diagnostico_completad
 }
 assert.doesNotMatch(historyModel, /costoUnitario|costoTotal|scopeHash/);
 const plazasPage = fs.readFileSync("src/pages/WorkshopPlazasPage.jsx", "utf8");
-for (const text of ["Nombre", "Estado", "Ocupación actual", "OT asignada", "Vehículo asignado", "Disponible", "En uso", "Nueva Plaza", "Editar", "Activar", "Inactivar"]) {
-  assert.ok(plazasPage.includes(text));
+// Plazas en vista gráfica (prototipo): ocupación, bahías por estado, detalle de la plaza y cola de espera, sin montos.
+for (const text of ["Ocupación del taller", "plazas activas", "En revisión", "En reparación", "Listo para retiro", "Inactiva", "Libre",
+  "Disponible", "No recibe vehículos", "Cola de espera", "Cuando se libera o se crea una plaza, entra el primero de la cola.",
+  "Las plazas con historial no se eliminan, se inactivan.", "Abrir OT", "Nueva Plaza", "Editar", "Activar", "Inactivar"]) {
+  assert.ok(plazasPage.includes(text), `Plazas: falta «${text}»`);
 }
 assert.match(plazasPage, /deriveWorkshopPlazaOccupancy/);
+assert.match(plazasPage, /workshopOccupancySummary\(plazas, occupancy\)/);
+assert.match(plazasPage, /workshopWaitingQueue\(orders\)/);
+assert.match(plazasPage, /aria-pressed=\{selected\}/);
+assert.match(plazasPage, /role="progressbar"/);
+assert.doesNotMatch(plazasPage.replace(/^\s*\/\/.*$/gm, ""), /precio|monto|subtotal|Solo Owner y Administrador/i);
 assert.match(plazasPage, /canManageWorkshopPlazas/);
 assert.match(plazasPage, /if \(canManage\) load\(\)/);
 assert.match(plazasPage, /if \(!canManage\)/);
 assert.match(plazasPage, /El acceso a Plazas está restringido para tu perfil/);
 assert.match(plazasPage, /Propietario o Administrador pueden administrar esta sección/);
 assert.doesNotMatch(plazasPage, /OWNER o ADMIN/);
-assert.match(plazasPage, /erp-table/);
-assert.match(plazasPage, /erp-card-list erp-mobile-only/);
 assert.match(plazasPage, /className="erp-module-intro"/);
 assert.doesNotMatch(plazasPage, /className="erp-page-header"/);
 assert.doesNotMatch(plazasPage, /setDoc|updateDoc|estado:\s*["'](?:ocupada|disponible)["']/);
@@ -152,7 +158,7 @@ const executionModelSource = fs.readFileSync("src/domain/workOrderExecutionModel
 const workOrderService = fs.readFileSync("src/services/workOrderService.js", "utf8");
 assert.ok(!fs.existsSync("src/features/workOrders/ServicePlanningPanel.jsx"), "la planificación anterior fue reemplazada por la ejecución");
 // Pantalla de ejecución del prototipo: tarjetas, catálogo, trabajos en acordeón y requisitos para finalizar.
-for (const title of ["Motivo del cliente", "Trabajos · Sin montos", "Para finalizar la ejecución"]) {
+for (const title of ["Motivo del cliente", "Trabajos", "Para finalizar la ejecución"]) {
   assert.match(executionPanel, new RegExp(`"${title}"`));
 }
 assert.match(executionPanel, /Ver recepción/);
@@ -378,7 +384,8 @@ assert.doesNotMatch(delivery, /precio|subtotal|formatBusinessMoney|costo/i);
 assert.match(detail, /<DeliveryPanel/);
 // La ejecución terminada sigue visible, solo lectura.
 assert.match(detail, /\["en_reparacion", "pendiente_entrega", "cerrada"\]\.includes\(order\.estado\)/);
-assert.match(executionPanel, /Trabajos realizados · Sin montos/);
+assert.match(executionPanel, /"Trabajos realizados"/);
+assert.doesNotMatch(executionPanel, /· Sin montos/);
 assert.match(executionPanel, /readOnly=\{finished\}/);
 assert.match(executionPanel, /\{!finished && <Card title="Para finalizar la ejecución">/);
 const contact = fs.readFileSync("src/features/workOrders/ClientContactCard.jsx", "utf8");
@@ -394,4 +401,81 @@ assert.match(deliveryServer, /hasTallerCapability\(context\.membership, "manage"
 assert.match(fs.readFileSync("functions/index.js", "utf8"), /exports\.entregaOT = onCall\(/);
 assert.match(fs.readFileSync("functions/workOrderPersistence.js", "utf8"), /missingDeliveryZones\(actaSnapshot\.exists/);
 console.log("OK UI OT: entrega con fotos, acta y contacto con el cliente");
+// Seguimiento público: ruta sin sesión, página sin montos y enlace solo con el ingreso aprobado.
+const appSource = fs.readFileSync("src/app/App.jsx", "utf8");
+assert.match(appSource, /import PublicWorkshopTrackingPage from "\.\.\/pages\/PublicWorkshopTrackingPage";/);
+assert.ok(appSource.indexOf("PublicWorkshopTrackingPage />") < appSource.indexOf("if (loading) return <LoadingScreen />;"), "la ruta pública va antes de exigir sesión");
+const trackingPage = fs.readFileSync("src/pages/PublicWorkshopTrackingPage.jsx", "utf8");
+assert.doesNotMatch(trackingPage.replace(/^\s*\/\/.*$/gm, ""), /precio|monto|subtotal|responsable|plaza|foto/i);
+for (const text of ["Seguimiento de tu vehículo", "Avance de los trabajos", "Observaciones del taller", "Ver estado",
+  "Este enlace ya no está activo.", "También puedes entrar con el enlace que te envió el taller."]) {
+  assert.ok(trackingPage.includes(text), `Seguimiento: falta «${text}»`);
+}
+assert.doesNotMatch(trackingPage, /localStorage|sessionStorage/, "el seguimiento no guarda la patente ni el RUT en el navegador");
+assert.match(detail, /<TrackingLinkCard/);
+assert.match(detail, /activeStep === "ejecucion" && order\.estadoAprobacion === "aprobada" &&\s*\["en_reparacion", "pendiente_entrega"\]\.includes\(order\.estado\)/);
+assert.doesNotMatch(detail, /\["ejecucion", "entrega"\]\.includes\(activeStep\)/, "el seguimiento del cliente solo aparece en Ejecución, no en Entrega");
+const trackingCard = fs.readFileSync("src/features/workOrders/TrackingLinkCard.jsx", "utf8");
+assert.match(trackingCard, /Es único, no contiene la patente ni el RUT/);
+assert.match(trackingCard, /El cliente también puede consultar con su patente y RUT en/);
+assert.doesNotMatch(trackingCard, /Copiar página de consulta/, "la consulta con patente y RUT es una ruta pública, no un botón");
+assert.ok(appSource.includes("/^\\/seguimiento(\\/(taller\\/)?[^/]+)?\\/?$/"), "ruta pública /seguimiento para toda la plataforma");
+assert.doesNotMatch(trackingCard, /Sin montos, técnico ni fotos|work-order-tracking__url/, "sin texto redundante ni el enlace escrito dos veces");
+assert.match(trackingCard, /rel="noopener noreferrer"/);
+const trackingServer = fs.readFileSync("functions/workOrderTracking.js", "utf8");
+assert.match(trackingServer, /requireTallerAccess\(request, dependencies, "operate"\)/);
+assert.match(fs.readFileSync("functions/index.js", "utf8"), /exports\.consultarSeguimientoTaller = onCall\(/);
+assert.match(fs.readFileSync("functions/index.js", "utf8"), /exports\.buscarSeguimientoTaller = onCall\(/);
+assert.match(fs.readFileSync("functions/index.js", "utf8"), /exports\.seguimientoOT = onCall\(/);
+assert.match(fs.readFileSync("functions/workOrderPersistence.js", "utf8"),
+  /collection\("tallerSeguimientoTokens"\)\.doc\(trackingTokenHash\), \{\s*estado: "inactivo"/, "la entrega inactiva el enlace en la misma transacción");
+console.log("OK UI OT: seguimiento público por enlace o patente + RUT, sin montos");
+// Panel del taller: ruta base del módulo, al comienzo de la sección «Inicio» del menú y vistas de Administración y técnico, sin montos.
+const homePage = fs.readFileSync("src/pages/WorkshopHomePage.jsx", "utf8");
+assert.match(appSource, /path="\/taller"\s*element=\{\s*<WorkshopHomePage/);
+assert.doesNotMatch(appSource, /<Route path="\/taller" element=\{<Navigate to="\/taller\/ordenes" replace \/>\} \/>/);
+{
+  // El panel del taller va al comienzo de la sección «Inicio», junto a Reportes, y no se llama «Inicio».
+  const {buildNavigationSections} = await import("../src/app/navigation.js");
+  const {VERTICAL_MODULES} = await import("../src/domain/verticalModules.mjs");
+  const sections = buildNavigationSections(VERTICAL_MODULES, {primaryModules: ["taller"]});
+  const home = sections.find((section) => section.label === "Inicio");
+  assert.deepEqual(home.items.map((item) => item.to), ["/taller", "/reportes"]);
+  assert.equal(home.items[0].label, "Panel del taller");
+  assert.ok(home.items[0].activeWhen("/taller") && !home.items[0].activeWhen("/taller/ordenes"));
+  const operation = sections.find((section) => section.label === "Operación");
+  assert.ok(!operation.items.some((item) => item.to === "/taller"), "el panel no se repite en Operación");
+  assert.deepEqual(operation.items.filter((item) => item.to.startsWith("/taller")).map((item) => item.to),
+    ["/taller/ordenes", "/taller/vehiculos", "/taller/plazas"]);
+}
+for (const text of ["Nueva recepción", "Buscar por patente", "Por aprobar", "En reparación", "En cola",
+  "Listos para retiro", "Requiere atención", "Plazas de un vistazo", "Actividad de hoy",
+  "Mis trabajos", "OT a mi cargo", "Trabajos pendientes"]) {
+  assert.ok(homePage.includes(text), `Inicio: falta «${text}»`);
+}
+assert.doesNotMatch(homePage.replace(/^\s*\/\/.*$/gm, ""), /precio|subtotal|Solo Owner y Administrador|no se muestran montos/i);
+assert.match(homePage, /canManage \? listarPlazasTaller\(businessId\) : \[\]/, "el técnico no consulta plazas");
+assert.match(homePage, /if \(canManage\) \{\s*Promise\.all\(executing/, "solo Administración consulta hallazgos");
+assert.match(homePage, /className="workshop-home__works"/, "Mis trabajos lista los trabajos de cada OT");
+assert.match(homePage, /WORK_STATUS_LABELS\[service\.estado\]/, "cada trabajo muestra su estado");
+assert.doesNotMatch(homePage, /<span>Pendientes<\/span>/, "la tarjeta se llama Trabajos pendientes");
+assert.match(homePage, /greetingPersonName\(profile\)/, "el saludo usa nombre y apellido del perfil");
+assert.match(homePage, /profileName \|\| fallbackUserName\(\)/, "sin nombre y apellido se conserva el saludo actual");
+assert.doesNotMatch(homePage, /Flujo del taller/, "sin flujo por etapa: repetía los indicadores");
+assert.match(homePage, /icon=\{Warehouse\} onClick=\{\(\) => navigate\("\/taller\/plazas"\)\}>Plazas</, "mismo ícono de Plazas que el menú");
+assert.match(fs.readFileSync("src/app/navigation.js", "utf8"), /label: "Plazas",\s*title: "Plazas",\s*icon: Warehouse/);
+assert.match(homePage, /REFRESH_MS = 2 \* 60 \* 1000/);
+assert.match(homePage, /visibilitychange/);
+assert.match(homePage, /to=\{view\("por-aprobar"\)\}/);
+assert.doesNotMatch(homePage, /Entregados hoy|Por recibir/);
+// «Trabajos pendientes» solo existe en la vista del técnico (Administración no lo muestra).
+assert.equal((homePage.match(/<span>Trabajos pendientes<\/span>/g) || []).length, 1);
+assert.ok(homePage.indexOf("<span>Trabajos pendientes</span>") > homePage.indexOf("function TechnicianHome"), "Trabajos pendientes es solo del técnico");
+assert.match(homePage, /canManage \? listarCatalogoTaller\(businessId\)\.catch\(\(\) => \[\]\) : \[\]/, "el stock bajo no bloquea el panel");
+assert.match(homePage, /lowStockAttention\(catalog\)/);
+assert.match(homePage, /<Link to=\{`\/taller\/ordenes\/\$\{order\.otId\}`\} aria-label=\{label\} data-kind="occupied">/, "la plaza ocupada abre su OT");
+const ordersPage = fs.readFileSync("src/pages/WorkOrdersPage.jsx", "utf8");
+assert.match(ordersPage, /workOrdersForView\(orders, homeView\)/);
+assert.match(ordersPage, /Quitar filtro/);
+console.log("OK UI Taller: Inicio para Administración y técnico");
 console.log("WORK_ORDER_UI_SMOKE_OK");

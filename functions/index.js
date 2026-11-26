@@ -2520,6 +2520,20 @@ exports.hallazgosOT = onCall(
   {maxInstances: 10, concurrency: 4, memory: "256MiB", timeoutSeconds: 60, region: DEFAULT_FUNCTION_REGION},
   (request) => hallazgosOTHandler(request, {...workOrderPersistenceDependencies, bucket: adminStorageBucket})
 );
+// Seguimiento público: enlace de la OT para el personal y consultas públicas (sin sesión) por enlace o patente + RUT.
+const {
+  buscarSeguimientoTallerHandler, consultarSeguimientoTallerHandler, seguimientoOTHandler,
+} = require("./workOrderTracking");
+exports.seguimientoOT = onCall(vehicleCallableOptions, (request) =>
+  seguimientoOTHandler(request, workOrderPersistenceDependencies));
+exports.consultarSeguimientoTaller = onCall(
+  {maxInstances: 10, concurrency: 20, memory: "256MiB", timeoutSeconds: 30, region: DEFAULT_FUNCTION_REGION},
+  (request) => consultarSeguimientoTallerHandler(request, {db, FieldValue, HttpsError})
+);
+exports.buscarSeguimientoTaller = onCall(
+  {maxInstances: 5, concurrency: 20, memory: "256MiB", timeoutSeconds: 30, region: DEFAULT_FUNCTION_REGION},
+  (request) => buscarSeguimientoTallerHandler(request, {db, FieldValue, HttpsError})
+);
 exports.agregarProductoOT = onCall(vehicleCallableOptions, async (request) =>
   agregarProductoOTHandler(request, workOrderPersistenceDependencies)
 );

@@ -1,6 +1,6 @@
 import {BUSINESS_PERMISSIONS, hasBusinessPermission} from "../domain/rbac.mjs";
 import React, {useCallback, useEffect, useMemo, useState} from "react";
-import {FilePlus2, RefreshCw, Search, Wrench} from "lucide-react";
+import {FilePlus2, RefreshCw, Search, Wrench, X} from "lucide-react";
 import {Link, useLocation, useNavigate} from "react-router-dom";
 import AppIcon from "../components/ui/AppIcon";
 import Button from "../components/ui/Button";
@@ -15,6 +15,7 @@ import {
   WORK_ORDER_APPROVAL_STATUSES,
   WORK_ORDER_STATUSES,
 } from "../domain/workOrderModel.mjs";
+import {WORKSHOP_HOME_VIEWS, workOrdersForView} from "../domain/workshopHomeModel.mjs";
 import {listarVehiculos} from "../services/vehicleService";
 import {listarPlazasTaller} from "../services/workshopPlazaService";
 import {
@@ -79,12 +80,15 @@ export default function WorkOrdersPage({businessId, role}) {
 
   useEffect(() => { load(); }, [load]);
 
-  const visibleOrders = useMemo(() => orders.filter((order) => {
+  // Vista que llega desde los indicadores del panel del taller (?vista=por-aprobar, listos, ...).
+  const viewKey = new URLSearchParams(location.search).get("vista") || "";
+  const homeView = WORKSHOP_HOME_VIEWS[viewKey] ? viewKey : "";
+  const visibleOrders = useMemo(() => workOrdersForView(orders, homeView).filter((order) => {
     const vehicle = vehiclesById.get(order.vehiculoId);
     return matchesWorkOrderSearch(order, vehicle, search)
       && (status === "todos" || order.estado === status)
       && (approval === "todos" || order.estadoAprobacion === approval);
-  }), [approval, orders, search, status, vehiclesById]);
+  }), [approval, homeView, orders, search, status, vehiclesById]);
 
   const feedback = String(location.state?.feedback || "");
 
@@ -98,6 +102,10 @@ export default function WorkOrdersPage({businessId, role}) {
     {error && <div className="vehicle-message vehicle-message--error" role="alert"><span>{error}</span><Button type="button" variant="secondary" icon={RefreshCw} onClick={load}>Reintentar</Button></div>}
     <section className="erp-panel erp-history-panel" aria-labelledby="work-orders-title">
       <div className="erp-panel-header"><div><h2 id="work-orders-title" className="erp-panel-title">Órdenes de trabajo</h2><p className="erp-secondary-text">{visibleOrders.length} {visibleOrders.length === 1 ? "orden" : "órdenes"}</p></div></div>
+      {homeView && <div className="work-orders-view-chip" role="status">
+        <span>Mostrando: <strong>{WORKSHOP_HOME_VIEWS[homeView].label}</strong></span>
+        <Button type="button" variant="secondary" icon={X} onClick={() => navigate("/taller/ordenes")}>Quitar filtro</Button>
+      </div>}
       <div className="erp-filters erp-history-filters--three no-print">
         <label className="erp-field erp-history-search-field"><span className="erp-field__label">Buscar por número OT o patente</span><span className="vehicle-search-control"><AppIcon icon={Search} size={18} /><input className="erp-control" type="search" maxLength={200} value={search} onChange={(event) => setSearch(event.target.value)} placeholder={countryCopy.workOrderSearchExample} /></span></label>
         <label className="erp-field"><span className="erp-field__label">Estado</span><select className="erp-control" value={status} onChange={(event) => setStatus(event.target.value)}><option value="todos">Todos los estados</option>{WORK_ORDER_STATUSES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>

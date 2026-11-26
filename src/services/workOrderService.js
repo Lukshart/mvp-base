@@ -305,6 +305,11 @@ export function obtenerActaEntregaOT(businessId, otId) {
   return diagnosisCall("entregaOT", "consultar el acta de entrega", businessId, otId, {operacion: "acta"});
 }
 
+// Enlace único de seguimiento para el cliente y dirección de consulta con patente + RUT (se crea con el ingreso aprobado).
+export function obtenerSeguimientoOT(businessId, otId) {
+  return diagnosisCall("seguimientoOT", "preparar el seguimiento del cliente", businessId, otId, {operacion: "enlace"});
+}
+
 export function obtenerIngresoRecepcionOT(businessId, otId) {
   return diagnosisCall("entregaOT", "consultar quién entregó el vehículo", businessId, otId, {operacion: "ingreso"});
 }
@@ -344,4 +349,16 @@ export async function leerFotoServicioOT(businessId, otId, servicioOtId, momento
     operacion: "leer", servicioOtId: requireIdentifier(servicioOtId, "El servicio de la OT"), momento,
   });
   return response.imagen || "";
+}
+
+// Nombre y apellido de la persona que inició sesión (su propio perfil). Si no se puede leer, devuelve null.
+export async function obtenerPerfilPropio(uid) {
+  const id = requireIdentifier(uid, "El usuario");
+  try {
+    const snapshot = await getDoc(doc(db, "usuarios", id, "cuenta", "perfil"));
+    const data = snapshot.exists() ? snapshot.data() : {};
+    return {nombres: data.nombres || "", apellidos: data.apellidos || ""};
+  } catch (_error) {
+    return null;
+  }
 }
